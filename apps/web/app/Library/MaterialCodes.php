@@ -31,7 +31,14 @@ class MaterialCodes
             CodeTokenizer::token($material->name),
         ]);
 
-        return $this->unique($base, fn (string $candidate): bool => $this->materialCodeTaken($candidate, $material));
+        $taken = Material::query()
+            ->where('code', 'like', $base.'%')
+            ->whereKeyNot($material->getKey())
+            ->pluck('code')
+            ->merge(Alias::query()->where('code', 'like', $base.'%')->pluck('code'))
+            ->all();
+
+        return $this->nextFree($base, $taken);
     }
 
     /**
@@ -41,16 +48,58 @@ class MaterialCodes
     public function variantToken(Variant $variant): string
     {
         $materialCode = $variant->material->code;
+        $prefix = $materialCode.self::SEPARATOR;
 
-        return $this->unique($variant->token, function (string $candidate) use ($variant, $materialCode): bool {
-            return $this->variantTokenTaken($candidate, $variant)
-                || $this->variantCodeTaken($materialCode.self::SEPARATOR.$candidate, $variant);
-        });
+        $taken = Variant::query()
+            ->where('material_id', $variant->material_id)
+            ->where('token', 'like', $variant->token.'%')
+            ->whereKeyNot($variant->getKey())
+            ->pluck('token')
+            ->merge(
+                Alias::query()
+                    ->where('code', 'like', $prefix.$variant->token.'%')
+                    ->pluck('code')
+                    ->map(fn (string $code): string => substr($code, strlen($prefix))),
+            )
+            ->all();
+
+        return $this->nextFree($variant->token, $taken);
     }
 
     public function variantCode(Variant $variant): string
     {
         return $variant->material->code.self::SEPARATOR.$variant->token;
+    }
+
+    /**
+     * The base itself, or the lowest free numeric suffix, decided in memory
+     * from one over-fetched list of candidates.
+     *
+     * @param  array<int, string>  $taken
+     */
+    public function nextFree(string $base, array $taken): string
+    {
+        $used = [];
+
+        foreach ($taken as $candidate) {
+            if ($candidate === $base) {
+                $used[$base] = true;
+            } elseif (preg_match('/^'.preg_quote($base, '/').'_(\d+)$/', $candidate) === 1) {
+                $used[$candidate] = true;
+            }
+        }
+
+        if (! isset($used[$base])) {
+            return $base;
+        }
+
+        $suffix = 2;
+
+        while (isset($used[$base.'_'.$suffix])) {
+            $suffix++;
+        }
+
+        return $base.'_'.$suffix;
     }
 
     /**
@@ -66,26 +115,5 @@ class MaterialCodes
         }
 
         return $candidate;
-    }
-
-    private function materialCodeTaken(string $code, Material $material): bool
-    {
-        return Material::query()->where('code', $code)->whereKeyNot($material->getKey())->exists()
-            || Alias::query()->where('code', $code)->exists();
-    }
-
-    private function variantTokenTaken(string $token, Variant $variant): bool
-    {
-        return Variant::query()
-            ->where('material_id', $variant->material_id)
-            ->where('token', $token)
-            ->whereKeyNot($variant->getKey())
-            ->exists();
-    }
-
-    private function variantCodeTaken(string $code, Variant $variant): bool
-    {
-        return Variant::query()->where('code', $code)->whereKeyNot($variant->getKey())->exists()
-            || Alias::query()->where('code', $code)->exists();
     }
 }

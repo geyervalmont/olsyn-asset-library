@@ -69,6 +69,34 @@ class Material extends Model
 
     private bool $recoding = false;
 
+    private static bool $deferSearchRefresh = false;
+
+    /**
+     * Run bulk work without re-indexing a material on every variant save;
+     * every touched material is re-indexed once afterwards.
+     *
+     * @template T
+     *
+     * @param  callable(): T  $callback
+     * @return T
+     */
+    public static function withDeferredSearchRefresh(callable $callback): mixed
+    {
+        $previous = self::$deferSearchRefresh;
+        self::$deferSearchRefresh = true;
+
+        try {
+            return $callback();
+        } finally {
+            self::$deferSearchRefresh = $previous;
+        }
+    }
+
+    public static function isDeferringSearchRefresh(): bool
+    {
+        return self::$deferSearchRefresh;
+    }
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'draft',

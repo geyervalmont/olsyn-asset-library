@@ -27,7 +27,10 @@ class VariantAttribute extends Model
     {
         static::saved(function (VariantAttribute $attribute): void {
             $attribute->variant->refreshSearchText();
-            $attribute->variant->material->refreshSearchText();
+
+            if (! Material::isDeferringSearchRefresh()) {
+                $attribute->variant->material->refreshSearchText();
+            }
         });
 
         static::deleted(function (VariantAttribute $attribute): void {

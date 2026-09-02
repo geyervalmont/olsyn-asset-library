@@ -72,7 +72,9 @@ class Variant extends Model
         });
 
         static::saved(function (Variant $variant): void {
-            $variant->material->refreshSearchText();
+            if (! Material::isDeferringSearchRefresh()) {
+                $variant->material->refreshSearchText();
+            }
         });
 
         static::deleted(function (Variant $variant): void {
