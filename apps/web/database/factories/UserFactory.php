@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -44,6 +45,19 @@ class UserFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
         ]);
+    }
+
+    /**
+     * Attach the user to a tenant and make it their current tenant.
+     */
+    public function withTenant(?Tenant $tenant = null): static
+    {
+        return $this->afterCreating(function (User $user) use ($tenant): void {
+            $currentTenant = $tenant ?? Tenant::factory()->create();
+
+            $user->tenants()->attach($currentTenant);
+            $user->forceFill(['current_tenant_id' => $currentTenant->getKey()])->save();
+        });
     }
 
     /**

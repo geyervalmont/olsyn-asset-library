@@ -2,11 +2,15 @@
 
 namespace App\Providers;
 
+use App\Http\Middleware\UseCurrentTenant;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Livewire\Livewire;
+use Spatie\Multitenancy\Http\Middleware\EnsureValidTenantSession;
+use Spatie\Multitenancy\Http\Middleware\NeedsTenant;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -24,6 +28,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        Livewire::addPersistentMiddleware([
+            UseCurrentTenant::class,
+            NeedsTenant::class,
+            EnsureValidTenantSession::class,
+        ]);
     }
 
     /**

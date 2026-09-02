@@ -51,8 +51,8 @@ if ! "${web_compose[@]}" exec -T laravel.test test -d node_modules; then
     "${web_compose[@]}" exec -T laravel.test npm ci
 fi
 
-say "applying Laravel migrations"
-"${web_compose[@]}" exec -T laravel.test php artisan migrate --force
+say "applying Laravel migrations and development seed data"
+"${web_compose[@]}" exec -T laravel.test php artisan migrate --force --seed
 
 say "applying Gerrymander routes"
 gerry up -f "$repo_root/gerrymander.yaml"

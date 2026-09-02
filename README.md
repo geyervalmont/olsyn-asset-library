@@ -55,6 +55,9 @@ database, Redis, mail dashboard, or object-storage ports on the host:
 - https://s3.asset-library.test — S3 API
 - https://storage.asset-library.test/rustfs/console/ — RustFS console
 
+The idempotent development seed creates the `Olsyn` tenant and a local account
+at `test@example.com` with password `password`.
+
 Useful commands:
 
 ```bash
