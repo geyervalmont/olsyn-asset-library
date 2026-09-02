@@ -162,63 +162,100 @@ new #[Title('Add material')] class extends Component {
     }
 }; ?>
 
-<section class="w-full max-w-3xl">
-    <flux:heading size="xl">{{ __('Add material') }}</flux:heading>
-    <flux:text class="mt-1">{{ __('One record per supplier product. Upload the canonical PBR maps; Revit and Omniverse sets are derived from them.') }}</flux:text>
-
-    <form wire:submit="save" class="mt-8 space-y-8">
-        <div class="grid gap-4 md:grid-cols-2">
-            <flux:input wire:model="name" :label="__('Name')" placeholder="Academix" required data-test="name" />
-            <flux:select wire:model="category_id" :label="__('Category')" :placeholder="__('Choose…')" data-test="category">
-                @foreach ($this->categories as $category)
-                    <flux:select.option value="{{ $category->id }}">{{ $category->name }} ({{ $category->code }})</flux:select.option>
-                @endforeach
-            </flux:select>
-            <flux:select wire:model="supplier_id" :label="__('Supplier')" :placeholder="__('In-house or new supplier')" data-test="supplier">
-                <flux:select.option value="">{{ __('In-house (OPAL)') }}</flux:select.option>
-                @foreach ($this->suppliers as $supplier)
-                    <flux:select.option value="{{ $supplier->id }}">{{ $supplier->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
-            <flux:input wire:model="new_supplier" :label="__('Or a new supplier')" placeholder="Tarkett" data-test="new-supplier" />
-            <flux:select wire:model="source_id" :label="__('Source of the files')" :placeholder="__('Unknown')" data-test="source">
-                <flux:select.option value="">{{ __('Unknown') }}</flux:select.option>
-                @foreach ($this->sources as $source)
-                    <flux:select.option value="{{ $source->id }}">{{ $source->name }} · {{ $source->kind }}</flux:select.option>
-                @endforeach
-            </flux:select>
-            <flux:input wire:model="collection" :label="__('Collection')" />
-            <flux:input wire:model="supplier_product_code" :label="__('Supplier product code')" data-test="product-code" />
-            <flux:input wire:model="tile_width_mm" :label="__('Tile width (mm)')" type="number" step="0.01" />
-            <flux:input wire:model="tile_height_mm" :label="__('Tile height (mm)')" type="number" step="0.01" />
-        </div>
-
-        <flux:textarea wire:model="description" :label="__('Description')" rows="3" />
-
+<section style="max-width: 880px">
+    <div class="ui-page-head">
         <div>
-            <flux:heading size="lg">{{ __('First variant') }}</flux:heading>
-            <flux:text class="mt-1">{{ __('Leave empty for a single default variant. More variants can be added on the record.') }}</flux:text>
-            <div class="mt-4 grid gap-4 md:grid-cols-3">
-                <flux:input wire:model="colourway" :label="__('Colourway')" placeholder="Ashen" data-test="colourway" />
-                <flux:input wire:model="colourway_code" :label="__('Supplier colour code')" placeholder="634014001" data-test="colourway-code" />
-                <flux:input wire:model="finish" :label="__('Finish')" placeholder="Honed" />
-            </div>
+            <x-ui.eyebrow>{{ __('Library') }}</x-ui.eyebrow>
+            <h1>{{ __('Add material') }}</h1>
+            <p class="ui-page-head__lede">{{ __('One record per supplier product. Upload the canonical PBR maps; Revit and Omniverse sets are derived from them.') }}</p>
         </div>
+    </div>
 
-        <div>
-            <flux:heading size="lg">{{ __('Canonical maps') }}</flux:heading>
-            <flux:text class="mt-1">{{ __('PNG or JPG. Normal maps in OpenGL convention, roughness (not glossiness).') }}</flux:text>
-            <div class="mt-4 grid gap-4 md:grid-cols-2">
-                @foreach ($this->roles as $role)
-                    <flux:input type="file" wire:model="maps.{{ $role->slug }}" :label="$role->name" accept="image/*" data-test="map-{{ $role->slug }}" />
-                @endforeach
+    <x-ui.panel>
+        <form wire:submit="save" class="ui-form">
+            <div class="ui-form ui-form--2">
+                <x-ui.field :label="__('Name')" for="name" required :error="$errors->first('name')">
+                    <input id="name" class="ui-input" wire:model="name" placeholder="Academix" data-test="name" />
+                </x-ui.field>
+                <x-ui.field :label="__('Category')" for="category_id" required :error="$errors->first('category_id')">
+                    <select id="category_id" class="ui-select" wire:model="category_id" data-test="category">
+                        <option value="">{{ __('Choose…') }}</option>
+                        @foreach ($this->categories as $category)
+                            <option value="{{ $category->id }}">{{ $category->name }} ({{ $category->code }})</option>
+                        @endforeach
+                    </select>
+                </x-ui.field>
+                <x-ui.field :label="__('Supplier')" for="supplier_id" :error="$errors->first('supplier_id')">
+                    <select id="supplier_id" class="ui-select" wire:model="supplier_id" data-test="supplier">
+                        <option value="">{{ __('In-house (OPAL)') }}</option>
+                        @foreach ($this->suppliers as $supplier)
+                            <option value="{{ $supplier->id }}">{{ $supplier->name }}</option>
+                        @endforeach
+                    </select>
+                </x-ui.field>
+                <x-ui.field :label="__('Or a new supplier')" for="new_supplier" :error="$errors->first('new_supplier')">
+                    <input id="new_supplier" class="ui-input" wire:model="new_supplier" placeholder="Tarkett" data-test="new-supplier" />
+                </x-ui.field>
+                <x-ui.field :label="__('Source of the files')" for="source_id">
+                    <select id="source_id" class="ui-select" wire:model="source_id" data-test="source">
+                        <option value="">{{ __('Unknown') }}</option>
+                        @foreach ($this->sources as $source)
+                            <option value="{{ $source->id }}">{{ $source->name }} · {{ $source->kind }}</option>
+                        @endforeach
+                    </select>
+                </x-ui.field>
+                <x-ui.field :label="__('Collection')" for="collection">
+                    <input id="collection" class="ui-input" wire:model="collection" />
+                </x-ui.field>
+                <x-ui.field :label="__('Supplier product code')" for="supplier_product_code">
+                    <input id="supplier_product_code" class="ui-input" wire:model="supplier_product_code" data-test="product-code" />
+                </x-ui.field>
+                <div class="ui-form ui-form--2">
+                    <x-ui.field :label="__('Tile width (mm)')" for="tile_width_mm" :error="$errors->first('tile_width_mm')">
+                        <input id="tile_width_mm" class="ui-input" type="number" step="0.01" wire:model="tile_width_mm" />
+                    </x-ui.field>
+                    <x-ui.field :label="__('Tile height (mm)')" for="tile_height_mm" :error="$errors->first('tile_height_mm')">
+                        <input id="tile_height_mm" class="ui-input" type="number" step="0.01" wire:model="tile_height_mm" />
+                    </x-ui.field>
+                </div>
             </div>
-            <flux:error name="maps.*" />
-        </div>
 
-        <div class="flex items-center gap-3">
-            <flux:button type="submit" variant="primary" data-test="save">{{ __('Create material') }}</flux:button>
-            <flux:button :href="route('materials.index')" variant="ghost" wire:navigate>{{ __('Cancel') }}</flux:button>
-        </div>
-    </form>
+            <x-ui.field :label="__('Description')" for="description">
+                <textarea id="description" class="ui-textarea" wire:model="description" rows="3"></textarea>
+            </x-ui.field>
+
+            <div class="ui-form__section">
+                <h3>{{ __('First variant') }}</h3>
+                <p>{{ __('Leave empty for a single default variant. More variants can be added on the record.') }}</p>
+                <div class="ui-form ui-form--2">
+                    <x-ui.field :label="__('Colourway')" for="colourway">
+                        <input id="colourway" class="ui-input" wire:model="colourway" placeholder="Ashen" data-test="colourway" />
+                    </x-ui.field>
+                    <x-ui.field :label="__('Supplier colour code')" for="colourway_code">
+                        <input id="colourway_code" class="ui-input" wire:model="colourway_code" placeholder="634014001" data-test="colourway-code" />
+                    </x-ui.field>
+                    <x-ui.field :label="__('Finish')" for="finish">
+                        <input id="finish" class="ui-input" wire:model="finish" placeholder="Honed" />
+                    </x-ui.field>
+                </div>
+            </div>
+
+            <div class="ui-form__section">
+                <h3>{{ __('Canonical maps') }}</h3>
+                <p>{{ __('PNG or JPG. Normal maps in OpenGL convention, roughness (not glossiness).') }}</p>
+                <div class="ui-form ui-form--2">
+                    @foreach ($this->roles as $role)
+                        <x-ui.field :label="$role->name" for="map-{{ $role->slug }}" :error="$errors->first('maps.'.$role->slug)">
+                            <input id="map-{{ $role->slug }}" class="ui-input" type="file" wire:model="maps.{{ $role->slug }}" accept="image/*" data-test="map-{{ $role->slug }}" />
+                        </x-ui.field>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="ui-actions">
+                <x-ui.button type="submit" data-test="save">{{ __('Create material') }}</x-ui.button>
+                <x-ui.button :href="route('materials.index')" variant="ghost" wire:navigate>{{ __('Cancel') }}</x-ui.button>
+            </div>
+        </form>
+    </x-ui.panel>
 </section>

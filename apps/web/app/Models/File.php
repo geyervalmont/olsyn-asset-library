@@ -63,6 +63,14 @@ class File extends Model
         ];
     }
 
+    /**
+     * The in-app URL that streams this file to a signed-in user.
+     */
+    public function url(): string
+    {
+        return route('files.show', ['file' => $this, 'name' => $this->original_name ?? $this->sha256.'.'.($this->extension ?? 'bin')]);
+    }
+
     public function isImage(): bool
     {
         return $this->kind === 'image';

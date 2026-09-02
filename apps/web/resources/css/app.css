@@ -12,28 +12,35 @@
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
 
-    --color-zinc-50: #fafafa;
-    --color-zinc-100: #f5f5f5;
-    --color-zinc-200: #e5e5e5;
-    --color-zinc-300: #d4d4d4;
-    --color-zinc-400: #a3a3a3;
-    --color-zinc-500: #737373;
-    --color-zinc-600: #525252;
-    --color-zinc-700: #404040;
-    --color-zinc-800: #262626;
-    --color-zinc-900: #171717;
-    --color-zinc-950: #0a0a0a;
+    /* Paper & Periwinkle mapped onto the neutral scale Flux components use. */
+    --color-zinc-50: #fbfaf7;
+    --color-zinc-100: #f5f3ef;
+    --color-zinc-200: #e6e2d9;
+    --color-zinc-300: #cfcbc1;
+    --color-zinc-400: #a8a9b0;
+    --color-zinc-500: #777986;
+    --color-zinc-600: #5c5f6e;
+    --color-zinc-700: #4a4d5c;
+    --color-zinc-800: #383a45;
+    --color-zinc-900: #2c354d;
+    --color-zinc-950: #1f2536;
 
-    --color-accent: var(--color-neutral-800);
-    --color-accent-content: var(--color-neutral-800);
-    --color-accent-foreground: var(--color-white);
+    --color-accent: #4a6e99;
+    --color-accent-content: #4a6e99;
+    --color-accent-foreground: #f5f3ef;
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-2xl: 16px;
 }
 
 @layer theme {
     .dark {
-        --color-accent: var(--color-white);
-        --color-accent-content: var(--color-white);
-        --color-accent-foreground: var(--color-neutral-800);
+        --color-accent: #8fa7c9;
+        --color-accent-content: #8fa7c9;
+        --color-accent-foreground: #1f2536;
     }
 }
 

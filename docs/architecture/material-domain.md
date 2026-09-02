@@ -199,8 +199,17 @@ available.
 
 ## Pages
 
-- `/materials` — the library: full-text and fuzzy search, category and
-  supplier filters, visibility-aware.
+The application wears the workbench language from `/ui`: dark indigo
+sidebar (brand, workspace switcher, numbered navigation, user menu), a
+paper-glass topbar, and content on paper. Flux components used by settings
+and auth pages take the same palette through the Tailwind tokens in
+`app.css`; the product is light-only by design.
+
+- `/` — signed-in users land on the library; guests see the cover page.
+- `/materials` — the library: full-text and fuzzy search, category, supplier
+  and status filters, visibility-aware, as a swatch grid (a real preview
+  where a usable representation has a thumbnail, base colour or reference
+  image; otherwise the variants' dominant colours) with a table toggle.
 - `/materials/create` — upload: material fields, first variant (colourway,
   supplier colour code, finish), canonical PBR maps by role. Creates the
   material, its variant, a `pbr` candidate at the uploaded pixel size, and an

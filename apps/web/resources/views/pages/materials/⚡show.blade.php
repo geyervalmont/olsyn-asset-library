@@ -10,14 +10,15 @@ use App\Actions\Visibility\RevokeMaterialAccess;
 use App\Actions\Visibility\SetMaterialVisibility;
 use App\Enums\ReviewState;
 use App\Enums\Visibility;
+use App\Library\Previews\MaterialPreviews;
 use App\Models\Drive;
 use App\Models\Material;
-use App\Models\MaterialVersion;
 use App\Models\ProvenanceEvent;
+use App\Models\QualityTier;
 use App\Models\Representation;
 use App\Models\Target;
+use App\Models\Tenant;
 use App\Models\User;
-use App\Models\Variant;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -49,13 +50,25 @@ new class extends Component {
     #[Computed]
     public function variants(): Collection
     {
-        return $this->material->variants()->with(['attributes.type', 'representations.target', 'representations.quality', 'representations.representationFiles'])->get();
+        return $this->material->variants()->with(['attributes.type', 'representations.target', 'representations.quality', 'representations.representationFiles.role', 'representations.representationFiles.file'])->get();
+    }
+
+    #[Computed]
+    public function preview(): ?\App\Models\File
+    {
+        return app(MaterialPreviews::class)->filesFor($this->material->newCollection([$this->material]))[$this->material->id] ?? null;
     }
 
     #[Computed]
     public function versions(): Collection
     {
         return $this->material->versions()->withCount('representations')->orderByDesc('number')->get();
+    }
+
+    #[Computed]
+    public function grants(): Collection
+    {
+        return $this->material->grants()->with('grantee')->get();
     }
 
     #[Computed]
@@ -108,7 +121,7 @@ new class extends Component {
         $representation = Representation::query()->whereIn('variant_id', $this->material->variants()->select('id'))->findOrFail($representationId);
         $review->handle($representation, ReviewState::from($decision), auth()->user());
 
-        unset($this->variants, $this->timeline);
+        unset($this->variants, $this->timeline, $this->preview);
         Flux::toast(variant: 'success', text: __('Representation :decision.', ['decision' => $decision]));
     }
 
@@ -117,7 +130,7 @@ new class extends Component {
         abort_unless(auth()->user()?->can('materials.contribute'), 403);
 
         $variant = $this->material->variants()->findOrFail($variantId);
-        $canonical = $derive->canonicalFor($variant, \App\Models\QualityTier::fromSlug('8k'));
+        $canonical = $derive->canonicalFor($variant, QualityTier::fromSlug('8k'));
         $derive->handle($variant, $target, $canonical->quality, auth()->user());
 
         unset($this->variants, $this->timeline);
@@ -161,7 +174,7 @@ new class extends Component {
         $this->validate(['grantEmail' => ['required', 'email', 'exists:users,email']]);
         $grant->handle($this->material, User::query()->where('email', $this->grantEmail)->sole(), auth()->user());
         $this->reset('grantEmail');
-        $this->material->unsetRelation('grants');
+        unset($this->grants);
     }
 
     public function grantDrive(GrantMaterialAccess $grant): void
@@ -171,187 +184,238 @@ new class extends Component {
         $this->validate(['grantDrive' => ['required', 'exists:drives,id']]);
         $grant->handle($this->material, Drive::query()->findOrFail($this->grantDrive), auth()->user());
         $this->reset('grantDrive');
-        $this->material->unsetRelation('grants');
+        unset($this->grants);
     }
 
     public function revoke(int $grantId, RevokeMaterialAccess $revoke): void
     {
         abort_unless(auth()->user()?->can('materials.publish'), 403);
 
-        $grant = $this->material->grants()->findOrFail($grantId);
-        $grantee = $grant->grantee;
+        $grantee = $this->material->grants()->findOrFail($grantId)->grantee;
 
-        if ($grantee instanceof User || $grantee instanceof Drive || $grantee instanceof \App\Models\Tenant) {
+        if ($grantee instanceof User || $grantee instanceof Drive || $grantee instanceof Tenant) {
             $revoke->handle($this->material, $grantee);
         }
 
-        $this->material->unsetRelation('grants');
+        unset($this->grants);
     }
 }; ?>
 
-<section class="w-full space-y-10">
-    <div class="flex flex-wrap items-start justify-between gap-4">
+<section>
+    <div class="ui-record-head">
         <div>
-            <code class="text-xs text-zinc-500" data-test="material-code">{{ $material->code }}</code>
-            <flux:heading size="xl">{{ $material->name }}</flux:heading>
-            <flux:text class="mt-1">
-                {{ $material->category->name }}
-                · {{ $material->supplier?->name ?? __('In-house') }}
-                @if ($material->supplier_product_code) · {{ $material->supplier_product_code }} @endif
-            </flux:text>
+            <x-ui.eyebrow>{{ $material->category->name }}</x-ui.eyebrow>
+            <h1>{{ $material->name }}</h1>
+            <div class="ui-record-head__facts">
+                <code data-test="material-code">{{ $material->code }}</code>
+                <span>{{ $material->supplier?->name ?? __('In-house') }}</span>
+                @if ($material->supplier_product_code)<span>{{ __('Product :code', ['code' => $material->supplier_product_code]) }}</span>@endif
+                @if ($material->collection)<span>{{ $material->collection }}</span>@endif
+                @if ($material->tile_width_mm)<span>{{ (float) $material->tile_width_mm }} × {{ (float) $material->tile_height_mm }} mm</span>@endif
+            </div>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-            <flux:badge :color="match ($material->status->value) { 'active' => 'lime', 'archived' => 'zinc', default => 'amber' }">{{ $material->status->label() }}</flux:badge>
-            <flux:badge color="zinc" data-test="current-version">{{ $material->currentVersion ? 'v'.$material->currentVersion->number : __('Unpublished') }}</flux:badge>
+        <div class="ui-page-head__actions">
+            <x-ui.badge :tone="match ($material->status->value) { 'active' => 'success', 'archived' => 'neutral', default => 'warning' }" dot>{{ $material->status->label() }}</x-ui.badge>
+            <x-ui.badge tone="info" data-test="current-version">{{ $material->currentVersion ? 'v'.$material->currentVersion->number : __('Unpublished') }}</x-ui.badge>
             @can('materials.publish')
-                <flux:button wire:click="publish" variant="primary" size="sm" data-test="publish">{{ __('Publish new version') }}</flux:button>
+                <x-ui.button wire:click="publish" size="sm" data-test="publish">{{ __('Publish new version') }}</x-ui.button>
             @endcan
         </div>
     </div>
 
-    @foreach ($this->variants as $variant)
-        <div class="rounded-xl border border-neutral-200 p-5 dark:border-neutral-700" data-test="variant" wire:key="variant-{{ $variant->id }}">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <code class="text-xs text-zinc-500">{{ $variant->code }}</code>
-                    <flux:heading size="lg">{{ $variant->name }}</flux:heading>
-                    <flux:text class="mt-1">
-                        @forelse ($variant->attributes as $attribute)
-                            <span>{{ $attribute->type->name }}: {{ $attribute->value }}@if ($attribute->supplier_code) ({{ $attribute->supplier_code }})@endif</span>@if (! $loop->last) · @endif
-                        @empty
-                            {{ __('No attributes') }}
-                        @endforelse
-                    </flux:text>
-                </div>
-                @can('materials.contribute')
-                    <div class="flex flex-wrap gap-2">
-                        @foreach ($this->derivableTargets as $target)
-                            <flux:button wire:click="derive({{ $variant->id }}, '{{ $target->slug }}')" size="sm" data-test="derive-{{ $target->slug }}">{{ __('Derive :target', ['target' => $target->name]) }}</flux:button>
+    <div class="ui-bento" style="margin-bottom: 12px">
+        <x-ui.panel class="ui-bento__wide" :padding="false">
+            <div class="ui-swatch-card__preview" style="aspect-ratio: 21 / 9; border-bottom: 0; border-radius: inherit">
+                @if ($this->preview)
+                    <img src="{{ $this->preview->url() }}" alt="{{ $material->name }}" />
+                @else
+                    <div class="ui-chips" aria-hidden="true">
+                        @foreach ($this->variants->take(12) as $chip)
+                            <span style="--chip: {{ $chip->dominant_hex ?? \App\Library\Previews\MaterialPreviews::fallbackHex($chip->code) }}" title="{{ $chip->name }}"></span>
                         @endforeach
                     </div>
-                @endcan
+                @endif
             </div>
-
-            @if ($variant->representations->isEmpty())
-                <flux:text class="mt-4">{{ __('No representations yet.') }}</flux:text>
-            @else
-                <flux:table class="mt-4">
-                    <flux:table.columns>
-                        <flux:table.column>{{ __('Target') }}</flux:table.column>
-                        <flux:table.column>{{ __('Quality') }}</flux:table.column>
-                        <flux:table.column>{{ __('Kind') }}</flux:table.column>
-                        <flux:table.column>{{ __('Files') }}</flux:table.column>
-                        <flux:table.column>{{ __('State') }}</flux:table.column>
-                        <flux:table.column></flux:table.column>
-                    </flux:table.columns>
-                    <flux:table.rows>
-                        @foreach ($variant->representations->sortBy([['target.sort_order', 'asc'], ['id', 'desc']]) as $representation)
-                            <flux:table.row :key="$representation->id" data-test="representation">
-                                <flux:table.cell variant="strong">{{ $representation->target->name }}</flux:table.cell>
-                                <flux:table.cell>{{ $representation->quality->name }}</flux:table.cell>
-                                <flux:table.cell>{{ $representation->kind }}</flux:table.cell>
-                                <flux:table.cell>{{ $representation->representationFiles->count() }}</flux:table.cell>
-                                <flux:table.cell>
-                                    <flux:badge size="sm" :color="match ($representation->review_state->value) { 'approved' => 'lime', 'rejected' => 'red', 'superseded' => 'zinc', default => 'amber' }" data-test="review-state">{{ $representation->review_state->label() }}</flux:badge>
-                                </flux:table.cell>
-                                <flux:table.cell>
-                                    @can('materials.review')
-                                        @if ($representation->review_state->value === 'candidate')
-                                            <flux:button wire:click="review({{ $representation->id }}, 'approved')" size="xs" variant="primary" data-test="approve">{{ __('Approve') }}</flux:button>
-                                            <flux:button wire:click="review({{ $representation->id }}, 'rejected')" size="xs" variant="danger" data-test="reject">{{ __('Reject') }}</flux:button>
-                                        @endif
-                                    @endcan
-                                </flux:table.cell>
-                            </flux:table.row>
-                        @endforeach
-                    </flux:table.rows>
-                </flux:table>
-            @endif
+        </x-ui.panel>
+        <div class="ui-stat-stack">
+            <x-ui.stat :label="__('Variants')" :value="$this->variants->count()" />
+            <x-ui.stat :label="__('Representations')" :value="$this->variants->sum(fn ($v) => $v->representations->count())" :detail="__('across all variants')" />
+            <x-ui.stat :label="__('Provenance events')" :value="$this->timeline->count()" />
         </div>
-    @endforeach
+    </div>
 
-    @can('materials.contribute')
-        <form wire:submit="addVariant" class="flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-neutral-300 p-5 dark:border-neutral-700">
-            <flux:input wire:model="newColourway" :label="__('New colourway')" placeholder="Slate" data-test="new-colourway" />
-            <flux:input wire:model="newColourwayCode" :label="__('Supplier colour code')" />
-            <flux:button type="submit" size="sm" data-test="add-variant">{{ __('Add variant') }}</flux:button>
-        </form>
-    @endcan
+    @if ($material->description)
+        <x-ui.panel style="margin-bottom: 12px"><p style="margin: 0; color: var(--ui-muted); font-size: 13px; line-height: 1.7">{{ $material->description }}</p></x-ui.panel>
+    @endif
 
-    <div class="grid gap-6 lg:grid-cols-2">
-        <div class="rounded-xl border border-neutral-200 p-5 dark:border-neutral-700">
-            <flux:heading size="lg">{{ __('Versions') }}</flux:heading>
-            @if ($this->versions->isEmpty())
-                <flux:text class="mt-3">{{ __('Nothing published yet. Approve at least one representation, then publish.') }}</flux:text>
-            @else
-                <ul class="mt-3 divide-y divide-neutral-200 dark:divide-neutral-700">
-                    @foreach ($this->versions as $version)
-                        <li class="flex items-center justify-between gap-3 py-2" wire:key="version-{{ $version->id }}" data-test="version">
-                            <div>
-                                <span class="font-medium">v{{ $version->number }}</span>
-                                <span class="text-xs text-zinc-500">· {{ $version->status->value }} · {{ trans_choice(':count representation|:count representations', $version->representations_count) }}</span>
+    <div class="ui-stack">
+        @foreach ($this->variants as $variant)
+            <div class="ui-variant" wire:key="variant-{{ $variant->id }}" data-test="variant">
+                <div class="ui-variant__chip" style="--chip: {{ $variant->dominant_hex ?? \App\Library\Previews\MaterialPreviews::fallbackHex($variant->code) }}" aria-hidden="true"></div>
+                <div>
+                    <div class="ui-variant__head">
+                        <div>
+                            <strong>{{ $variant->name }}</strong>
+                            <span class="ui-code" style="margin-left: 8px">{{ $variant->code }}</span>
+                            <p class="ui-variant__attrs">
+                                @forelse ($variant->attributes as $attribute)
+                                    <span>{{ $attribute->type->name }}: {{ $attribute->value }}@if ($attribute->supplier_code) ({{ $attribute->supplier_code }})@endif</span>
+                                @empty
+                                    <span>{{ __('No attributes') }}</span>
+                                @endforelse
+                            </p>
+                        </div>
+                        @can('materials.contribute')
+                            <div class="ui-actions">
+                                @foreach ($this->derivableTargets as $target)
+                                    <x-ui.button wire:click="derive({{ $variant->id }}, '{{ $target->slug }}')" variant="secondary" size="sm" data-test="derive-{{ $target->slug }}">{{ __('Derive :target', ['target' => $target->name]) }}</x-ui.button>
+                                @endforeach
                             </div>
+                        @endcan
+                    </div>
+
+                    @if ($variant->representations->isEmpty())
+                        <p class="ui-variant__attrs" style="margin-top: 10px">{{ __('No representations yet.') }}</p>
+                    @else
+                        <table class="ui-table">
+                            <thead>
+                                <tr>
+                                    <th>{{ __('Target') }}</th>
+                                    <th>{{ __('Quality') }}</th>
+                                    <th>{{ __('Kind') }}</th>
+                                    <th>{{ __('Files') }}</th>
+                                    <th>{{ __('State') }}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($variant->representations->sortBy([['target.sort_order', 'asc'], ['id', 'desc']]) as $representation)
+                                    <tr wire:key="rep-{{ $representation->id }}" data-test="representation">
+                                        <td><strong style="color: var(--ui-ink)">{{ $representation->target->name }}</strong></td>
+                                        <td>{{ $representation->quality->name }}</td>
+                                        <td><span class="ui-code">{{ $representation->kind }}</span></td>
+                                        <td>
+                                            @foreach ($representation->representationFiles as $representationFile)
+                                                <a class="ui-code" href="{{ $representationFile->file->url() }}" target="_blank" rel="noopener">{{ $representationFile->role->slug }}</a>@if (! $loop->last), @endif
+                                            @endforeach
+                                        </td>
+                                        <td>
+                                            <x-ui.badge :tone="match ($representation->review_state->value) { 'approved' => 'success', 'rejected' => 'danger', 'superseded' => 'neutral', default => 'warning' }" dot data-test="review-state">{{ $representation->review_state->label() }}</x-ui.badge>
+                                        </td>
+                                        <td>
+                                            @can('materials.review')
+                                                @if ($representation->review_state->value === 'candidate')
+                                                    <span class="ui-actions">
+                                                        <x-ui.button wire:click="review({{ $representation->id }}, 'approved')" size="sm" data-test="approve">{{ __('Approve') }}</x-ui.button>
+                                                        <x-ui.button wire:click="review({{ $representation->id }}, 'rejected')" variant="danger" size="sm" data-test="reject">{{ __('Reject') }}</x-ui.button>
+                                                    </span>
+                                                @endif
+                                            @endcan
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    @endif
+                </div>
+            </div>
+        @endforeach
+
+        @can('materials.contribute')
+            <x-ui.panel tone="paper">
+                <form wire:submit="addVariant" class="ui-inline-form">
+                    <x-ui.field :label="__('New colourway')" for="newColourway" :error="$errors->first('newColourway')">
+                        <input id="newColourway" class="ui-input" wire:model="newColourway" placeholder="Slate" data-test="new-colourway" />
+                    </x-ui.field>
+                    <x-ui.field :label="__('Supplier colour code')" for="newColourwayCode">
+                        <input id="newColourwayCode" class="ui-input" wire:model="newColourwayCode" />
+                    </x-ui.field>
+                    <x-ui.button type="submit" variant="secondary" data-test="add-variant">{{ __('Add variant') }}</x-ui.button>
+                </form>
+            </x-ui.panel>
+        @endcan
+    </div>
+
+    <div class="ui-grid-2" style="margin-top: 12px">
+        <x-ui.panel>
+            <div class="ui-panel__heading"><div><h3>{{ __('Versions') }}</h3><p>{{ __('Immutable snapshots of approved representations.') }}</p></div></div>
+            @if ($this->versions->isEmpty())
+                <p class="ui-variant__attrs">{{ __('Nothing published yet. Approve at least one representation, then publish.') }}</p>
+            @else
+                <ul class="ui-list">
+                    @foreach ($this->versions as $version)
+                        <li wire:key="version-{{ $version->id }}" data-test="version">
+                            <span><strong>v{{ $version->number }}</strong> <small>· {{ $version->status->value }} · {{ trans_choice(':count representation|:count representations', $version->representations_count) }}</small></span>
                             @if ($version->isCurrent())
-                                <flux:badge size="sm" color="lime">{{ __('Current') }}</flux:badge>
+                                <x-ui.badge tone="success" dot>{{ __('Current') }}</x-ui.badge>
                             @elsecan('materials.publish')
-                                <flux:button wire:click="makeCurrent({{ $version->id }})" size="xs" data-test="make-current">{{ __('Make current') }}</flux:button>
+                                <x-ui.button wire:click="makeCurrent({{ $version->id }})" variant="quiet" size="sm" data-test="make-current">{{ __('Make current') }}</x-ui.button>
                             @endif
                         </li>
                     @endforeach
                 </ul>
             @endif
-        </div>
+        </x-ui.panel>
 
-        <div class="rounded-xl border border-neutral-200 p-5 dark:border-neutral-700" data-test="visibility">
-            <flux:heading size="lg">{{ __('Visibility') }}</flux:heading>
-            <flux:text class="mt-1">{{ $material->visibility->label() }}</flux:text>
+        <x-ui.panel data-test="visibility">
+            <div class="ui-panel__heading"><div><h3>{{ __('Visibility') }}</h3><p>{{ $material->visibility->label() }}</p></div></div>
             @can('materials.publish')
-                <div class="mt-3 flex gap-2">
-                    <flux:button wire:click="setVisibility('library')" size="xs" :variant="$material->visibility->value === 'library' ? 'primary' : 'filled'" data-test="visibility-library">{{ __('Whole library') }}</flux:button>
-                    <flux:button wire:click="setVisibility('restricted')" size="xs" :variant="$material->visibility->value === 'restricted' ? 'primary' : 'filled'" data-test="visibility-restricted">{{ __('Restricted') }}</flux:button>
+                <div class="ui-actions">
+                    <x-ui.button wire:click="setVisibility('library')" :variant="$material->visibility->value === 'library' ? 'primary' : 'quiet'" size="sm" data-test="visibility-library">{{ __('Whole library') }}</x-ui.button>
+                    <x-ui.button wire:click="setVisibility('restricted')" :variant="$material->visibility->value === 'restricted' ? 'primary' : 'quiet'" size="sm" data-test="visibility-restricted">{{ __('Restricted') }}</x-ui.button>
                 </div>
-                <ul class="mt-4 space-y-1 text-sm">
-                    @forelse ($material->grants()->with('grantee')->get() as $grant)
-                        <li class="flex items-center justify-between gap-3" wire:key="grant-{{ $grant->id }}" data-test="grant">
-                            <span>{{ class_basename($grant->grantee_type === 'drive' ? 'Drive' : ($grant->grantee_type === 'tenant' ? 'Tenant' : 'User')) }}: {{ $grant->grantee?->name ?? $grant->grantee_id }}</span>
-                            <flux:button wire:click="revoke({{ $grant->id }})" size="xs" variant="ghost">{{ __('Revoke') }}</flux:button>
+                <ul class="ui-list" style="margin-top: 12px">
+                    @forelse ($this->grants as $grant)
+                        <li wire:key="grant-{{ $grant->id }}" data-test="grant">
+                            <span><small>{{ strtoupper($grant->grantee_type) }}</small> <strong>{{ $grant->grantee?->name ?? $grant->grantee_id }}</strong></span>
+                            <x-ui.button wire:click="revoke({{ $grant->id }})" variant="ghost" size="sm">{{ __('Revoke') }}</x-ui.button>
                         </li>
                     @empty
-                        <li class="text-zinc-500">{{ __('No grants.') }}</li>
+                        <li><small>{{ __('No grants.') }}</small></li>
                     @endforelse
                 </ul>
-                <form wire:submit="grantUser" class="mt-3 flex items-end gap-2">
-                    <flux:input wire:model="grantEmail" :label="__('Grant a user')" type="email" placeholder="colleague@example.com" data-test="grant-email" />
-                    <flux:button type="submit" size="sm" data-test="grant-user">{{ __('Grant') }}</flux:button>
+                <form wire:submit="grantUser" class="ui-inline-form" style="margin-top: 12px">
+                    <x-ui.field :label="__('Grant a user')" for="grantEmail" :error="$errors->first('grantEmail')">
+                        <input id="grantEmail" class="ui-input" type="email" wire:model="grantEmail" placeholder="colleague@example.com" data-test="grant-email" />
+                    </x-ui.field>
+                    <x-ui.button type="submit" variant="secondary" size="sm" data-test="grant-user">{{ __('Grant') }}</x-ui.button>
                 </form>
-                <form wire:submit="grantDrive" class="mt-3 flex items-end gap-2">
-                    <flux:select wire:model="grantDrive" :label="__('Grant a drive')" :placeholder="__('Choose a drive')" data-test="grant-drive-select">
-                        @foreach ($this->drives as $drive)
-                            <flux:select.option value="{{ $drive->id }}">{{ $drive->name }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                    <flux:button type="submit" size="sm" data-test="grant-drive">{{ __('Grant') }}</flux:button>
+                <form wire:submit="grantDrive" class="ui-inline-form" style="margin-top: 12px">
+                    <x-ui.field :label="__('Grant a drive')" for="grantDrive" :error="$errors->first('grantDrive')">
+                        <select id="grantDrive" class="ui-select" wire:model="grantDrive" data-test="grant-drive-select">
+                            <option value="">{{ __('Choose a drive') }}</option>
+                            @foreach ($this->drives as $drive)
+                                <option value="{{ $drive->id }}">{{ $drive->name }}</option>
+                            @endforeach
+                        </select>
+                    </x-ui.field>
+                    <x-ui.button type="submit" variant="secondary" size="sm" data-test="grant-drive">{{ __('Grant') }}</x-ui.button>
                 </form>
             @endcan
-        </div>
+        </x-ui.panel>
     </div>
 
-    <div class="rounded-xl border border-neutral-200 p-5 dark:border-neutral-700">
-        <flux:heading size="lg">{{ __('Provenance') }}</flux:heading>
+    <x-ui.panel style="margin-top: 12px">
+        <div class="ui-panel__heading"><div><h3>{{ __('Provenance') }}</h3><p>{{ __('Who did what, with which tool, from which source.') }}</p></div></div>
         @if ($this->timeline->isEmpty())
-            <flux:text class="mt-3">{{ __('No events recorded.') }}</flux:text>
+            <p class="ui-variant__attrs">{{ __('No events recorded.') }}</p>
         @else
-            <ol class="mt-3 space-y-2 text-sm">
+            <div class="ui-activity">
                 @foreach ($this->timeline as $event)
-                    <li class="flex flex-wrap items-baseline gap-2" wire:key="event-{{ $event->id }}" data-test="provenance-event">
-                        <span class="text-xs text-zinc-500">{{ $event->occurred_at->format('Y-m-d H:i') }}</span>
-                        <span>{{ $event->describe() }}</span>
-                        @if ($event->source) <flux:badge size="sm" color="zinc">{{ $event->source->name }}</flux:badge> @endif
-                        @if ($event->outputs->isNotEmpty()) <span class="text-xs text-zinc-500">→ {{ $event->outputs->pluck('original_name')->filter()->implode(', ') }}</span> @endif
-                        @if ($event->notes) <span class="text-xs italic text-zinc-500">{{ $event->notes }}</span> @endif
-                    </li>
+                    <div class="ui-activity__row" wire:key="event-{{ $event->id }}" data-test="provenance-event">
+                        <span class="ui-activity__mark">{{ strtoupper(substr($event->action, 0, 2)) }}</span>
+                        <div>
+                            <strong>{{ $event->describe() }}</strong>
+                            <small>
+                                @if ($event->source){{ $event->source->name }} · @endif
+                                @if ($event->outputs->isNotEmpty()){{ $event->outputs->pluck('original_name')->filter()->implode(', ') }} · @endif
+                                @if ($event->notes){{ $event->notes }}@endif
+                            </small>
+                        </div>
+                        <time datetime="{{ $event->occurred_at->toIso8601String() }}">{{ $event->occurred_at->format('Y-m-d H:i') }}</time>
+                    </div>
                 @endforeach
-            </ol>
+            </div>
         @endif
-    </div>
+    </x-ui.panel>
 </section>

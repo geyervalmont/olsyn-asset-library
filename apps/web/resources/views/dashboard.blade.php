@@ -6,118 +6,76 @@
     $allTenants = $user->isSuperAdmin() ? \App\Models\Tenant::query()->withCount('users')->orderBy('name')->get() : collect();
 @endphp
 
-<x-layouts::app :title="__('Dashboard')">
-    <div class="flex h-full w-full flex-1 flex-col gap-6">
-        @if (session('status'))
-            <flux:callout variant="secondary" icon="information-circle" :heading="session('status')" data-test="dashboard-status" />
-        @endif
-
-        <div class="flex flex-wrap items-start justify-between gap-4">
-            <div>
-                <flux:heading size="xl">{{ __('Welcome, :name', ['name' => $user->name]) }}</flux:heading>
-                <flux:text class="mt-1">
-                    @if ($currentTenant)
-                        {{ __('You are working in :tenant.', ['tenant' => $currentTenant->name]) }}
-                    @else
-                        {{ __('You are not in a workspace yet.') }}
-                    @endif
-                </flux:text>
-            </div>
-
-            @if ($user->isSuperAdmin())
-                <flux:badge color="amber" icon="shield-check" data-test="super-admin-badge">{{ __('Super-admin') }}</flux:badge>
-            @endif
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-2">
-            <div class="rounded-xl border border-neutral-200 p-5 dark:border-neutral-700">
-                <flux:heading size="lg">{{ __('Current workspace') }}</flux:heading>
-
+<x-layouts::app :title="__('Workspaces')">
+    <div class="ui-page-head">
+        <div>
+            <x-ui.eyebrow>{{ __('Account') }}</x-ui.eyebrow>
+            <h1>{{ __('Workspaces') }}</h1>
+            <p class="ui-page-head__lede">
                 @if ($currentTenant)
-                    @php $role = $user->roleIn($currentTenant); @endphp
-                    <dl class="mt-4 grid gap-3 text-sm">
-                        <div class="flex justify-between gap-4">
-                            <dt class="text-zinc-500">{{ __('Name') }}</dt>
-                            <dd class="font-medium" data-test="current-workspace">{{ $currentTenant->name }}</dd>
-                        </div>
-                        <div class="flex justify-between gap-4">
-                            <dt class="text-zinc-500">{{ __('Your role') }}</dt>
-                            <dd class="font-medium">{{ $role?->label() ?? ($user->isSuperAdmin() ? __('Super-admin') : __('None')) }}</dd>
-                        </div>
-                        <div class="flex justify-between gap-4">
-                            <dt class="text-zinc-500">{{ __('Members') }}</dt>
-                            <dd class="font-medium">{{ $currentTenant->users()->count() }}</dd>
-                        </div>
-                    </dl>
+                    {{ __('You are working in :tenant. The library itself is shared; a workspace decides what you may do in it.', ['tenant' => $currentTenant->name]) }}
                 @else
-                    <flux:text class="mt-3" data-test="no-workspace">
-                        {{ __('Ask a workspace admin to add you, or wait for a super-admin to create one for you. You can still manage your account settings.') }}
-                    </flux:text>
+                    {{ __('You are not in a workspace yet.') }}
                 @endif
-            </div>
-
-            <div class="rounded-xl border border-neutral-200 p-5 dark:border-neutral-700">
-                <flux:heading size="lg">{{ __('Your workspaces') }}</flux:heading>
-
-                @if ($memberships->isEmpty())
-                    <flux:text class="mt-3">{{ __('No memberships.') }}</flux:text>
-                @else
-                    <ul class="mt-4 divide-y divide-neutral-200 dark:divide-neutral-700">
-                        @foreach ($memberships as $tenant)
-                            <li class="flex items-center justify-between gap-4 py-3">
-                                <div>
-                                    <div class="text-sm font-medium">{{ $tenant->name }}</div>
-                                    <div class="text-xs text-zinc-500">
-                                        {{ $user->roleIn($tenant)?->label() ?? __('Member') }}
-                                        · {{ trans_choice(':count member|:count members', $tenant->users_count) }}
-                                    </div>
-                                </div>
-                                @if ($tenant->is($currentTenant))
-                                    <flux:badge size="sm" color="lime">{{ __('Current') }}</flux:badge>
-                                @else
-                                    <form method="POST" action="{{ route('tenants.switch', $tenant) }}">
-                                        @csrf
-                                        <flux:button size="sm" type="submit">{{ __('Switch') }}</flux:button>
-                                    </form>
-                                @endif
-                            </li>
-                        @endforeach
-                    </ul>
-                @endif
-            </div>
+            </p>
         </div>
-
-        @if ($user->isSuperAdmin())
-            <div class="rounded-xl border border-amber-200 p-5 dark:border-amber-900/60" data-test="all-workspaces">
-                <flux:heading size="lg">{{ __('All workspaces') }}</flux:heading>
-                <flux:text class="mt-1">{{ __('As a super-admin you can enter any workspace without being a member.') }}</flux:text>
-
-                @if ($allTenants->isEmpty())
-                    <flux:text class="mt-3">{{ __('No workspaces exist yet.') }}</flux:text>
-                @else
-                    <ul class="mt-4 divide-y divide-neutral-200 dark:divide-neutral-700">
-                        @foreach ($allTenants as $tenant)
-                            <li class="flex items-center justify-between gap-4 py-3">
-                                <div>
-                                    <div class="text-sm font-medium">{{ $tenant->name }}</div>
-                                    <div class="text-xs text-zinc-500">
-                                        <code>{{ $tenant->slug }}</code>
-                                        · {{ trans_choice(':count member|:count members', $tenant->users_count) }}
-                                    </div>
-                                </div>
-                                @if ($tenant->is($currentTenant))
-                                    <flux:badge size="sm" color="lime">{{ __('Current') }}</flux:badge>
-                                @else
-                                    <form method="POST" action="{{ route('tenants.switch', $tenant) }}">
-                                        @csrf
-                                        <flux:button size="sm" type="submit">{{ __('Enter') }}</flux:button>
-                                    </form>
-                                @endif
-                            </li>
-                        @endforeach
-                    </ul>
-                @endif
-            </div>
-        @endif
     </div>
+
+    <div class="ui-grid-2">
+        <x-ui.panel>
+            <div class="ui-panel__heading"><div><h3>{{ __('Current workspace') }}</h3></div></div>
+            @if ($currentTenant)
+                @php $role = $user->roleIn($currentTenant); @endphp
+                <ul class="ui-list">
+                    <li><small>{{ __('Name') }}</small><strong data-test="current-workspace">{{ $currentTenant->name }}</strong></li>
+                    <li><small>{{ __('Your role') }}</small><strong>{{ $role?->label() ?? ($user->isSuperAdmin() ? __('Super-admin') : __('None')) }}</strong></li>
+                    <li><small>{{ __('Members') }}</small><strong>{{ $currentTenant->users()->count() }}</strong></li>
+                </ul>
+            @else
+                <p class="ui-variant__attrs" data-test="no-workspace">{{ __('Ask a workspace admin to add you, or wait for a super-admin to create one for you. You can still manage your account settings.') }}</p>
+            @endif
+        </x-ui.panel>
+
+        <x-ui.panel>
+            <div class="ui-panel__heading"><div><h3>{{ __('Your workspaces') }}</h3></div></div>
+            @if ($memberships->isEmpty())
+                <p class="ui-variant__attrs">{{ __('No memberships.') }}</p>
+            @else
+                <ul class="ui-list">
+                    @foreach ($memberships as $tenant)
+                        <li>
+                            <span><strong>{{ $tenant->name }}</strong> <small>· {{ $user->roleIn($tenant)?->label() ?? __('Member') }} · {{ trans_choice(':count member|:count members', $tenant->users_count) }}</small></span>
+                            @if ($tenant->is($currentTenant))
+                                <x-ui.badge tone="success" dot>{{ __('Current') }}</x-ui.badge>
+                            @else
+                                <form method="POST" action="{{ route('tenants.switch', $tenant) }}">@csrf<x-ui.button type="submit" variant="quiet" size="sm">{{ __('Switch') }}</x-ui.button></form>
+                            @endif
+                        </li>
+                    @endforeach
+                </ul>
+            @endif
+        </x-ui.panel>
+    </div>
+
+    @if ($user->isSuperAdmin())
+        <x-ui.panel tone="amber" style="margin-top: 12px" data-test="all-workspaces">
+            <div class="ui-panel__heading"><div><h3>{{ __('All workspaces') }}</h3><p>{{ __('As a super-admin you can enter any workspace without being a member.') }}</p></div></div>
+            @if ($allTenants->isEmpty())
+                <p class="ui-variant__attrs">{{ __('No workspaces exist yet.') }}</p>
+            @else
+                <ul class="ui-list">
+                    @foreach ($allTenants as $tenant)
+                        <li>
+                            <span><strong>{{ $tenant->name }}</strong> <small>· {{ $tenant->slug }} · {{ trans_choice(':count member|:count members', $tenant->users_count) }}</small></span>
+                            @if ($tenant->is($currentTenant))
+                                <x-ui.badge tone="success" dot>{{ __('Current') }}</x-ui.badge>
+                            @else
+                                <form method="POST" action="{{ route('tenants.switch', $tenant) }}">@csrf<x-ui.button type="submit" variant="quiet" size="sm">{{ __('Enter') }}</x-ui.button></form>
+                            @endif
+                        </li>
+                    @endforeach
+                </ul>
+            @endif
+        </x-ui.panel>
+    @endif
 </x-layouts::app>
