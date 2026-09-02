@@ -3,8 +3,17 @@
 namespace App\Providers;
 
 use App\Http\Middleware\UseCurrentTenant;
+use App\Library\Conversion\ConverterRegistry;
+use App\Library\Conversion\OmniverseMdlConverter;
+use App\Library\Conversion\RevitImageSetConverter;
+use App\Models\File;
+use App\Models\Material;
+use App\Models\ProvenanceEvent;
+use App\Models\Representation;
 use App\Models\User;
+use App\Models\Variant;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -21,7 +30,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(ConverterRegistry::class, function (): ConverterRegistry {
+            $registry = new ConverterRegistry;
+            $registry->register($this->app->make(RevitImageSetConverter::class));
+            $registry->register($this->app->make(OmniverseMdlConverter::class));
+
+            return $registry;
+        });
     }
 
     /**
@@ -31,11 +46,27 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureAuthorization();
+        $this->configureMorphMap();
 
         Livewire::addPersistentMiddleware([
             UseCurrentTenant::class,
             NeedsTenant::class,
             EnsureValidTenantSession::class,
+        ]);
+    }
+
+    /**
+     * Stable morph aliases for library records referenced polymorphically
+     * (aliases, tags, and later provenance and embeddings).
+     */
+    protected function configureMorphMap(): void
+    {
+        Relation::morphMap([
+            'material' => Material::class,
+            'variant' => Variant::class,
+            'file' => File::class,
+            'provenance_event' => ProvenanceEvent::class,
+            'representation' => Representation::class,
         ]);
     }
 

@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
     public function run(AddTenantMember $addMember): void
     {
         $this->call(RolesAndPermissionsSeeder::class);
+        $this->call(LibrarySeeder::class);
 
         $tenant = Tenant::query()->firstOrCreate(
             ['slug' => 'olsyn'],
@@ -36,6 +37,10 @@ class DatabaseSeeder extends Seeder
         $addMember->handle($tenant, $this->user('viewer@example.com', 'Viewer User'), Role::Viewer);
 
         $this->user('solo@example.com', 'Solo User');
+
+        if (app()->environment('local')) {
+            $this->call(DemoMaterialsSeeder::class);
+        }
     }
 
     private function user(string $email, string $name): User

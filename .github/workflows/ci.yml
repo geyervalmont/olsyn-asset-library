@@ -32,6 +32,25 @@ jobs:
     defaults:
       run:
         working-directory: apps/web
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: asset_library_testing
+          POSTGRES_USER: sail
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sail -d asset_library_testing"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USERNAME: sail
+      DB_PASSWORD: password
     steps:
       - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
