@@ -52,7 +52,7 @@ database, Redis, mail dashboard, or object-storage ports on the host:
 - https://vite.asset-library.test — Vite/HMR
 - https://mail.asset-library.test — Mailpit
 - https://s3.asset-library.test — S3 API
-- https://storage.asset-library.test — RustFS console
+- https://storage.asset-library.test/rustfs/console/ — RustFS console
 
 Useful commands:
 

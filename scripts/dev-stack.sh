@@ -10,7 +10,7 @@ printf '\nLocal services:\n'
 printf '  app      https://asset-library.test\n'
 printf '  mail     https://mail.asset-library.test\n'
 printf '  S3       https://s3.asset-library.test\n'
-printf '  storage  https://storage.asset-library.test\n'
+printf '  storage  https://storage.asset-library.test/rustfs/console/\n'
 printf '  Vite     https://vite.asset-library.test\n\n'
 
 exec docker compose -f "$web_dir/compose.yaml" --project-directory "$web_dir" \
