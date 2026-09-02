@@ -94,6 +94,91 @@ class MaterialPreviews
     }
 
     /**
+     * Best preview file per variant, keyed by variant id.
+     *
+     * @param  Collection<int, Variant>  $variants
+     * @return array<int, File>
+     */
+    public function variantFilesFor(Collection $variants): array
+    {
+        if ($variants->isEmpty()) {
+            return [];
+        }
+
+        $rows = DB::table('representation_files')
+            ->join('representations', 'representations.id', '=', 'representation_files.representation_id')
+            ->join('map_roles', 'map_roles.id', '=', 'representation_files.map_role_id')
+            ->whereIn('representations.variant_id', $variants->pluck('id')->all())
+            ->whereIn('map_roles.slug', array_keys(self::ROLE_PRIORITY))
+            ->whereIn('representations.review_state', [ReviewState::Approved->value, ReviewState::Candidate->value])
+            ->get(['representations.variant_id', 'representation_files.file_id', 'map_roles.slug', 'representations.review_state']);
+
+        $chosen = [];
+
+        foreach ($rows as $row) {
+            $score = (self::ROLE_PRIORITY[$row->slug] ?? 9) * 10 + ($row->review_state === ReviewState::Approved->value ? 0 : 5);
+
+            if (! isset($chosen[$row->variant_id]) || $score < $chosen[$row->variant_id][0]) {
+                $chosen[$row->variant_id] = [$score, (int) $row->file_id];
+            }
+        }
+
+        $files = File::query()->whereIn('id', array_column($chosen, 1))->get()->keyBy('id');
+        $result = [];
+
+        foreach ($chosen as $variantId => [, $fileId]) {
+            if (isset($files[$fileId])) {
+                $result[(int) $variantId] = $files[$fileId];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Targets with files per material: slug => best review state, keyed by material id.
+     *
+     * @param  EloquentCollection<int, Material>  $materials
+     * @return array<int, array<string, string>>
+     */
+    public function targetsFor(EloquentCollection $materials): array
+    {
+        if ($materials->isEmpty()) {
+            return [];
+        }
+
+        $rows = DB::table('representations')
+            ->join('variants', 'variants.id', '=', 'representations.variant_id')
+            ->join('targets', 'targets.id', '=', 'representations.target_id')
+            ->whereIn('variants.material_id', $materials->modelKeys())
+            ->whereIn('representations.review_state', [ReviewState::Approved->value, ReviewState::Candidate->value])
+            ->orderBy('targets.sort_order')
+            ->get(['variants.material_id', 'targets.slug', 'representations.review_state']);
+
+        $result = [];
+
+        foreach ($rows as $row) {
+            $current = $result[$row->material_id][$row->slug] ?? null;
+
+            if ($current !== ReviewState::Approved->value) {
+                $result[(int) $row->material_id][$row->slug] = $row->review_state;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Short labels for target badges on cards.
+     *
+     * @return array<string, string>
+     */
+    public static function badgeLabels(): array
+    {
+        return ['pbr' => 'PBR', 'revit' => 'RVT', 'omniverse' => 'OMNI', 'preview' => 'IMG'];
+    }
+
+    /**
      * A deterministic paper-toned fallback for a variant without a measured colour.
      */
     public static function fallbackHex(string $seed): string
