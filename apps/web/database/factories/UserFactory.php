@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Actions\Tenants\AddTenantMember;
+use App\Enums\Role;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -34,7 +36,18 @@ class UserFactory extends Factory
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
+            'is_super_admin' => false,
         ];
+    }
+
+    /**
+     * Indicate that the user bypasses all authorization.
+     */
+    public function superAdmin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_super_admin' => true,
+        ]);
     }
 
     /**
@@ -49,13 +62,21 @@ class UserFactory extends Factory
 
     /**
      * Attach the user to a tenant and make it their current tenant.
+     *
+     * A role is only assigned when requested, because role definitions must
+     * already be synced for the assignment to resolve.
      */
-    public function withTenant(?Tenant $tenant = null): static
+    public function withTenant(?Tenant $tenant = null, ?Role $role = null): static
     {
-        return $this->afterCreating(function (User $user) use ($tenant): void {
+        return $this->afterCreating(function (User $user) use ($tenant, $role): void {
             $currentTenant = $tenant ?? Tenant::factory()->create();
 
-            $user->tenants()->attach($currentTenant);
+            if ($role !== null) {
+                app(AddTenantMember::class)->handle($currentTenant, $user, $role);
+            } else {
+                $user->tenants()->attach($currentTenant);
+            }
+
             $user->forceFill(['current_tenant_id' => $currentTenant->getKey()])->save();
         });
     }

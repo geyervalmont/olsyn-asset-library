@@ -42,7 +42,7 @@ test('tenant middleware activates a users current tenant and permission team', f
         ->and(getPermissionsTeamId())->toBeNull();
 });
 
-test('tenant middleware rejects a current tenant without membership', function () {
+test('tenant middleware clears a current tenant without membership', function () {
     $tenant = Tenant::factory()->create();
     $user = User::factory()->create();
     $user->forceFill(['current_tenant_id' => $tenant->getKey()])->save();
@@ -51,7 +51,10 @@ test('tenant middleware rejects a current tenant without membership', function (
 
     $this->actingAs($user)
         ->get('/_test/restricted-tenant')
-        ->assertForbidden();
+        ->assertRedirect(route('dashboard'));
+
+    expect($user->fresh()->current_tenant_id)->toBeNull()
+        ->and(Tenant::current())->toBeNull();
 });
 
 test('current tenant can only be switched to a membership', function () {

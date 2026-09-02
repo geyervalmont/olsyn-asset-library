@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\Role;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -28,13 +30,14 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
  * @property string|null $remember_token
+ * @property bool $is_super_admin
  * @property int|null $current_tenant_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements PasskeyUser
+class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
@@ -56,6 +59,94 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
+     * Super-admins bypass every authorization check, in every tenant.
+     */
+    public function isSuperAdmin(): bool
+    {
+        return $this->is_super_admin;
+    }
+
+    public function isMemberOf(Tenant $tenant): bool
+    {
+        return $this->tenants()->whereKey($tenant->getKey())->exists();
+    }
+
+    /**
+     * Whether the user may operate inside the given tenant.
+     */
+    public function canAccessTenant(Tenant $tenant): bool
+    {
+        return $this->isSuperAdmin() || $this->isMemberOf($tenant);
+    }
+
+    /**
+     * Every tenant the user may enter: memberships, or all tenants for super-admins.
+     *
+     * @return Builder<Tenant>
+     */
+    public function accessibleTenants(): Builder
+    {
+        $query = Tenant::query()->orderBy('name');
+
+        if ($this->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->whereHas('users', fn (Builder $users) => $users->whereKey($this->getKey()));
+    }
+
+    /**
+     * The tenant to operate in, repairing a stale selection when possible.
+     *
+     * Returns null when the user has nothing to select.
+     */
+    public function resolveCurrentTenant(): ?Tenant
+    {
+        $tenant = $this->currentTenant;
+
+        if ($tenant !== null && $this->canAccessTenant($tenant)) {
+            return $tenant;
+        }
+
+        $tenant = $this->tenants()->orderBy('name')->first();
+
+        if ($tenant === null) {
+            if ($this->current_tenant_id !== null) {
+                $this->forceFill(['current_tenant_id' => null])->save();
+            }
+
+            return null;
+        }
+
+        $this->forceFill(['current_tenant_id' => $tenant->getKey()])->save();
+        $this->setRelation('currentTenant', $tenant);
+
+        return $tenant;
+    }
+
+    /**
+     * The user's role inside a tenant, if they are a member.
+     */
+    public function roleIn(Tenant $tenant): ?Role
+    {
+        if (! $this->isMemberOf($tenant)) {
+            return null;
+        }
+
+        return $tenant->execute(function (): ?Role {
+            $this->unsetRelation('roles');
+
+            foreach (Role::cases() as $role) {
+                if ($this->hasRole($role->value)) {
+                    return $role;
+                }
+            }
+
+            return null;
+        });
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -65,6 +156,7 @@ class User extends Authenticatable implements PasskeyUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_super_admin' => 'boolean',
         ];
     }
 

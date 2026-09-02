@@ -10,6 +10,14 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
+/**
+ * Activate the user's current tenant for the request.
+ *
+ * Membership is optional at the account level, so this middleware only
+ * guards routes that genuinely need a tenant. A stale or unauthorized current
+ * tenant is replaced by the first membership; a user with no membership is
+ * sent back to the dashboard to pick or request a workspace.
+ */
 class UseCurrentTenant
 {
     /**
@@ -23,10 +31,16 @@ class UseCurrentTenant
             throw new AuthenticationException;
         }
 
-        $tenant = $user->currentTenant;
+        $tenant = $user->resolveCurrentTenant();
 
-        if ($tenant === null || ! $user->tenants()->whereKey($tenant->getKey())->exists()) {
-            throw new AuthorizationException('No valid current tenant is selected.');
+        if ($tenant === null) {
+            if ($request->expectsJson()) {
+                throw new AuthorizationException('No valid current tenant is selected.');
+            }
+
+            return redirect()
+                ->route('dashboard')
+                ->with('status', __('Choose a workspace to continue.'));
         }
 
         $tenant->makeCurrent();

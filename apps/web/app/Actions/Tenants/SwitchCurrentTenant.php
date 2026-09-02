@@ -13,7 +13,7 @@ class SwitchCurrentTenant
 
     public function handle(User $user, Tenant $tenant, Request $request): void
     {
-        if (! $user->tenants()->whereKey($tenant->getKey())->exists()) {
+        if (! $user->canAccessTenant($tenant)) {
             throw new AuthorizationException('You are not a member of this tenant.');
         }
 

@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update web-test
+.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update web-test web-seed web-shell
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -40,3 +40,9 @@ prism-update:
 web-test:
 	docker compose -f apps/web/compose.yaml --project-directory apps/web exec -T laravel.test bun run build
 	docker compose -f apps/web/compose.yaml --project-directory apps/web exec -T laravel.test composer test
+
+web-seed:
+	docker compose -f apps/web/compose.yaml --project-directory apps/web exec -T laravel.test php artisan migrate --force --seed
+
+web-shell:
+	docker compose -f apps/web/compose.yaml --project-directory apps/web exec laravel.test bash

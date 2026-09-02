@@ -10,25 +10,64 @@
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
+            @php
+                $sidebarUser = auth()->user();
+                $sidebarTenant = $sidebarUser->currentTenant;
+                $sidebarTenant = $sidebarTenant !== null && $sidebarUser->canAccessTenant($sidebarTenant) ? $sidebarTenant : null;
+                $sidebarTenants = $sidebarUser->accessibleTenants()->get();
+            @endphp
+
             <flux:sidebar.nav>
+                <flux:sidebar.group :heading="__('Workspace')" class="grid">
+                    <flux:dropdown position="bottom" align="start" class="w-full">
+                        <flux:button
+                            variant="ghost"
+                            size="sm"
+                            icon="building-office-2"
+                            icon:trailing="chevrons-up-down"
+                            class="w-full justify-start"
+                            data-test="workspace-switcher"
+                        >
+                            {{ $sidebarTenant?->name ?? __('No workspace') }}
+                        </flux:button>
+
+                        <flux:menu>
+                            @forelse ($sidebarTenants as $tenant)
+                                <form method="POST" action="{{ route('tenants.switch', $tenant) }}" class="w-full">
+                                    @csrf
+                                    <flux:menu.item
+                                        as="button"
+                                        type="submit"
+                                        :icon="$tenant->is($sidebarTenant) ? 'check' : 'building-office-2'"
+                                        class="w-full cursor-pointer"
+                                    >
+                                        {{ $tenant->name }}
+                                    </flux:menu.item>
+                                </form>
+                            @empty
+                                <flux:menu.item disabled>{{ __('No workspaces yet') }}</flux:menu.item>
+                            @endforelse
+                        </flux:menu>
+                    </flux:dropdown>
+                </flux:sidebar.group>
+
                 <flux:sidebar.group :heading="__('Platform')" class="grid">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                 </flux:sidebar.group>
+
             </flux:sidebar.nav>
 
             <flux:spacer />
 
-            <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
-                </flux:sidebar.item>
-            </flux:sidebar.nav>
+            @if (Route::has('ui.index'))
+                <flux:sidebar.nav>
+                    <flux:sidebar.item icon="paint-brush" :href="route('ui.index')">
+                        {{ __('UI workbench') }}
+                    </flux:sidebar.item>
+                </flux:sidebar.nav>
+            @endif
 
             <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
         </flux:sidebar>
