@@ -57,6 +57,14 @@
                     </flux:sidebar.item>
                 </flux:sidebar.group>
 
+                <flux:sidebar.group :heading="__('Library')" class="grid">
+                    <flux:sidebar.item icon="swatch" :href="route('materials.index')" :current="request()->routeIs('materials.*')" wire:navigate>
+                        {{ __('Materials') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="server-stack" :href="route('drives.index')" :current="request()->routeIs('drives.*')" wire:navigate>
+                        {{ __('Drives') }}
+                    </flux:sidebar.item>
+                </flux:sidebar.group>
             </flux:sidebar.nav>
 
             <flux:spacer />

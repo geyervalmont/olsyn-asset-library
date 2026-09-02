@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Actions\Materials\CreateMaterial;
 use App\Enums\MaterialStatus;
 use App\Models\Category;
+use App\Models\Drive;
 use App\Models\Material;
 use App\Models\Source;
 use App\Models\Supplier;
@@ -18,6 +19,8 @@ class DemoMaterialsSeeder extends Seeder
 {
     public function run(CreateMaterial $createMaterial): void
     {
+        Drive::query()->firstOrCreate(['slug' => 'studio-share'], ['name' => 'Studio share', 'root_path' => '/materials']);
+
         if (Material::query()->exists()) {
             return;
         }

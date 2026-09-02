@@ -6,6 +6,7 @@ use App\Http\Middleware\UseCurrentTenant;
 use App\Library\Conversion\ConverterRegistry;
 use App\Library\Conversion\OmniverseMdlConverter;
 use App\Library\Conversion\RevitImageSetConverter;
+use App\Models\Drive;
 use App\Models\File;
 use App\Models\Material;
 use App\Models\ProvenanceEvent;
@@ -67,6 +68,7 @@ class AppServiceProvider extends ServiceProvider
             'file' => File::class,
             'provenance_event' => ProvenanceEvent::class,
             'representation' => Representation::class,
+            'drive' => Drive::class,
         ]);
     }
 

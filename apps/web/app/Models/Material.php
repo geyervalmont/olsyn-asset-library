@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Enums\MaterialStatus;
+use App\Enums\Permission;
+use App\Enums\Visibility;
 use App\Library\MaterialCodes;
 use App\Models\Concerns\HasAliases;
 use App\Models\Concerns\HasProvenance;
@@ -46,6 +48,7 @@ use LogicException;
  * @property string|null $lead_time
  * @property array<string, mixed>|null $specifications
  * @property MaterialStatus $status
+ * @property Visibility $visibility
  * @property int|null $contributed_by_tenant_id
  * @property int|null $contributed_by_user_id
  * @property int|null $current_version_id
@@ -56,7 +59,7 @@ use LogicException;
 #[Fillable([
     'name', 'slug', 'category_id', 'supplier_id', 'source_id', 'collection', 'supplier_product_code',
     'description', 'material_type', 'form', 'tile_width_mm', 'tile_height_mm', 'thickness_mm',
-    'repeat_type', 'install_pattern', 'sqm_cost', 'currency', 'lead_time', 'specifications', 'status',
+    'repeat_type', 'install_pattern', 'sqm_cost', 'currency', 'lead_time', 'specifications', 'status', 'visibility',
     'contributed_by_tenant_id', 'contributed_by_user_id',
 ])]
 class Material extends Model
@@ -69,6 +72,7 @@ class Material extends Model
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'draft',
+        'visibility' => 'library',
     ];
 
     protected static function booted(): void
@@ -165,7 +169,70 @@ class Material extends Model
         return [
             'specifications' => 'array',
             'status' => MaterialStatus::class,
+            'visibility' => Visibility::class,
         ];
+    }
+
+    /**
+     * Materials a user may see: everything for super-admins and for users who
+     * publish (they administer the library), otherwise the library-wide ones
+     * plus those granted to them or to one of their tenants.
+     *
+     * @param  Builder<Material>  $query
+     * @return Builder<Material>
+     */
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->isSuperAdmin() || $user->can(Permission::PublishMaterials->value)) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $query) use ($user): void {
+            $query->where('visibility', Visibility::Library->value)
+                ->orWhereHas('grants', function (Builder $grants) use ($user): void {
+                    $grants->where(function (Builder $grants) use ($user): void {
+                        $grants->where('grantee_type', $user->getMorphClass())->where('grantee_id', $user->getKey());
+                    })->orWhere(function (Builder $grants) use ($user): void {
+                        $grants->where('grantee_type', (new Tenant)->getMorphClass())
+                            ->whereIn('grantee_id', $user->tenants()->select('tenants.id'));
+                    });
+                });
+        });
+    }
+
+    /**
+     * @param  Builder<Material>  $query
+     * @return Builder<Material>
+     */
+    public function scopeVisibleToDrive(Builder $query, Drive $drive): Builder
+    {
+        return $query->where(function (Builder $query) use ($drive): void {
+            $query->where('visibility', Visibility::Library->value)
+                ->orWhereHas('grants', function (Builder $grants) use ($drive): void {
+                    $grants->where(function (Builder $grants) use ($drive): void {
+                        $grants->where('grantee_type', $drive->getMorphClass())->where('grantee_id', $drive->getKey());
+                    });
+
+                    if ($drive->tenant_id !== null) {
+                        $grants->orWhere(function (Builder $grants) use ($drive): void {
+                            $grants->where('grantee_type', (new Tenant)->getMorphClass())->where('grantee_id', $drive->tenant_id);
+                        });
+                    }
+                });
+        });
+    }
+
+    public function isVisibleTo(User $user): bool
+    {
+        return static::query()->whereKey($this->getKey())->visibleTo($user)->exists();
+    }
+
+    /**
+     * @return HasMany<MaterialGrant, $this>
+     */
+    public function grants(): HasMany
+    {
+        return $this->hasMany(MaterialGrant::class);
     }
 
     /**

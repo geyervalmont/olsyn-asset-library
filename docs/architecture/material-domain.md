@@ -157,6 +157,45 @@ ConverterRegistry  bound in AppServiceProvider; RevitImageSetConverter, Omnivers
 - `DeriveFromPlatformReference` is the headline path: "the Omniverse material
   for this Revit material" is one call from a Revit id or name.
 
+## Visibility and drives (implemented)
+
+```text
+material.visibility  library (everyone in the library) | restricted (grantees only)
+MaterialGrant        material × grantee (user | drive | tenant)
+Drive                a projected namespace: name, slug, root_path, optional tenant,
+                     optional target filter, active flag
+```
+
+- `Material::visibleTo($user)` returns everything for super-admins and for
+  users holding `materials.publish` (they administer the library); other
+  users see library-wide materials plus those granted to them or to a tenant
+  they belong to. `Material::visibleToDrive($drive)` applies the same rule to
+  a drive and its owning tenant.
+- `DriveNamespace` renders a drive as a PrismFS namespace manifest: for every
+  visible material with a current version, each pinned representation's files
+  appear at `/{root}/{Category}/{Material}/{Variant}/{target}/{variant code}_{role}.{ext}`
+  (packages such as `.mdl` drop the role suffix), backed by the file's bucket
+  and object key. `php artisan opal:drive:manifest {slug}` prints it;
+  `GET /drives/{slug}/manifest.yaml` serves it to operators. The output is
+  accepted by `prismfs doctor`.
+
+## Pages
+
+- `/materials` — the library: full-text and fuzzy search, category and
+  supplier filters, visibility-aware.
+- `/materials/create` — upload: material fields, first variant (colourway,
+  supplier colour code, finish), canonical PBR maps by role. Creates the
+  material, its variant, a `pbr` candidate at the uploaded pixel size, and an
+  `uploaded` provenance event with the chosen source.
+- `/materials/{code}` — the record: variants and representations, review
+  (approve/reject), derive Revit and Omniverse sets, publish a version, make
+  an older version current, visibility and grants, provenance timeline.
+- `/drives` — register drives and download their manifests.
+
+Permissions: `materials.view` to browse, `materials.contribute` to upload,
+add variants and derive, `materials.review` to approve or reject,
+`materials.publish` to publish versions, manage visibility and drives.
+
 ## Search and similarity
 
 - `search_text` is rebuilt on save from names, codes, supplier, product code,
