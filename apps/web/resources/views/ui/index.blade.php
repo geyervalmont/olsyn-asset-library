@@ -19,9 +19,9 @@
 
             <div class="ui-instrument">
                 <header class="ui-instrument__bar">
-                    <span class="ui-window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                    <span>ingest/material-set_024</span>
-                    <small>LIVE</small>
+                    <span>Ingest pipeline</span>
+                    <strong>material-set_024</strong>
+                    <small>PRISMFS</small>
                 </header>
                 <div class="ui-instrument__body">
                     <p>// source files</p>

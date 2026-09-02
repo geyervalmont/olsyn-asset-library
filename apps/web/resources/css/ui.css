@@ -9,13 +9,13 @@
     --ui-slate: #4a4d5c;
     --ui-muted: #777986;
     --ui-faint: #a8a9b0;
-    --ui-line: rgba(74, 77, 92, 0.16);
-    --ui-line-strong: rgba(74, 77, 92, 0.28);
+    --ui-line: rgba(74, 77, 92, 0.19);
+    --ui-line-strong: rgba(74, 77, 92, 0.32);
     --ui-periwinkle: #6b8db8;
     --ui-periwinkle-lit: #8fa7c9;
     --ui-periwinkle-deep: #4a6e99;
     --ui-indigo: #3e4a6b;
-    --ui-indigo-deep: #303952;
+    --ui-indigo-deep: #2c354d;
     --ui-amber: #f0a952;
     --ui-amber-soft: #f7c98b;
     --ui-sage: #b8bfb2;
@@ -505,54 +505,39 @@
         radial-gradient(circle at 88% 12%, rgba(107, 141, 184, 0.22), transparent 15rem),
         var(--ui-indigo-deep);
     border: 1px solid rgba(143, 167, 201, 0.3);
-    border-radius: var(--ui-radius-card);
-    box-shadow: var(--ui-el-3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    border-radius: var(--ui-radius-panel);
+    box-shadow: var(--ui-el-2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.ui-instrument__bar,
-.ui-template__header {
+.ui-instrument__bar {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 12px;
     align-items: center;
-    min-height: 44px;
+    min-height: 46px;
     padding: 0 15px;
     font-family: var(--ui-font-mono);
-    font-size: 9px;
-    letter-spacing: 0.04em;
+    font-size: 8px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     border-bottom: 1px solid rgba(143, 167, 201, 0.22);
 }
 
-.ui-instrument__bar > span:nth-child(2) {
+.ui-instrument__bar > span {
+    color: var(--ui-periwinkle-lit);
+}
+
+.ui-instrument__bar strong {
     overflow: hidden;
-    color: rgba(233, 233, 237, 0.72);
+    color: rgba(233, 233, 237, 0.78);
+    font-weight: 400;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .ui-instrument__bar small {
-    color: var(--ui-periwinkle-lit);
-}
-
-.ui-window-dots {
-    display: flex;
-    gap: 5px;
-}
-
-.ui-window-dots i {
-    display: block;
-    width: 6px;
-    height: 6px;
-    background: rgba(233, 233, 237, 0.28);
-    border-radius: 50%;
-}
-
-.ui-window-dots i:nth-child(2) {
-    background: var(--ui-amber);
-}
-
-.ui-window-dots i:nth-child(3) {
-    background: var(--ui-periwinkle-lit);
+    color: rgba(233, 233, 237, 0.44);
+    font-size: inherit;
 }
 
 .ui-instrument__body {
@@ -676,14 +661,14 @@
 
 .ui-button--primary {
     color: #f8f6f1;
-    background: var(--ui-periwinkle-deep);
-    border-color: var(--ui-periwinkle-deep);
+    background: var(--ui-indigo);
+    border-color: var(--ui-indigo);
     box-shadow: 0 1px 1px rgba(48, 57, 82, 0.18), 0 7px 18px -12px rgba(48, 57, 82, 0.6);
 }
 
 .ui-button--primary:hover {
-    background: var(--ui-indigo);
-    border-color: var(--ui-indigo);
+    background: var(--ui-periwinkle-deep);
+    border-color: var(--ui-periwinkle-deep);
 }
 
 .ui-button--secondary {
@@ -791,7 +776,7 @@
     overflow: hidden;
     background: var(--ui-surface);
     border: 1px solid var(--ui-line);
-    border-radius: var(--ui-radius-card);
+    border-radius: var(--ui-radius-panel);
     box-shadow: var(--ui-el-1);
 }
 
@@ -851,7 +836,7 @@
 .ui-bento {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 14px;
+    gap: 12px;
 }
 
 .ui-bento > * {
@@ -1603,7 +1588,7 @@
 .ui-template-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px;
+    gap: 12px;
 }
 
 .ui-template {
@@ -1611,25 +1596,40 @@
     overflow: hidden;
     background: var(--ui-surface);
     border: 1px solid var(--ui-line-strong);
-    border-radius: var(--ui-radius-card);
-    box-shadow: var(--ui-el-2);
+    border-top: 2px solid var(--ui-indigo);
+    border-radius: var(--ui-radius-panel);
+    box-shadow: var(--ui-el-1);
 }
 
 .ui-template__header {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    min-height: 64px;
+    padding: 12px 14px;
     color: var(--ui-muted);
-    border-color: var(--ui-line);
+    background: rgba(74, 77, 92, 0.025);
+    border-bottom: 1px solid var(--ui-line);
 }
 
-.ui-template__header > span:nth-child(2) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.ui-template__header div {
+    display: grid;
+    gap: 2px;
 }
 
-.ui-template__header small {
+.ui-template__header strong {
+    color: var(--ui-ink);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ui-template__header small,
+.ui-template__header > span {
     color: var(--ui-faint);
+    font-family: var(--ui-font-mono);
     font-size: 7px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
 }
 
 .ui-template__body {
