@@ -1,0 +1,71 @@
+name: olsyn-asset-library-prismfs
+
+services:
+  rustfs-volume-init:
+    image: alpine:3.22
+    user: root
+    command: ["sh", "-c", "chown -R 10001:10001 /data"]
+    volumes:
+      - rustfs-data:/data
+    restart: "no"
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0-rc.4
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: https://storage.asset-library.test
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-prismfs-dev}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-prismfs-local-secret-change-me}
+      RUSTFS_RPC_SECRET: ${RUSTFS_RPC_SECRET:-prismfs-local-rpc-secret-change-me-too}
+      RUSTFS_OBS_LOGGER_LEVEL: ${RUSTFS_LOG:-warn}
+    volumes:
+      - rustfs-data:/data
+    networks:
+      prismfs:
+      dev-proxy:
+        aliases:
+          - asset-library-rustfs
+    depends_on:
+      rustfs-volume-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -fsS http://127.0.0.1:9000/health/ready && curl -fsS http://127.0.0.1:9001/rustfs/console/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+  rustfs-init:
+    image: rustfs/rc:v0.1.31
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        rc alias set local http://rustfs:9000 "$${RUSTFS_ACCESS_KEY}" "$${RUSTFS_SECRET_KEY}"
+        rc ready local
+        rc bucket create --ignore-existing "local/$${RUSTFS_BUCKET}"
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-prismfs-dev}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-prismfs-local-secret-change-me}
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET:-prismfs-dev}
+    networks:
+      - prismfs
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    restart: "no"
+
+networks:
+  prismfs:
+    driver: bridge
+  dev-proxy:
+    external: true
+
+volumes:
+  rustfs-data:
+    driver: local

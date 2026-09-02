@@ -1,0 +1,30 @@
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Rust
+services/prismfs/target/
+services/prismfs/mnt/*
+!services/prismfs/mnt/.gitkeep
+
+# Laravel
+apps/web/.env
+apps/web/vendor/
+apps/web/node_modules/
+apps/web/public/build/
+apps/web/public/hot
+apps/web/public/storage
+apps/web/storage/*.key
+apps/web/storage/pail/
+apps/web/.phpunit.cache/
+apps/web/.phpunit.result.cache
+
+# Local infrastructure
+infrastructure/local/data/

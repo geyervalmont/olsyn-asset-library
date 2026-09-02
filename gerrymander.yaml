@@ -1,0 +1,27 @@
+# One collision-free entry point for the monorepo's local services.
+project: olsyn-asset-library
+zone: asset-library.test
+
+services:
+  web:
+    hostnames: [asset-library.test]
+    docker: { network: dev-proxy, host: asset-library-web, port: 80 }
+    dev: ./scripts/dev-stack.sh
+
+  vite:
+    # A dedicated hostname keeps HMR on normal TLS port 443. No host Vite
+    # port or proxy.extra_tls_ports allocation is required.
+    hostnames: [vite.asset-library.test]
+    docker: { network: dev-proxy, host: asset-library-vite, port: 5173 }
+
+  mail:
+    hostnames: [mail.asset-library.test]
+    docker: { network: dev-proxy, host: asset-library-mailpit, port: 8025 }
+
+  s3:
+    hostnames: [s3.asset-library.test]
+    docker: { network: dev-proxy, host: asset-library-rustfs, port: 9000 }
+
+  storage:
+    hostnames: [storage.asset-library.test]
+    docker: { network: dev-proxy, host: asset-library-rustfs, port: 9001 }

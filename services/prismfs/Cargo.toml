@@ -1,0 +1,50 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/prismfs-cache",
+  "crates/prismfs-core",
+  "crates/prismfs-fuse",
+  "crates/prismfs-policy",
+  "crates/prismfs-server",
+  "crates/prismfs-storage",
+  "crates/prismfs-telemetry",
+]
+default-members = ["crates/prismfs-server"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+authors = ["Olsyn"]
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+bytes = "1.10"
+clap = { version = "4.5", features = ["derive", "env"] }
+dashmap = "6.1"
+fuser = { version = "0.18", default-features = false }
+metrics = "0.24"
+object_store = { version = "0.14.1", default-features = false, features = ["aws"] }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1.18", features = ["serde", "v4"] }
+
+prismfs-cache = { path = "crates/prismfs-cache" }
+prismfs-core = { path = "crates/prismfs-core" }
+prismfs-fuse = { path = "crates/prismfs-fuse" }
+prismfs-policy = { path = "crates/prismfs-policy" }
+prismfs-storage = { path = "crates/prismfs-storage" }
+prismfs-telemetry = { path = "crates/prismfs-telemetry" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"

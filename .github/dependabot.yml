@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /services/prismfs
+    schedule:
+      interval: weekly
+  - package-ecosystem: composer
+    directory: /apps/web
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
