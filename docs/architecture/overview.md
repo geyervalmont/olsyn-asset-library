@@ -1,20 +1,27 @@
 # Architecture overview
 
-The asset library separates its control plane from its data plane.
+This document is the compact technical map. Read the
+[`project overview`](../project-overview.md) first for the product problem,
+domain language, legacy lessons, and intended delivery sequence.
+
+The asset library separates product decisions, file storage, processing, and
+file delivery. Each has one owner.
 
 ```text
-                         control plane
+                    Laravel + Livewire + API
+                   /            |             \
+                  v             v              v
+        PostgreSQL / Redis    workers    namespace + policy
+                               |              |
+                               v              v
+                    S3-compatible storage -> PrismFS
+                                                  |
+                                        FUSE -> Samba -> SMB/UNC
+                                                  |
+                                                  v
+                                          Revit and other clients
 
-               Laravel + Livewire + API
-                          |
-                PostgreSQL / Redis
-                          |
-                    invalidation
-                          |
-                          v
-S3-compatible storage -> PrismFS core -> FUSE -> Samba -> SMB/UNC -> Revit
-                          |
-                  logs / metrics / traces
+                                logs / metrics / traces
 ```
 
 Laravel owns product and tenant concepts: materials, representations, views,
@@ -32,17 +39,41 @@ Processing and conversion workers remain separate from PrismFS. They may create
 thumbnails, Revit representations, MDL files, or other derivatives and publish
 their metadata through the control plane.
 
-## Initial delivery boundary
+## Current PrismFS boundary
 
-The first PrismFS milestone is read-only and local-development focused:
+The standalone development slice currently:
 
 1. Resolve and list a deterministic virtual namespace.
 2. Read object byte ranges from an S3-compatible service.
 3. Authorize each operation through a policy interface.
 4. Cache without changing namespace or storage semantics.
 5. Emit structured audit events and stable metric names.
-6. Expose the composition through the FUSE adapter.
+6. Expose the composition through FUSE and through Samba over that mount.
+7. Prove RustFS to FUSE, POSIX, Samba, and an SMB client end to end.
 
-Writes, Samba-native VFS integration, production identity mapping, and cache
-invalidation transport are later milestones and must not leak into the core
-interfaces prematurely.
+The current namespace manifest and deny-prefix policy are development adapters.
+Production still needs a control-plane namespace and authorization source,
+identity mapping, cache invalidation transport, and deployment design. A native
+Samba VFS adapter remains optional future work. Writes are outside PrismFS's
+intended delivery boundary unless a later architectural decision changes it.
+
+## Direction of authority
+
+```text
+Laravel records and decisions
+        |
+        +---- references ----> immutable S3 objects
+        |
+        +---- publishes -----> logical namespace + policy
+                                      |
+                                      v
+                                   PrismFS
+                                      |
+                                      v
+                              read-only client view
+```
+
+PrismFS can cache bytes and namespace results, but it cannot promote a
+candidate, change canonical material identity, or infer permission from an S3
+key. Workers can create candidates, but only the control plane can approve and
+publish them.

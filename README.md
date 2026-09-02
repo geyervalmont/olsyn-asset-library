@@ -1,8 +1,15 @@
 # Olsyn Asset Library
 
-Monorepo for the Olsyn material-library control plane and PrismFS data plane.
-Development is currently focused on PrismFS; the Laravel application exists as
-the future management/API surface.
+Olsyn Asset Library is a governed platform for collecting, improving,
+reviewing, publishing, and using architectural material assets. Laravel and
+Livewire provide the multi-tenant control plane; object storage owns the bytes;
+and PrismFS projects approved assets into stable, policy-aware filesystem views
+for Revit and other path-based clients.
+
+Start with [`docs/project-overview.md`](docs/project-overview.md) for the
+product vision, domain boundaries, PrismFS's role, lessons retained from the
+legacy prototype, current state, and delivery sequence. The
+[`docs/README.md`](docs/README.md) file indexes the supporting documentation.
 
 ## Repository map
 
@@ -12,6 +19,7 @@ services/prismfs/               Rust workspace for the filesystem data plane
 infrastructure/local/           Local RustFS object storage
 docs/architecture/              System design
 docs/adr/                       Architectural decisions
+docs/project-overview.md        Canonical product and project narrative
 scripts/                        Repeatable developer workflows
 ```
 
@@ -57,8 +65,14 @@ database, Redis, mail dashboard, or object-storage ports on the host:
 - https://s3.asset-library.test — S3 API
 - https://storage.asset-library.test/rustfs/console/ — RustFS console
 
-The idempotent development seed creates the `Olsyn` tenant and a local account
-at `test@example.com` with password `password`.
+The idempotent development seed creates the `Olsyn` tenant and four local
+accounts, all with password `password`: `admin@example.com` (super-admin),
+`test@example.com` (editor), `viewer@example.com` (viewer), and
+`solo@example.com` (no workspace). See
+[`docs/architecture/laravel-control-plane.md`](docs/architecture/laravel-control-plane.md)
+for how accounts, tenants, roles, and super-admin access fit together.
+Registration is open locally; new accounts verify their email through Mailpit
+and start without a workspace until an admin adds them.
 
 Useful commands:
 
@@ -68,6 +82,8 @@ make prism-e2e         # prove RustFS -> FUSE -> POSIX and SMB end to end
 make prism-s3-test     # exercise PrismFS byte-range reads against RustFS
 make hmr-check         # verify Vite and Laravel are connected through Gerry
 make web-test          # run Laravel checks in Sail
+make web-seed          # apply migrations and refresh the development seed
+make web-shell         # open a shell in the Laravel container
 make up                # start services with Vite running in the background
 make down              # stop services without deleting volumes
 ```
