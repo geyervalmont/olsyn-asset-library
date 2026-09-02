@@ -30,23 +30,27 @@
                             <span class="ui-file-row__icon">JPG</span>
                             <span class="ui-file-row__name"><strong>travertine-honed_albedo.jpg</strong><small>4096 × 4096 · 18.4 MB</small></span>
                             <small>READY</small>
+                            <span class="ui-file-row__check" aria-hidden="true">✓</span>
                         </div>
                         <div class="ui-file-row">
                             <span class="ui-file-row__icon">RVT</span>
                             <span class="ui-file-row__name"><strong>olsyn-material-library.rvt</strong><small>Revit 2026 · 84.2 MB</small></span>
                             <small>INDEXED</small>
+                            <span class="ui-file-row__check" aria-hidden="true">✓</span>
                         </div>
                         <div class="ui-file-row">
                             <span class="ui-file-row__icon">PNG</span>
                             <span class="ui-file-row__name"><strong>travertine-honed_normal.png</strong><small>4096 × 4096 · 23.1 MB</small></span>
-                            <small>READY</small>
+                            <small>SCALING</small>
+                            <span class="ui-file-row__check ui-file-row__check--wait" aria-hidden="true">·</span>
                         </div>
                     </div>
+                    <p class="ui-instrument__summary">
+                        <strong>2 verified</strong>
+                        <span>· 1 running · 125.7 MB · checksums verified</span>
+                        <span class="ui-caret" aria-hidden="true"></span>
+                    </p>
                 </div>
-                <footer class="ui-instrument__footer">
-                    <span>PrismFS / olsyn / materials</span>
-                    <span>3 files · 125.7 MB</span>
-                </footer>
             </div>
         </div>
 
@@ -101,7 +105,7 @@
                     <div><h3>Storage projection</h3><p>S3 objects remain the source; the namespace stays legible.</p></div>
                     <x-ui.badge tone="info">PrismFS</x-ui.badge>
                 </div>
-                <pre style="margin: 0; overflow-x: auto; color: rgba(245, 243, 239, .76); font-family: var(--ui-font-mono); font-size: 10px; line-height: 1.9;"><code><span style="color: var(--ui-periwinkle-lit)">\\materials.olsyn.test</span>
+                <pre style="margin: 0; overflow-x: auto; color: rgba(245, 243, 239, .76); font-family: var(--ui-font-mono); font-size: 11px; line-height: 1.9;"><code><span style="color: var(--ui-periwinkle-lit)">\\materials.olsyn.test</span>
 ├── Stone
 │   └── Travertine, honed
 │       ├── <span style="color: var(--ui-amber-soft)">Travertine_Honed.rvt</span>

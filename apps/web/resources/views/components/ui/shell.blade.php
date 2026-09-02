@@ -71,6 +71,52 @@
             </div>
         </div>
 
+        <script>
+            (() => {
+                if (! window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    const targets = [...document.querySelectorAll(
+                        '.ui-hero__copy > *, .ui-instrument, .ui-section-head, .ui-panel, .ui-palette, .ui-data-shell, .ui-template'
+                    )].filter((el) => {
+                        const rect = el.getBoundingClientRect();
+
+                        return rect.top > window.innerHeight || rect.bottom < 0 || window.scrollY === 0;
+                    });
+                    targets.forEach((el) => el.classList.add('ui-reveal'));
+
+                    const io = new IntersectionObserver((entries) => {
+                        entries
+                            .filter((entry) => entry.isIntersecting)
+                            .forEach((entry, i) => {
+                                io.unobserve(entry.target);
+                                setTimeout(() => entry.target.classList.add('is-revealed'), i * 60);
+                            });
+                    }, { rootMargin: '0px 0px 18% 0px', threshold: 0 });
+
+                    targets.forEach((el) => io.observe(el));
+                }
+
+                const links = [...document.querySelectorAll('.ui-sidebar__nav a[href^="#"]')];
+                const sections = new Map();
+                links.forEach((link) => {
+                    const section = document.querySelector(link.hash);
+                    if (section) {
+                        sections.set(section, link);
+                    }
+                });
+
+                const spy = new IntersectionObserver((entries) => {
+                    entries
+                        .filter((entry) => entry.isIntersecting)
+                        .forEach((entry) => {
+                            links.forEach((link) => link.classList.remove('is-active'));
+                            sections.get(entry.target)?.classList.add('is-active');
+                        });
+                }, { rootMargin: '-30% 0px -60% 0px', threshold: 0 });
+
+                sections.forEach((link, section) => spy.observe(section));
+            })();
+        </script>
+
         @fluxScripts
     </body>
 </html>
