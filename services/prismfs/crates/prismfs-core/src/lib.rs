@@ -1,6 +1,11 @@
 //! Protocol-independent namespace contracts and domain types for PrismFS.
 
-use std::{collections::BTreeMap, fmt, str::FromStr, sync::RwLock};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -315,6 +320,57 @@ pub trait Namespace: Send + Sync {
     async fn list(&self, context: &RequestContext, path: &VirtualPath) -> Result<Vec<Node>>;
 }
 
+/// A namespace whose contents can be replaced while it is mounted.
+///
+/// Inodes in the FUSE adapter are keyed by virtual path, so swapping the
+/// namespace keeps existing paths stable and simply changes what resolves.
+pub struct SwappableNamespace {
+    inner: RwLock<Arc<dyn Namespace>>,
+}
+
+impl SwappableNamespace {
+    /// Wraps an initial namespace.
+    #[must_use]
+    pub fn new(initial: Arc<dyn Namespace>) -> Self {
+        Self {
+            inner: RwLock::new(initial),
+        }
+    }
+
+    /// Replaces the namespace served to clients from now on.
+    pub fn replace(&self, next: Arc<dyn Namespace>) -> Result<()> {
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|error| PrismError::Internal(error.to_string()))?;
+        *inner = next;
+        Ok(())
+    }
+
+    fn current(&self) -> Result<Arc<dyn Namespace>> {
+        Ok(Arc::clone(&*self.inner.read().map_err(|error| {
+            PrismError::Internal(error.to_string())
+        })?))
+    }
+}
+
+impl fmt::Debug for SwappableNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SwappableNamespace").finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl Namespace for SwappableNamespace {
+    async fn lookup(&self, context: &RequestContext, path: &VirtualPath) -> Result<Node> {
+        self.current()?.lookup(context, path).await
+    }
+
+    async fn list(&self, context: &RequestContext, path: &VirtualPath) -> Result<Vec<Node>> {
+        self.current()?.list(context, path).await
+    }
+}
+
 /// Deterministic namespace used by unit tests and the initial server scaffold.
 #[derive(Debug)]
 pub struct StaticNamespace {
@@ -522,5 +578,70 @@ mod tests {
         };
 
         assert!(StaticNamespace::from_manifest(&manifest).is_err());
+    }
+
+    #[tokio::test]
+    async fn swappable_namespace_serves_the_latest_replacement() {
+        let context = RequestContext::new("tenant", "principal");
+        let first = StaticNamespace::new();
+        first
+            .insert(
+                VirtualPath::parse("/a.txt").unwrap(),
+                Node::file(
+                    "a.txt",
+                    ObjectRef {
+                        bucket: "b".into(),
+                        key: "a".into(),
+                        size: 1,
+                        version: None,
+                    },
+                ),
+            )
+            .unwrap();
+        let swappable = SwappableNamespace::new(Arc::new(first));
+        assert!(
+            swappable
+                .lookup(&context, &VirtualPath::parse("/a.txt").unwrap())
+                .await
+                .is_ok()
+        );
+
+        let second = StaticNamespace::new();
+        second
+            .insert(
+                VirtualPath::parse("/b.txt").unwrap(),
+                Node::file(
+                    "b.txt",
+                    ObjectRef {
+                        bucket: "b".into(),
+                        key: "b".into(),
+                        size: 1,
+                        version: None,
+                    },
+                ),
+            )
+            .unwrap();
+        swappable.replace(Arc::new(second)).unwrap();
+
+        assert!(
+            swappable
+                .lookup(&context, &VirtualPath::parse("/a.txt").unwrap())
+                .await
+                .is_err()
+        );
+        assert!(
+            swappable
+                .lookup(&context, &VirtualPath::parse("/b.txt").unwrap())
+                .await
+                .is_ok()
+        );
+        assert_eq!(
+            swappable
+                .list(&context, &VirtualPath::root())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }

@@ -27,6 +27,7 @@ dashmap = "6.1"
 fuser = { version = "0.18", default-features = false }
 metrics = "0.24"
 object_store = { version = "0.14.1", default-features = false, features = ["aws"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "2.0"

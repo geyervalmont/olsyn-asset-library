@@ -51,9 +51,13 @@ The standalone development slice currently:
 6. Expose the composition through FUSE and through Samba over that mount.
 7. Prove RustFS to FUSE, POSIX, Samba, and an SMB client end to end.
 
-The current namespace manifest and deny-prefix policy are development adapters.
-Production still needs a control-plane namespace and authorization source,
-identity mapping, cache invalidation transport, and deployment design. A native
+The namespace now has a control-plane source: a *drive* in Laravel renders
+the current version of every material it may see as a manifest, and
+`prismfs mount --manifest-url … --manifest-token …` fetches it with the
+drive's bearer token and re-fetches it on an interval (cheap 304s through
+`ETag`). The file manifest and deny-prefix policy remain development
+adapters. Production still needs identity mapping, a push-based invalidation
+transport instead of polling, and deployment design. A native
 Samba VFS adapter remains optional future work. Writes are outside PrismFS's
 intended delivery boundary unless a later architectural decision changes it.
 

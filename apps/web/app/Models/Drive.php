@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
@@ -21,6 +22,8 @@ use Illuminate\Support\Str;
  * @property int|null $target_id
  * @property string|null $description
  * @property bool $is_active
+ * @property string|null $access_token_hash
+ * @property Carbon|null $token_issued_at
  * @property-read Tenant|null $tenant
  * @property-read Target|null $target
  */
@@ -43,7 +46,35 @@ class Drive extends Model
      */
     protected function casts(): array
     {
-        return ['is_active' => 'boolean'];
+        return ['is_active' => 'boolean', 'token_issued_at' => 'datetime'];
+    }
+
+    /**
+     * Issue a fresh bearer token for PrismFS. The plaintext is returned once
+     * and never stored; issuing again invalidates the previous token.
+     */
+    public function issueToken(): string
+    {
+        $token = 'opal_'.Str::random(48);
+
+        $this->forceFill([
+            'access_token_hash' => hash('sha256', $token),
+            'token_issued_at' => now(),
+        ])->save();
+
+        return $token;
+    }
+
+    public function hasToken(): bool
+    {
+        return $this->access_token_hash !== null;
+    }
+
+    public function tokenMatches(?string $token): bool
+    {
+        return $token !== null
+            && $this->access_token_hash !== null
+            && hash_equals($this->access_token_hash, hash('sha256', $token));
     }
 
     /**

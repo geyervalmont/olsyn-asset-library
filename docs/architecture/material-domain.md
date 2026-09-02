@@ -176,8 +176,26 @@ Drive                a projected namespace: name, slug, root_path, optional tena
   appear at `/{root}/{Category}/{Material}/{Variant}/{target}/{variant code}_{role}.{ext}`
   (packages such as `.mdl` drop the role suffix), backed by the file's bucket
   and object key. `php artisan opal:drive:manifest {slug}` prints it;
-  `GET /drives/{slug}/manifest.yaml` serves it to operators. The output is
-  accepted by `prismfs doctor`.
+  `GET /drives/{slug}/manifest.yaml` serves it to operators. PrismFS itself
+  polls `GET /prismfs/drives/{slug}/manifest.yaml` with the drive's bearer
+  token (issued once from the drives page, only its hash is stored) and gets
+  a 304 while the namespace is unchanged, so a mount follows publishes and
+  visibility changes within its refresh interval.
+
+## Legacy import
+
+`php artisan opal:import:legacy` reads the Material Asset Library handoff
+(SQLite plus folder tree, staged under `storage/app/legacy/`). Every product
+becomes a material and every colourway a variant; the legacy `canonical_key`
+is kept as an alias so `Variant::resolveCode('carpet:tarkett:academix:…')`
+still works. Files are attached only where the bytes exist under the files
+root, grouped by channel and folder into representations (`Enscape_Revit` →
+revit, `Omni_PBR` and `AI_Mat` → pbr; `SS` and archived or missing rows are
+skipped); approval carries over when every file in the group was approved
+or active. Each material and representation gets an `imported` provenance
+event carrying the legacy ids, states, derivation tools and source URLs.
+The import is idempotent and safe to re-run once the full corpus is
+available.
 
 ## Pages
 

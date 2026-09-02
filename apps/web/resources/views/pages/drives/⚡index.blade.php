@@ -16,6 +16,10 @@ new #[Title('Drives')] class extends Component {
 
     public string $target_id = '';
 
+    public ?string $issuedToken = null;
+
+    public ?string $issuedFor = null;
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->can('materials.publish'), 403);
@@ -34,6 +38,15 @@ new #[Title('Drives')] class extends Component {
     public function targets(): Collection
     {
         return Target::query()->orderBy('sort_order')->get();
+    }
+
+    public function issueToken(int $driveId): void
+    {
+        $drive = Drive::query()->findOrFail($driveId);
+
+        $this->issuedToken = $drive->issueToken();
+        $this->issuedFor = $drive->slug;
+        unset($this->drives);
     }
 
     public function create(): void
@@ -61,6 +74,17 @@ new #[Title('Drives')] class extends Component {
     <flux:heading size="xl">{{ __('Drives') }}</flux:heading>
     <flux:text class="mt-1">{{ __('A drive is a namespace PrismFS projects: the current version of every material it can see, at the targets it serves.') }}</flux:text>
 
+    @if ($issuedToken !== null)
+        <flux:callout variant="warning" icon="key" class="mt-6" data-test="issued-token">
+            <flux:callout.heading>{{ __('Token for :drive, shown once', ['drive' => $issuedFor]) }}</flux:callout.heading>
+            <flux:callout.text>
+                <code class="block break-all text-xs">{{ $issuedToken }}</code>
+                <span class="mt-2 block text-xs">{{ __('Mount it with:') }}</span>
+                <code class="block break-all text-xs">prismfs mount --manifest-url {{ route('prismfs.drives.manifest', $issuedFor) }} --manifest-token {{ $issuedToken }}</code>
+            </flux:callout.text>
+        </flux:callout>
+    @endif
+
     <div class="mt-6">
         @if ($this->drives->isEmpty())
             <flux:text data-test="no-drives">{{ __('No drives registered yet.') }}</flux:text>
@@ -81,7 +105,12 @@ new #[Title('Drives')] class extends Component {
                             <flux:table.cell>{{ $row['drive']->target?->name ?? __('All targets') }}</flux:table.cell>
                             <flux:table.cell data-test="drive-entries">{{ $row['entries'] }}</flux:table.cell>
                             <flux:table.cell>
-                                <flux:button :href="route('drives.manifest', $row['drive'])" size="xs" icon="arrow-down-tray">{{ __('Manifest') }}</flux:button>
+                                <div class="flex gap-2">
+                                    <flux:button :href="route('drives.manifest', $row['drive'])" size="xs" icon="arrow-down-tray">{{ __('Manifest') }}</flux:button>
+                                    <flux:button wire:click="issueToken({{ $row['drive']->id }})" size="xs" icon="key" data-test="issue-token">
+                                        {{ $row['drive']->hasToken() ? __('Rotate token') : __('Issue token') }}
+                                    </flux:button>
+                                </div>
                             </flux:table.cell>
                         </flux:table.row>
                     @endforeach

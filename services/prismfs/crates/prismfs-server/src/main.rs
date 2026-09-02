@@ -5,17 +5,26 @@ use std::{
     io::BufReader,
     path::{Path, PathBuf},
     sync::Arc,
+    thread,
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use prismfs_cache::{MemoryCache, ObjectCache};
-use prismfs_core::{Namespace, NamespaceManifest, StaticNamespace, VirtualPath};
+use prismfs_core::{
+    Namespace, NamespaceManifest, StaticNamespace, SwappableNamespace, VirtualPath,
+};
 use prismfs_fuse::{FuseAdapter, FuseConfig};
 use prismfs_policy::{AccessPolicy, DenyPrefixes};
 use prismfs_smb::SambaConfig;
 use prismfs_storage::{ObjectReader, ObjectStoreReader};
 use prismfs_telemetry::{LogFormat, TelemetryConfig};
+use tracing::{info, warn};
+
+mod remote;
+
+use remote::RemoteManifest;
 
 #[derive(Debug, Parser)]
 #[command(name = "prismfs", version, about = "PrismFS data-plane service")]
@@ -49,6 +58,12 @@ enum Command {
         /// Namespace manifest to validate.
         #[arg(long, env = "PRISMFS_MANIFEST", default_value = "dev/namespace.yaml")]
         manifest: PathBuf,
+        /// Fetch the manifest from the control plane instead of a file.
+        #[arg(long, env = "PRISMFS_MANIFEST_URL")]
+        manifest_url: Option<String>,
+        /// Drive token presented to the control plane.
+        #[arg(long, env = "PRISMFS_MANIFEST_TOKEN", hide_env_values = true)]
+        manifest_token: Option<String>,
         /// Also validate that the current S3 environment can build a client.
         #[arg(long)]
         check_s3: bool,
@@ -61,6 +76,15 @@ enum Command {
         /// Namespace manifest to project.
         #[arg(long, env = "PRISMFS_MANIFEST", default_value = "dev/namespace.yaml")]
         manifest: PathBuf,
+        /// Fetch the manifest from the control plane and keep it refreshed.
+        #[arg(long, env = "PRISMFS_MANIFEST_URL")]
+        manifest_url: Option<String>,
+        /// Drive token presented to the control plane.
+        #[arg(long, env = "PRISMFS_MANIFEST_TOKEN", hide_env_values = true)]
+        manifest_token: Option<String>,
+        /// Seconds between manifest refreshes when a URL is used.
+        #[arg(long, env = "PRISMFS_REFRESH_INTERVAL", default_value_t = 30)]
+        refresh_interval: u64,
         /// Tenant attached to filesystem policy and audit events.
         #[arg(long, env = "PRISMFS_TENANT_ID", default_value = "local")]
         tenant_id: String,
@@ -91,19 +115,121 @@ fn main() -> Result<()> {
     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
     match cli.command {
-        Command::Doctor { manifest, check_s3 } => doctor(&manifest, check_s3),
+        Command::Doctor {
+            manifest,
+            manifest_url,
+            manifest_token,
+            check_s3,
+        } => doctor(
+            ManifestSource::new(manifest, manifest_url, manifest_token)?,
+            check_s3,
+        ),
         Command::Mount {
             mountpoint,
             manifest,
+            manifest_url,
+            manifest_token,
+            refresh_interval,
             tenant_id,
             deny_prefix,
-        } => mount(mountpoint, &manifest, tenant_id, deny_prefix),
+        } => mount(
+            mountpoint,
+            ManifestSource::new(manifest, manifest_url, manifest_token)?,
+            Duration::from_secs(refresh_interval.max(1)),
+            tenant_id,
+            deny_prefix,
+        ),
         Command::SambaConfig {
             mountpoint,
             share_name,
             guest_account,
         } => samba_config(mountpoint, share_name, guest_account),
     }
+}
+
+/// Where the namespace comes from: a file on disk, or the control plane.
+enum ManifestSource {
+    File(PathBuf),
+    Remote(RemoteManifest),
+}
+
+impl ManifestSource {
+    fn new(path: PathBuf, url: Option<String>, token: Option<String>) -> Result<Self> {
+        match url {
+            Some(url) => {
+                let token = token.context("--manifest-token is required with --manifest-url")?;
+                Ok(Self::Remote(RemoteManifest::new(url, token)?))
+            }
+            None => Ok(Self::File(path)),
+        }
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            Self::File(path) => path.display().to_string(),
+            Self::Remote(remote) => remote.url().to_owned(),
+        }
+    }
+
+    fn load(&mut self) -> Result<NamespaceManifest> {
+        match self {
+            Self::File(path) => load_manifest(path),
+            Self::Remote(remote) => remote.fetch_initial(),
+        }
+    }
+}
+
+/// Keeps a mounted namespace in step with the control plane.
+fn spawn_refresher(
+    mut remote: RemoteManifest,
+    interval: Duration,
+    bucket: String,
+    target: Arc<SwappableNamespace>,
+) {
+    thread::Builder::new()
+        .name("prismfs-manifest-refresh".into())
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    warn!(%error, "manifest refresh disabled: no runtime");
+                    return;
+                }
+            };
+
+            runtime.block_on(async {
+                loop {
+                    tokio::time::sleep(interval).await;
+                    match remote.fetch().await {
+                        Ok(None) => {}
+                        Ok(Some(manifest)) => match refresh(&manifest, &bucket) {
+                            Ok(namespace) => match target.replace(namespace) {
+                                Ok(()) => {
+                                    info!(files = manifest.files.len(), "namespace refreshed")
+                                }
+                                Err(error) => warn!(%error, "namespace swap failed"),
+                            },
+                            Err(error) => warn!(%error, "refreshed manifest rejected"),
+                        },
+                        Err(error) => warn!(%error, "manifest refresh failed"),
+                    }
+                }
+            });
+        })
+        .map(|_| ())
+        .unwrap_or_else(|error| warn!(%error, "manifest refresh disabled: thread not started"));
+}
+
+fn refresh(manifest: &NamespaceManifest, bucket: &str) -> Result<Arc<dyn Namespace>> {
+    if let Some(refreshed_bucket) = manifest_bucket(manifest)?
+        && refreshed_bucket != bucket
+    {
+        bail!("refreshed manifest moved from bucket {bucket} to {refreshed_bucket}");
+    }
+    namespace(manifest)
 }
 
 fn load_manifest(path: &Path) -> Result<NamespaceManifest> {
@@ -114,19 +240,34 @@ fn load_manifest(path: &Path) -> Result<NamespaceManifest> {
     Ok(manifest)
 }
 
-fn manifest_bucket(manifest: &NamespaceManifest) -> Result<String> {
+/// The single bucket a manifest refers to, or `None` for an empty manifest.
+fn manifest_bucket(manifest: &NamespaceManifest) -> Result<Option<String>> {
     let buckets = manifest
         .files
         .iter()
         .map(|file| file.object.bucket.as_str())
         .collect::<BTreeSet<_>>();
     match buckets.len() {
-        0 => bail!("namespace manifest must contain at least one file"),
-        1 => Ok((*buckets.first().expect("one bucket exists")).to_owned()),
+        0 => Ok(None),
+        1 => Ok(Some(
+            (*buckets.first().expect("one bucket exists")).to_owned(),
+        )),
         _ => bail!(
             "a PrismFS process currently supports one bucket; manifest contains: {}",
             buckets.into_iter().collect::<Vec<_>>().join(", ")
         ),
+    }
+}
+
+/// The bucket to serve: the manifest's, or the configured one when the
+/// manifest is empty (a drive with nothing published yet).
+fn serving_bucket(manifest: &NamespaceManifest) -> Result<String> {
+    match manifest_bucket(manifest)? {
+        Some(bucket) => Ok(bucket),
+        None => env::var("PRISMFS_S3_BUCKET")
+            .ok()
+            .filter(|bucket| !bucket.is_empty())
+            .context("the manifest is empty and PRISMFS_S3_BUCKET is not set"),
     }
 }
 
@@ -146,9 +287,9 @@ fn s3_reader(bucket: &str) -> Result<Arc<dyn ObjectReader>> {
     Ok(Arc::new(reader))
 }
 
-fn doctor(manifest_path: &Path, check_s3: bool) -> Result<()> {
-    let manifest = load_manifest(manifest_path)?;
-    let bucket = manifest_bucket(&manifest)?;
+fn doctor(mut source: ManifestSource, check_s3: bool) -> Result<()> {
+    let manifest = source.load()?;
+    let bucket = serving_bucket(&manifest)?;
     namespace(&manifest)?;
     if check_s3 {
         s3_reader(&bucket)?;
@@ -156,7 +297,7 @@ fn doctor(manifest_path: &Path, check_s3: bool) -> Result<()> {
 
     println!("PrismFS composition: ok");
     println!("mode: read-only");
-    println!("manifest: {}", manifest_path.display());
+    println!("manifest: {}", source.describe());
     println!("files: {}", manifest.files.len());
     println!("bucket: {bucket}");
     println!("s3 client: {}", if check_s3 { "ok" } else { "not checked" });
@@ -165,13 +306,29 @@ fn doctor(manifest_path: &Path, check_s3: bool) -> Result<()> {
 
 fn mount(
     mountpoint: PathBuf,
-    manifest_path: &Path,
+    mut source: ManifestSource,
+    refresh_interval: Duration,
     tenant_id: String,
     deny_prefix: Vec<VirtualPath>,
 ) -> Result<()> {
-    let manifest = load_manifest(manifest_path)?;
-    let bucket = manifest_bucket(&manifest)?;
-    let namespace = namespace(&manifest)?;
+    let manifest = source.load()?;
+    let bucket = serving_bucket(&manifest)?;
+    let swappable = Arc::new(SwappableNamespace::new(namespace(&manifest)?));
+    if let ManifestSource::Remote(remote) = source {
+        info!(
+            url = remote.url(),
+            interval_secs = refresh_interval.as_secs(),
+            files = manifest.files.len(),
+            "namespace loaded from the control plane"
+        );
+        spawn_refresher(
+            remote,
+            refresh_interval,
+            bucket.clone(),
+            Arc::clone(&swappable),
+        );
+    }
+    let namespace: Arc<dyn Namespace> = swappable;
     let storage = s3_reader(&bucket)?;
     let policy: Arc<dyn AccessPolicy> = Arc::new(DenyPrefixes::new(deny_prefix));
     let cache: Arc<dyn ObjectCache> = Arc::new(MemoryCache::default());
@@ -222,10 +379,15 @@ mod tests {
     #[test]
     fn manifests_are_scoped_to_one_bucket() {
         assert_eq!(
-            manifest_bucket(&manifest(&["assets", "assets"])).expect("one bucket"),
-            "assets"
+            manifest_bucket(&manifest(&["assets", "assets"]))
+                .expect("one bucket")
+                .as_deref(),
+            Some("assets")
         );
         assert!(manifest_bucket(&manifest(&["assets", "other"])).is_err());
-        assert!(manifest_bucket(&manifest(&[])).is_err());
+        assert_eq!(
+            manifest_bucket(&manifest(&[])).expect("empty is fine"),
+            None
+        );
     }
 }

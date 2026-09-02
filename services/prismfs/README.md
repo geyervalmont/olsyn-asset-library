@@ -73,6 +73,21 @@ files:
       version: null
 ```
 
+To serve a drive from the OPAL control plane instead of a file, pass the
+drive's manifest URL and token. PrismFS fetches the manifest on start and
+re-fetches it on an interval using `ETag`/`If-None-Match`, swapping the
+namespace in place when it changes:
+
+```bash
+prismfs mount \
+  --manifest-url https://asset-library.test/prismfs/drives/studio-share/manifest.yaml \
+  --manifest-token opal_… \
+  --refresh-interval 30
+```
+
+`prismfs doctor --manifest-url … --manifest-token …` validates the same
+source without mounting.
+
 The runtime reads standard `AWS_*` settings understood by the Rust
 `object_store` adapter. `PRISMFS_S3_BUCKET` must match the manifest bucket.
 Run `prismfs mount --help` for mount, tenant, and policy options. A
