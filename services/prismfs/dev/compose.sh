@@ -11,6 +11,10 @@ compose_args=(
     --file "$prismfs_root/dev/compose.yaml"
 )
 
+if [ -f "$prismfs_root/dev/compose.override.yaml" ]; then
+    compose_args+=(--file "$prismfs_root/dev/compose.override.yaml")
+fi
+
 if [ -f "$prismfs_root/.env" ]; then
     compose_args+=(--env-file "$prismfs_root/.env")
 fi

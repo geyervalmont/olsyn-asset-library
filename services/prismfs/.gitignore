@@ -2,3 +2,4 @@
 /target/
 /mnt/*
 !/mnt/.gitkeep
+/dev/compose.override.yaml

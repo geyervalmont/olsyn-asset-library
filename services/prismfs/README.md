@@ -41,6 +41,10 @@ Host ports are assigned dynamically and the Compose project name includes a
 hash of the checkout path, so parallel checkouts do not collide. `make
 endpoints` prints the actual S3 and SMB URLs.
 
+Machine-specific Compose changes can live in the ignored
+`dev/compose.override.yaml`; the wrapper loads it automatically after the base
+file.
+
 For the quickest filesystem loop, mount on the host while using an isolated
 containerized RustFS backend:
 
