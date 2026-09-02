@@ -23,7 +23,7 @@ document.addEventListener('alpine:init', () => {
             const x = (event.clientX - rect.left) / rect.width - 0.5;
             const y = (event.clientY - rect.top) / rect.height - 0.5;
 
-            this.tilt = `perspective(900px) rotateX(${(-y * 7).toFixed(2)}deg) rotateY(${(x * 9).toFixed(2)}deg) translateY(-4px) scale(1.035)`;
+            this.tilt = `perspective(1200px) rotateX(${(-y * 2.5).toFixed(2)}deg) rotateY(${(x * 3).toFixed(2)}deg) translateY(-2px) scale(1.012)`;
         },
 
         enter() {
@@ -33,7 +33,10 @@ document.addEventListener('alpine:init', () => {
         leave() {
             this.hovering = false;
             this.tilt = '';
-            this.active = config.active ?? 0;
+
+            if (! config.sticky) {
+                this.active = config.active ?? 0;
+            }
         },
 
         pick(index) {

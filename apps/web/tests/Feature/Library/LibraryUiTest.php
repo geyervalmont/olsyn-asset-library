@@ -85,3 +85,24 @@ test('the app shell carries the workspace switcher, primary navigation and user 
         ->assertSee(route('dashboard'))
         ->assertDontSee(route('drives.index'));
 });
+
+test('the material record carries the same interactive preview and target badges', function () {
+    $material = Material::factory()->create(['name' => 'Wool felt']);
+    app(AddVariant::class)->handle($material, ['colourway' => 'Dusk'], overrides: ['dominant_hex' => '#6b7a8c']);
+    $dawn = app(AddVariant::class)->handle($material, ['colourway' => 'Dawn'], overrides: ['dominant_hex' => '#d8c7b0']);
+    $image = imagecreatetruecolor(8, 8);
+    ob_start();
+    imagepng($image);
+    $file = app(FileStore::class)->store((string) ob_get_clean(), 'dawn.png');
+    app(CreateRepresentation::class)->handle($dawn, 'pbr', '1k', ['base_color' => $file]);
+
+    Livewire::actingAs($this->viewer)
+        ->test('pages::materials.show', ['material' => $material])
+        ->assertSee('data-test="material-hero"', false)
+        ->assertSee('data-test="colourways"', false)
+        ->assertSee('--chip: #6b7a8c', false)
+        ->assertSee($file->url(), false)
+        ->assertSee('data-badge="pbr" data-state="candidate"', false)
+        ->assertSee('sticky\u0022:true', false)
+        ->assertSee('is-highlighted', false);
+});

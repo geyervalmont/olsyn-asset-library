@@ -169,6 +169,39 @@ class MaterialPreviews
     }
 
     /**
+     * Everything a swatch needs to preview colourways, ready for Alpine.
+     *
+     * @param  Collection<int, Variant>  $chips
+     * @param  array<int, File>  $variantFiles
+     * @return array{variants: list<array{id: int, name: string, hex: string, image: string|null}>, active: int}
+     */
+    public function cardData(Material $material, Collection $chips, array $variantFiles, ?File $preview): array
+    {
+        $variants = [];
+        $active = 0;
+
+        foreach ($chips->values() as $index => $chip) {
+            $file = $variantFiles[$chip->id] ?? null;
+            $variants[] = [
+                'id' => (int) $chip->id,
+                'name' => (string) $chip->name,
+                'hex' => $chip->dominant_hex ?? self::fallbackHex($chip->code),
+                'image' => $file?->url(),
+            ];
+
+            if ($file !== null && $preview !== null && $file->is($preview) && $active === 0) {
+                $active = $index;
+            }
+        }
+
+        if ($variants === []) {
+            $variants[] = ['id' => 0, 'name' => $material->name, 'hex' => self::fallbackHex($material->code), 'image' => $preview?->url()];
+        }
+
+        return ['variants' => $variants, 'active' => $active];
+    }
+
+    /**
      * Short labels for target badges on cards.
      *
      * @return array<string, string>

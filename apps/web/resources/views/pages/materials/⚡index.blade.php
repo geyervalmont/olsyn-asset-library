@@ -112,36 +112,16 @@ new #[Title('Library')] class extends Component {
     }
 
     /**
-     * Everything a card needs to preview its colourways, ready for Alpine.
-     *
      * @return array{variants: list<array{id: int, name: string, hex: string, image: string|null}>, active: int}
      */
     public function cardData(Material $material): array
     {
-        $chips = $this->chips[$material->id] ?? collect();
-        $preview = $this->previews[$material->id] ?? null;
-        $variants = [];
-        $active = 0;
-
-        foreach ($chips as $index => $chip) {
-            $file = $this->variantFiles[$chip->id] ?? null;
-            $variants[] = [
-                'id' => (int) $chip->id,
-                'name' => (string) $chip->name,
-                'hex' => $chip->dominant_hex ?? MaterialPreviews::fallbackHex($chip->code),
-                'image' => $file?->url(),
-            ];
-
-            if ($file !== null && $preview !== null && $file->is($preview) && $active === 0) {
-                $active = $index;
-            }
-        }
-
-        if ($variants === []) {
-            $variants[] = ['id' => 0, 'name' => $material->name, 'hex' => MaterialPreviews::fallbackHex($material->code), 'image' => $preview?->url()];
-        }
-
-        return ['variants' => $variants, 'active' => $active];
+        return app(MaterialPreviews::class)->cardData(
+            $material,
+            $this->chips[$material->id] ?? collect(),
+            $this->variantFiles,
+            $this->previews[$material->id] ?? null,
+        );
     }
 
     #[Computed]
@@ -283,43 +263,7 @@ new #[Title('Library')] class extends Component {
                     x-bind:class="hovering && 'is-hovering'"
                     x-bind:style="tilt && { transform: tilt }"
                 >
-                    <div class="ui-swatch-card__preview">
-                        <div class="ui-swatch-card__fill" style="--chip: {{ $first['hex'] }}" x-bind:style="current ? '--chip: ' + current.hex : ''" aria-hidden="true"></div>
-                        <img
-                            src="{{ $first['image'] ?? '' }}"
-                            alt="{{ $material->name }}"
-                            loading="lazy"
-                            @if ($first['image'] === null) hidden @endif
-                            x-bind:src="current?.image ?? ''"
-                            x-bind:hidden="! current?.image"
-                        />
-                        <span class="ui-swatch-card__tag">{{ $material->category->code }}</span>
-                        <div class="ui-swatch-card__badges" aria-label="{{ __('Available files') }}">
-                            @forelse ($targets as $slug => $state)
-                                <span class="ui-tag" data-badge="{{ $slug }}" data-state="{{ $state }}" title="{{ ucfirst($slug) }} · {{ $state }}">{{ \App\Library\Previews\MaterialPreviews::badgeLabels()[$slug] ?? strtoupper($slug) }}</span>
-                            @empty
-                                <span class="ui-tag ui-tag--faint" data-badge="none">{{ __('No files') }}</span>
-                            @endforelse
-                        </div>
-                        <span class="ui-swatch-card__label" x-text="current?.name ?? ''">{{ $first['name'] }}</span>
-                        @if (count($card['variants']) > 1)
-                            <div class="ui-swatch-card__colourways" role="group" aria-label="{{ __('Colourways') }}" data-test="colourways">
-                                @foreach ($card['variants'] as $index => $chip)
-                                    <button
-                                        type="button"
-                                        title="{{ $chip['name'] }}"
-                                        style="--chip: {{ $chip['hex'] }};@if ($chip['image']) background-image: url('{{ $chip['image'] }}')@endif"
-                                        x-on:mouseenter="pick({{ $index }})"
-                                        x-on:click.prevent.stop="pick({{ $index }})"
-                                        x-bind:class="active === {{ $index }} && 'is-active'"
-                                    ></button>
-                                @endforeach
-                                @if ($material->variants_count > count($card['variants']))
-                                    <span>+{{ $material->variants_count - count($card['variants']) }}</span>
-                                @endif
-                            </div>
-                        @endif
-                    </div>
+                    <x-ui.swatch-preview :card="$card" :targets="$targets" :tag="$material->category->code" :variants-count="$material->variants_count" :name="$material->name" />
                     <div class="ui-swatch-card__body">
                         <strong>{{ $material->name }}</strong>
                         <small>{{ $material->supplier?->name ?? __('In-house') }}@if ($material->collection) · {{ $material->collection }}@endif</small>

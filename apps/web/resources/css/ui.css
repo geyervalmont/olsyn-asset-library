@@ -3177,3 +3177,42 @@ h1.ui-reveal.is-revealed em::after {
         transition: border-color var(--ui-medium), box-shadow var(--ui-medium);
     }
 }
+
+.ui-swatch-card--hero {
+    display: block;
+}
+
+.ui-swatch-card--hero.is-hovering {
+    box-shadow: var(--ui-el-2);
+}
+
+.ui-swatch-card__preview--open .ui-swatch-card__label,
+.ui-swatch-card__preview--open .ui-swatch-card__colourways {
+    opacity: 1;
+    transform: none;
+}
+
+.ui-swatch-card__preview--open .ui-swatch-card__colourways {
+    right: auto;
+    max-width: calc(100% - 16px);
+}
+
+.ui-swatch-card__preview--open .ui-swatch-card__colourways button {
+    flex: 0 0 22px;
+    width: 22px;
+    height: 22px;
+}
+
+.ui-swatch-card__preview--open .ui-swatch-card__label {
+    bottom: 44px;
+    font-size: 10px;
+}
+
+.ui-variant {
+    transition: border-color var(--ui-medium), box-shadow var(--ui-medium);
+}
+
+.ui-variant.is-highlighted {
+    border-color: rgba(74, 110, 153, 0.45);
+    box-shadow: var(--ui-el-2);
+}

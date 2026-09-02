@@ -59,6 +59,27 @@ new class extends Component {
         return app(MaterialPreviews::class)->filesFor($this->material->newCollection([$this->material]))[$this->material->id] ?? null;
     }
 
+    /**
+     * @return array{variants: list<array{id: int, name: string, hex: string, image: string|null}>, active: int}
+     */
+    #[Computed]
+    public function card(): array
+    {
+        $previews = app(MaterialPreviews::class);
+        $chips = $this->variants->take(24);
+
+        return $previews->cardData($this->material, $chips, $previews->variantFilesFor($chips), $this->preview);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function targets(): array
+    {
+        return app(MaterialPreviews::class)->targetsFor($this->material->newCollection([$this->material]))[$this->material->id] ?? [];
+    }
+
     #[Computed]
     public function versions(): Collection
     {
@@ -201,7 +222,7 @@ new class extends Component {
     }
 }; ?>
 
-<section>
+<section x-data="swatchCard(@js([...$this->card, 'sticky' => true]))">
     <div class="ui-record-head">
         <div>
             <x-ui.eyebrow>{{ $material->category->name }}</x-ui.eyebrow>
@@ -224,18 +245,8 @@ new class extends Component {
     </div>
 
     <div class="ui-bento" style="margin-bottom: 12px">
-        <x-ui.panel class="ui-bento__wide" :padding="false">
-            <div class="ui-swatch-card__preview" style="aspect-ratio: 21 / 9; border-bottom: 0; border-radius: inherit">
-                @if ($this->preview)
-                    <img src="{{ $this->preview->url() }}" alt="{{ $material->name }}" />
-                @else
-                    <div class="ui-chips" aria-hidden="true">
-                        @foreach ($this->variants->take(12) as $chip)
-                            <span style="--chip: {{ $chip->dominant_hex ?? \App\Library\Previews\MaterialPreviews::fallbackHex($chip->code) }}" title="{{ $chip->name }}"></span>
-                        @endforeach
-                    </div>
-                @endif
-            </div>
+        <x-ui.panel class="ui-bento__wide ui-swatch-card ui-swatch-card--hero" :padding="false" x-on:mouseenter="enter" x-on:mousemove="move" x-on:mouseleave="leave" x-bind:class="hovering && 'is-hovering'" x-bind:style="tilt && { transform: tilt }" data-test="material-hero">
+            <x-ui.swatch-preview :card="$this->card" :targets="$this->targets" :tag="$material->category->code" :variants-count="$this->variants->count()" :name="$material->name" :open="true" style="aspect-ratio: 21 / 9; border-bottom: 0; border-radius: inherit" />
         </x-ui.panel>
         <div class="ui-stat-stack">
             <x-ui.stat :label="__('Variants')" :value="$this->variants->count()" />
@@ -250,7 +261,7 @@ new class extends Component {
 
     <div class="ui-stack">
         @foreach ($this->variants as $variant)
-            <div class="ui-variant" wire:key="variant-{{ $variant->id }}" data-test="variant">
+            <div class="ui-variant" wire:key="variant-{{ $variant->id }}" data-test="variant" id="variant-{{ $variant->id }}" x-bind:class="current && current.id === {{ $variant->id }} && 'is-highlighted'" x-on:mouseenter="pick({{ $loop->index }})">
                 <div class="ui-variant__chip" style="--chip: {{ $variant->dominant_hex ?? \App\Library\Previews\MaterialPreviews::fallbackHex($variant->code) }}" aria-hidden="true"></div>
                 <div>
                     <div class="ui-variant__head">
