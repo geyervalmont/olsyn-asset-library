@@ -16,8 +16,8 @@ enforce read-only behavior.
 
 ## Quick start
 
-Prerequisites are Docker with Compose, `/dev/fuse`, and `smbclient`. Rust is
-only needed for native development and `make check`.
+Prerequisites are Docker with Compose and `/dev/fuse`. Rust is only needed for
+native development and `make check`; the E2E’s SMB client is containerized.
 
 ```bash
 make e2e
@@ -43,7 +43,8 @@ endpoints` prints the actual S3 and SMB URLs.
 
 Machine-specific Compose changes can live in the ignored
 `dev/compose.override.yaml`; the wrapper loads it automatically after the base
-file.
+file. Automated E2E runs explicitly ignore this override so machine-specific
+services cannot make the release gate nondeterministic.
 
 For the quickest filesystem loop, mount on the host while using an isolated
 containerized RustFS backend:
