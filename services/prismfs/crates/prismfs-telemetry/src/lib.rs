@@ -98,3 +98,20 @@ pub fn record(event: &AuditEvent<'_>) {
         "filesystem access"
     );
 }
+
+/// Records a cache result without placing object identities in metric labels.
+pub fn record_cache(hit: bool, bytes: usize) {
+    let metric = if hit {
+        metrics::CACHE_HITS_TOTAL
+    } else {
+        metrics::CACHE_MISSES_TOTAL
+    };
+    ::metrics::counter!(metric).increment(1);
+    ::metrics::counter!(metrics::BYTES_READ_TOTAL).increment(bytes as u64);
+    tracing::debug!(cache_hit = hit, bytes, "object range cache result");
+}
+
+/// Adjusts the number of live FUSE file handles.
+pub fn record_file_handle(delta: f64) {
+    ::metrics::gauge!(metrics::ACTIVE_FILE_HANDLES).increment(delta);
+}

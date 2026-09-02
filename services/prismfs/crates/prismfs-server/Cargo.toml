@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 
+[[bin]]
+name = "prismfs"
+path = "src/main.rs"
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
@@ -12,8 +16,10 @@ prismfs-cache.workspace = true
 prismfs-core.workspace = true
 prismfs-fuse.workspace = true
 prismfs-policy.workspace = true
+prismfs-smb.workspace = true
 prismfs-storage.workspace = true
 prismfs-telemetry.workspace = true
+serde_yaml.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

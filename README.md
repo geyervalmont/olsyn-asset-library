@@ -25,6 +25,7 @@ prismfs-storage     object reads and S3-compatible storage adapters
 prismfs-cache       cache contracts and implementations
 prismfs-telemetry   logs, metrics, traces, and audit vocabulary
 prismfs-fuse        Linux FUSE adapter
+prismfs-smb         safe read-only Samba configuration
 prismfs-server      executable composition root
 ```
 
@@ -58,11 +59,16 @@ Useful commands:
 
 ```bash
 make prism-check       # format, lint, and test all PrismFS crates
+make prism-e2e         # prove RustFS -> FUSE -> POSIX and SMB end to end
 make prism-s3-test     # exercise PrismFS byte-range reads against RustFS
 make web-test          # run Laravel checks in Sail
 make up                # start services without foreground Vite
 make down              # stop services without deleting volumes
 ```
+
+PrismFS is mirrored to its public repository with Git subtree history. From a
+clean monorepo, `make prism-publish` pushes `services/prismfs` to the public
+`prismfs` remote; `make prism-update` pulls public standalone changes back.
 
 The local RustFS credentials and bucket are development-only defaults in the
 example environment. Production credentials must never reuse them.

@@ -1,42 +1,99 @@
 # PrismFS
 
-A policy-aware virtual filesystem for projecting object storage into dynamic
-namespaces.
+PrismFS projects immutable objects from S3-compatible storage into a
+policy-aware, read-only filesystem. Linux applications consume the namespace
+through FUSE; SMB clients consume that same FUSE mount through Samba.
 
-PrismFS is currently an early, read-only workspace scaffold. Its crate
-boundaries and core contracts are intentional: FUSE mounting and control-plane
-integration will be implemented as vertical slices without moving adapter
-concerns into `prismfs-core`.
+The current vertical slice is executable end to end:
 
-## Workspace
+```text
+RustFS object -> namespace + policy -> range cache -> FUSE -> POSIX / Samba -> SMB client
+```
 
-- `prismfs-core` — namespace contracts and shared domain types
-- `prismfs-policy` — authorization contracts and decisions
-- `prismfs-storage` — object reads and S3-compatible adapters
-- `prismfs-cache` — cache contracts and implementations
-- `prismfs-telemetry` — logs, metrics, traces, and audit vocabulary
-- `prismfs-fuse` — Linux FUSE adapter
+Denied paths are removed from directory listings and rejected on direct
+lookup. Reads are range-based and cached in process. FUSE and Samba both
+enforce read-only behavior.
+
+## Quick start
+
+Prerequisites are Docker with Compose, `/dev/fuse`, and `smbclient`. Rust is
+only needed for native development and `make check`.
+
+```bash
+make e2e
+```
+
+That command builds the service, provisions a disposable RustFS bucket and
+fixtures, mounts PrismFS, reads the public fixture through POSIX and SMB,
+checks policy hiding and write rejection, and removes its containers and
+volume.
+
+For an interactive standalone stack:
+
+```bash
+make dev-up
+make endpoints
+make dev-logs
+make dev-down
+```
+
+Host ports are assigned dynamically and the Compose project name includes a
+hash of the checkout path, so parallel checkouts do not collide. `make
+endpoints` prints the actual S3 and SMB URLs.
+
+For the quickest filesystem loop, mount on the host while using an isolated
+containerized RustFS backend:
+
+```bash
+make mount
+# another terminal
+cat mnt/public/hello.txt
+```
+
+`Ctrl-C` unmounts FUSE and removes the disposable backend.
+
+## Configuration
+
+`dev/namespace.yaml` is the versioned namespace manifest. Each file maps one
+absolute virtual path to an immutable object reference:
+
+```yaml
+version: 1
+files:
+  - path: /public/hello.txt
+    object:
+      bucket: prismfs-dev
+      key: fixtures/hello.txt
+      size: 43
+      version: null
+```
+
+The runtime reads standard `AWS_*` settings understood by the Rust
+`object_store` adapter. `PRISMFS_S3_BUCKET` must match the manifest bucket.
+Run `prismfs mount --help` for mount, tenant, and policy options. A
+comma-delimited `PRISMFS_DENY_PREFIX` or repeatable `--deny-prefix` hides
+paths and their descendants.
+
+Samba is deliberately an adapter over the mounted namespace, not a second
+storage path. The combined development container runs both processes as the
+FUSE mount owner, avoiding host `allow_other` configuration. Its published
+share is guest-only and read-only; production identity integration is a later
+control-plane concern.
+
+## Workspace boundaries
+
+- `prismfs-core` — paths, manifests, nodes, namespace contracts
+- `prismfs-policy` — authorization actions and policies
+- `prismfs-storage` — range readers and the S3-compatible adapter
+- `prismfs-cache` — object-range cache contracts
+- `prismfs-telemetry` — audit events and stable metric vocabulary
+- `prismfs-fuse` — inode mapping and Linux FUSE callbacks
+- `prismfs-smb` — safe Samba configuration generation
 - `prismfs-server` — executable composition root
 
-## Development
+Use `make check` for the full format, lint, and test gate. `make s3-test`
+independently runs the storage compatibility test against disposable RustFS.
 
-Install Rust through rustup; `rust-toolchain.toml` pins the project toolchain.
-
-```bash
-make check
-make doctor
-```
-
-The ignored S3 compatibility test writes a temporary object, reads an exact
-byte range, and removes the object. Copy `.env.example` to `.env` and point it
-at any development S3-compatible service before running:
-
-```bash
-set -a
-. ./.env
-set +a
-make s3-test
-```
-
-Within the Olsyn Asset Library monorepo, `make bootstrap` provisions the
-RustFS fixture and `make prism-s3-test` supplies its Gerrymander endpoint.
+PrismFS also lives under `services/prismfs` in the private Olsyn Asset Library
+monorepo and is published as a public Git subtree. Development remains fully
+standalone from either checkout.

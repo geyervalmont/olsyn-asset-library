@@ -1,0 +1,14 @@
+version: 1
+files:
+  - path: /public/hello.txt
+    object:
+      bucket: prismfs-dev
+      key: fixtures/hello.txt
+      size: 43
+      version: null
+  - path: /private/secret.txt
+    object:
+      bucket: prismfs-dev
+      key: fixtures/secret.txt
+      size: 41
+      version: null

@@ -6,6 +6,7 @@ members = [
   "crates/prismfs-fuse",
   "crates/prismfs-policy",
   "crates/prismfs-server",
+  "crates/prismfs-smb",
   "crates/prismfs-storage",
   "crates/prismfs-telemetry",
 ]
@@ -27,6 +28,7 @@ fuser = { version = "0.18", default-features = false }
 metrics = "0.24"
 object_store = { version = "0.14.1", default-features = false, features = ["aws"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
 thiserror = "2.0"
 tokio = { version = "1.47", features = ["macros", "rt-multi-thread", "signal"] }
 tracing = "0.1"
@@ -37,6 +39,7 @@ prismfs-cache = { path = "crates/prismfs-cache" }
 prismfs-core = { path = "crates/prismfs-core" }
 prismfs-fuse = { path = "crates/prismfs-fuse" }
 prismfs-policy = { path = "crates/prismfs-policy" }
+prismfs-smb = { path = "crates/prismfs-smb" }
 prismfs-storage = { path = "crates/prismfs-storage" }
 prismfs-telemetry = { path = "crates/prismfs-telemetry" }
 

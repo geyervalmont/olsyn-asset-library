@@ -1,0 +1,94 @@
+services:
+  rustfs-volume-init:
+    image: alpine:3.22
+    user: root
+    command: ["sh", "-c", "chown -R 10001:10001 /data"]
+    volumes:
+      - rustfs-data:/data
+    restart: "no"
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0-rc.4
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-prismfs-dev}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-prismfs-local-secret-change-me}
+      RUSTFS_RPC_SECRET: ${RUSTFS_RPC_SECRET:-prismfs-local-rpc-secret-change-me-too}
+      RUSTFS_OBS_LOGGER_LEVEL: ${RUSTFS_LOG:-warn}
+    ports:
+      - "127.0.0.1::9000"
+    volumes:
+      - rustfs-data:/data
+    depends_on:
+      rustfs-volume-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  rustfs-init:
+    image: rustfs/rc:v0.1.31
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        rc alias set local http://rustfs:9000 "$${RUSTFS_ACCESS_KEY}" "$${RUSTFS_SECRET_KEY}"
+        rc ready local
+        rc bucket create --ignore-existing "local/$${RUSTFS_BUCKET}"
+        printf 'Hello from PrismFS over S3, FUSE, and SMB!\n' | rc pipe "local/$${RUSTFS_BUCKET}/fixtures/hello.txt"
+        printf 'This object is hidden by PrismFS policy.\n' | rc pipe "local/$${RUSTFS_BUCKET}/fixtures/secret.txt"
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-prismfs-dev}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-prismfs-local-secret-change-me}
+      RUSTFS_BUCKET: ${PRISMFS_S3_BUCKET:-prismfs-dev}
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    restart: "no"
+
+  prismfs-smb:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    environment:
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-prismfs-dev}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-prismfs-local-secret-change-me}
+      AWS_DEFAULT_REGION: ${PRISMFS_S3_REGION:-us-east-1}
+      AWS_ENDPOINT: http://rustfs:9000
+      AWS_ALLOW_HTTP: "true"
+      PRISMFS_S3_BUCKET: ${PRISMFS_S3_BUCKET:-prismfs-dev}
+      PRISMFS_MANIFEST: /etc/prismfs/namespace.yaml
+      PRISMFS_MOUNTPOINT: /srv/prismfs
+      PRISMFS_DENY_PREFIX: ${PRISMFS_DENY_PREFIX:-/private}
+      PRISMFS_SMB_SHARE: ${PRISMFS_SMB_SHARE:-prismfs}
+      RUST_LOG: ${RUST_LOG:-prismfs=info}
+    ports:
+      - "127.0.0.1::445"
+    volumes:
+      - ./dev/namespace.yaml:/etc/prismfs/namespace.yaml:ro
+    depends_on:
+      rustfs-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "smbclient", "//127.0.0.1/prismfs", "-N", "-c", "ls"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  rustfs-data:

@@ -1,6 +1,6 @@
 //! Protocol-independent namespace contracts and domain types for PrismFS.
 
-use std::{collections::BTreeMap, fmt, sync::RwLock};
+use std::{collections::BTreeMap, fmt, str::FromStr, sync::RwLock};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,9 @@ pub enum PrismError {
     /// A virtual path is malformed.
     #[error("invalid virtual path: {0}")]
     InvalidPath(String),
+    /// A namespace manifest violates a core invariant.
+    #[error("invalid namespace manifest: {0}")]
+    InvalidManifest(String),
     /// A namespace node was not found.
     #[error("namespace node not found: {0}")]
     NotFound(VirtualPath),
@@ -132,6 +135,14 @@ impl TryFrom<String> for VirtualPath {
     }
 }
 
+impl FromStr for VirtualPath {
+    type Err = PrismError;
+
+    fn from_str(value: &str) -> Result<Self> {
+        Self::parse(value)
+    }
+}
+
 impl From<VirtualPath> for String {
     fn from(path: VirtualPath) -> Self {
         path.0
@@ -177,6 +188,24 @@ pub struct ObjectRef {
     pub size: u64,
     /// Optional immutable version or entity tag.
     pub version: Option<String>,
+}
+
+/// Versioned, protocol-independent description of a projected namespace.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NamespaceManifest {
+    /// Manifest schema version. Version 1 is currently supported.
+    pub version: u32,
+    /// Files projected into the namespace. Parent directories are implicit.
+    pub files: Vec<ManifestFile>,
+}
+
+/// One virtual file and its immutable backing object.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ManifestFile {
+    /// Absolute path presented to filesystem clients.
+    pub path: VirtualPath,
+    /// Immutable object containing the file bytes.
+    pub object: ObjectRef,
 }
 
 /// A node in a computed PrismFS namespace.
@@ -312,6 +341,72 @@ impl StaticNamespace {
         nodes.insert(path, node);
         Ok(())
     }
+
+    /// Builds a static namespace from a versioned manifest.
+    pub fn from_manifest(manifest: &NamespaceManifest) -> Result<Self> {
+        if manifest.version != 1 {
+            return Err(PrismError::InvalidManifest(format!(
+                "unsupported version {}; expected 1",
+                manifest.version
+            )));
+        }
+
+        let namespace = Self::new();
+        for file in &manifest.files {
+            namespace.insert_file(file.path.clone(), file.object.clone())?;
+        }
+        Ok(namespace)
+    }
+
+    /// Inserts a file and creates all missing parent directories.
+    pub fn insert_file(&self, path: VirtualPath, object: ObjectRef) -> Result<()> {
+        if path == VirtualPath::root() {
+            return Err(PrismError::InvalidManifest(
+                "the namespace root cannot be a file".to_owned(),
+            ));
+        }
+        if object.bucket.is_empty() || object.key.is_empty() {
+            return Err(PrismError::InvalidManifest(format!(
+                "{path} has an empty object bucket or key"
+            )));
+        }
+
+        let components = path
+            .as_str()
+            .split('/')
+            .filter(|component| !component.is_empty())
+            .collect::<Vec<_>>();
+        let mut nodes = self
+            .nodes
+            .write()
+            .map_err(|error| PrismError::Internal(error.to_string()))?;
+        let mut current = VirtualPath::root();
+
+        for component in &components[..components.len() - 1] {
+            current = current.join(component)?;
+            match nodes.get(&current) {
+                Some(node) if node.kind != NodeKind::Directory => {
+                    return Err(PrismError::InvalidManifest(format!(
+                        "file {} cannot contain {path}",
+                        current
+                    )));
+                }
+                Some(_) => {}
+                None => {
+                    nodes.insert(current.clone(), Node::directory(*component));
+                }
+            }
+        }
+
+        if nodes.contains_key(&path) {
+            return Err(PrismError::InvalidManifest(format!(
+                "duplicate path {path}"
+            )));
+        }
+        let name = path.file_name().to_owned();
+        nodes.insert(path, Node::file(name, object));
+        Ok(())
+    }
 }
 
 impl Default for StaticNamespace {
@@ -382,5 +477,50 @@ mod tests {
 
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].name, "concrete");
+    }
+
+    #[tokio::test]
+    async fn manifest_creates_parent_directories() {
+        let manifest = NamespaceManifest {
+            version: 1,
+            files: vec![ManifestFile {
+                path: VirtualPath::parse("/materials/concrete.txt").expect("valid path"),
+                object: ObjectRef {
+                    bucket: "assets".to_owned(),
+                    key: "concrete.txt".to_owned(),
+                    size: 8,
+                    version: Some("v1".to_owned()),
+                },
+            }],
+        };
+        let namespace = StaticNamespace::from_manifest(&manifest).expect("valid manifest");
+        let context = RequestContext::new("tenant", "user");
+
+        let children = namespace
+            .list(&context, &VirtualPath::root())
+            .await
+            .expect("list root");
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name, "materials");
+        assert_eq!(children[0].kind, NodeKind::Directory);
+    }
+
+    #[test]
+    fn manifest_rejects_duplicate_paths() {
+        let file = ManifestFile {
+            path: VirtualPath::parse("/duplicate.txt").expect("valid path"),
+            object: ObjectRef {
+                bucket: "assets".to_owned(),
+                key: "duplicate.txt".to_owned(),
+                size: 1,
+                version: None,
+            },
+        };
+        let manifest = NamespaceManifest {
+            version: 1,
+            files: vec![file.clone(), file],
+        };
+
+        assert!(StaticNamespace::from_manifest(&manifest).is_err());
     }
 }

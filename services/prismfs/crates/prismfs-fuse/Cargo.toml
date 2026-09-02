@@ -6,12 +6,16 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
+async-trait.workspace = true
+bytes.workspace = true
 fuser.workspace = true
 prismfs-cache.workspace = true
 prismfs-core.workspace = true
 prismfs-policy.workspace = true
 prismfs-storage.workspace = true
+prismfs-telemetry.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true
