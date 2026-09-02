@@ -17,6 +17,16 @@ export default defineConfig({
             fonts: [
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
+                    optimizedFallbacks: false,
+                }),
+                bunny('Fraunces', {
+                    weights: [300, 400, 500, 600],
+                    styles: ['normal', 'italic'],
+                    optimizedFallbacks: false,
+                }),
+                bunny('IBM Plex Mono', {
+                    weights: [400, 500],
+                    optimizedFallbacks: false,
                 }),
             ],
         }),
