@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev up down check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update web-test
+.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update web-test
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -13,6 +13,9 @@ down:
 	./scripts/down.sh
 
 check: prism-check web-test
+
+hmr-check:
+	@./scripts/check-hmr.sh
 
 prism-check:
 	cd services/prismfs && cargo fmt --all --check
@@ -35,5 +38,5 @@ prism-update:
 	./scripts/prismfs-subtree.sh pull
 
 web-test:
-	docker compose -f apps/web/compose.yaml --project-directory apps/web exec -T laravel.test npm run build
+	docker compose -f apps/web/compose.yaml --project-directory apps/web exec -T laravel.test bun run build
 	docker compose -f apps/web/compose.yaml --project-directory apps/web exec -T laravel.test composer test

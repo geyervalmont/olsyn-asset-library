@@ -8,8 +8,11 @@ infra_compose=(docker compose -f "$repo_root/infrastructure/local/compose.yaml" 
 
 say() { printf 'bootstrap: %s\n' "$*"; }
 
+cd "$web_dir"
+
 command -v docker >/dev/null || { printf 'Docker is required.\n' >&2; exit 1; }
 command -v gerry >/dev/null || { printf 'Gerrymander is required.\n' >&2; exit 1; }
+command -v curl >/dev/null || { printf 'curl is required.\n' >&2; exit 1; }
 
 docker network inspect dev-proxy >/dev/null 2>&1 || docker network create dev-proxy >/dev/null
 
@@ -43,18 +46,47 @@ say "starting RustFS and creating the PrismFS development bucket"
 "${infra_compose[@]}" up -d --wait rustfs
 "${infra_compose[@]}" run --rm rustfs-init
 
+if [ -f "$web_dir/public/hot" ] && \
+    [ -z "$("${web_compose[@]}" ps --status running --quiet vite)" ]; then
+    say "removing a stale Vite hot marker"
+    rm -f "$web_dir/public/hot"
+fi
+
 say "starting the Laravel Sail stack (building its image when missing)"
 "${web_compose[@]}" up -d --wait
 
-if ! "${web_compose[@]}" exec -T laravel.test test -d node_modules; then
-    say "installing frontend dependencies"
-    "${web_compose[@]}" exec -T laravel.test npm ci
+if [ -d "$web_dir/node_modules" ] && [ ! -w "$web_dir/node_modules" ]; then
+    say "repairing frontend dependency ownership"
+    "${web_compose[@]}" exec -T laravel.test \
+        chown -R "$(id -u):$(id -g)" /var/www/html/node_modules
 fi
+
+say "syncing frontend dependencies with Bun"
+"${web_compose[@]}" exec -T --user "$(id -u):$(id -g)" \
+    -e HOME=/tmp/olsyn-bun-home \
+    laravel.test bun install --frozen-lockfile
 
 say "applying Laravel migrations and development seed data"
 "${web_compose[@]}" exec -T laravel.test php artisan migrate --force --seed
 
 say "applying Gerrymander routes"
 gerry up -f "$repo_root/gerrymander.yaml"
+
+for attempt in $(seq 1 30); do
+    if curl --fail --silent --show-error \
+        https://vite.asset-library.test/@vite/client >/dev/null 2>&1; then
+        break
+    fi
+
+    if [ "$attempt" -eq 30 ]; then
+        say "Vite did not become reachable at https://vite.asset-library.test"
+        "${web_compose[@]}" logs --tail=80 vite >&2
+        exit 1
+    fi
+
+    sleep 1
+done
+
+"$repo_root/scripts/check-hmr.sh" >/dev/null
 
 say "ready"

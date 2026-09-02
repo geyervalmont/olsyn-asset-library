@@ -27,7 +27,6 @@ services:
       dev-proxy:
         aliases:
           - asset-library-web
-          - asset-library-vite
     depends_on:
       pgsql:
         condition: service_healthy
@@ -35,6 +34,19 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+
+  vite:
+    <<: *sail-app
+    command: ./scripts/vite.sh
+    networks:
+      sail:
+      dev-proxy:
+        aliases:
+          - asset-library-vite
+    depends_on:
+      laravel.test:
+        condition: service_started
+    restart: unless-stopped
 
   queue:
     <<: *sail-app

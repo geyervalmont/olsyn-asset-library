@@ -13,5 +13,7 @@ printf '  S3       https://s3.asset-library.test\n'
 printf '  storage  https://storage.asset-library.test/rustfs/console/\n'
 printf '  Vite     https://vite.asset-library.test\n\n'
 
+printf 'Vite is running in Compose; following its logs (Ctrl-C detaches only).\n\n'
+
 exec docker compose -f "$web_dir/compose.yaml" --project-directory "$web_dir" \
-    exec laravel.test npm run dev
+    logs --tail=40 --follow vite

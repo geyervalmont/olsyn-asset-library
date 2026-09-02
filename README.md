@@ -40,11 +40,13 @@ make bootstrap
 make dev
 ```
 
-`make bootstrap` installs application dependencies in containers, starts
-PostgreSQL, Redis, Mailpit, and RustFS, creates the local S3 bucket, applies
-Laravel migrations, and registers Gerrymander routes. `make dev` runs the
-same idempotent preparation and then keeps the Vite Plus development server
-in the foreground.
+`make bootstrap` installs application dependencies with Bun in the Sail
+container, starts PostgreSQL, Redis, Mailpit, RustFS, and the Vite Plus HMR
+service, creates the local S3 bucket, applies Laravel migrations, and registers
+Gerrymander routes. `make dev` runs the same idempotent preparation and then
+follows the Vite service logs; closing it does not stop hot reloading.
+CSS updates are hot-swapped, while Blade, Livewire, and PHP changes trigger a
+browser reload through the same Gerry-managed TLS endpoint.
 
 Local services use trusted Gerrymander domains and do not publish application,
 database, Redis, mail dashboard, or object-storage ports on the host:
@@ -64,8 +66,9 @@ Useful commands:
 make prism-check       # format, lint, and test all PrismFS crates
 make prism-e2e         # prove RustFS -> FUSE -> POSIX and SMB end to end
 make prism-s3-test     # exercise PrismFS byte-range reads against RustFS
+make hmr-check         # verify Vite and Laravel are connected through Gerry
 make web-test          # run Laravel checks in Sail
-make up                # start services without foreground Vite
+make up                # start services with Vite running in the background
 make down              # stop services without deleting volumes
 ```
 

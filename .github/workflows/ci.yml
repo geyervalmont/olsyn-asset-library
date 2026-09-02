@@ -39,14 +39,12 @@ jobs:
           php-version: "8.5"
           tools: composer:v2
           coverage: none
-      - uses: actions/setup-node@v7
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          bun-version: "1.4.0"
       - run: composer install --no-interaction --prefer-dist
       - name: Generate test application key
         run: echo "APP_KEY=$(php artisan key:generate --show)" >> "$GITHUB_ENV"
-      - run: npm ci
-      - run: npm run build
+      - run: bun install --frozen-lockfile
+      - run: bun run build
       - run: composer test

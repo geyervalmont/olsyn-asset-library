@@ -123,8 +123,10 @@
     flex-direction: column;
     height: 100vh;
     padding: 24px 18px 18px;
-    background: rgba(242, 238, 227, 0.78);
-    border-right: 1px solid var(--ui-line);
+    background:
+        radial-gradient(circle at 12% 0%, rgba(107, 141, 184, 0.16), transparent 18rem),
+        rgba(44, 53, 77, 0.97);
+    border-right: 1px solid rgba(143, 167, 201, 0.2);
     backdrop-filter: blur(18px) saturate(140%);
 }
 
@@ -135,7 +137,7 @@
     bottom: 0;
     width: 1px;
     content: '';
-    background: rgba(255, 255, 255, 0.54);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .ui-sidebar__top {
@@ -152,9 +154,9 @@
     width: 36px;
     height: 36px;
     padding: 0;
-    color: var(--ui-slate);
+    color: var(--ui-paper);
     background: transparent;
-    border: 1px solid var(--ui-line);
+    border: 1px solid rgba(143, 167, 201, 0.26);
     border-radius: var(--ui-radius-button);
 }
 
@@ -219,6 +221,21 @@
     text-transform: uppercase;
 }
 
+.ui-sidebar .ui-brand {
+    color: var(--ui-paper);
+}
+
+.ui-sidebar .ui-brand__mark {
+    color: var(--ui-paper);
+    background: rgba(255, 255, 255, 0.055);
+    border-color: rgba(143, 167, 201, 0.28);
+    box-shadow: none;
+}
+
+.ui-sidebar .ui-brand__words small {
+    color: rgba(245, 243, 239, 0.48);
+}
+
 .ui-sidebar__nav {
     display: grid;
     gap: 4px;
@@ -227,7 +244,7 @@
 
 .ui-sidebar__nav p {
     margin: 0 10px 10px;
-    color: var(--ui-faint);
+    color: rgba(143, 167, 201, 0.62);
     font-family: var(--ui-font-mono);
     font-size: 9px;
     font-weight: 500;
@@ -242,7 +259,7 @@
     align-items: center;
     min-height: 38px;
     padding: 8px 10px;
-    color: var(--ui-muted);
+    color: rgba(245, 243, 239, 0.68);
     font-size: 13px;
     font-weight: 500;
     text-decoration: none;
@@ -252,16 +269,16 @@
 }
 
 .ui-sidebar__nav a span {
-    color: var(--ui-faint);
+    color: rgba(143, 167, 201, 0.56);
     font-family: var(--ui-font-mono);
     font-size: 9px;
 }
 
 .ui-sidebar__nav a:hover,
 .ui-sidebar__nav a:focus-visible {
-    color: var(--ui-ink);
-    background: rgba(251, 250, 247, 0.72);
-    border-color: var(--ui-line);
+    color: var(--ui-paper);
+    background: rgba(143, 167, 201, 0.1);
+    border-color: rgba(143, 167, 201, 0.24);
     outline: none;
 }
 
@@ -271,8 +288,8 @@
     align-items: center;
     margin-top: auto;
     padding: 12px;
-    background: rgba(184, 191, 178, 0.16);
-    border: 1px solid rgba(143, 163, 130, 0.28);
+    background: rgba(184, 191, 178, 0.08);
+    border: 1px solid rgba(184, 191, 178, 0.18);
     border-radius: var(--ui-radius-panel);
 }
 
@@ -281,13 +298,13 @@
 }
 
 .ui-sidebar__note strong {
-    color: var(--ui-ink);
+    color: var(--ui-paper);
     font-size: 11px;
     font-weight: 600;
 }
 
 .ui-sidebar__note small {
-    color: var(--ui-muted);
+    color: rgba(245, 243, 239, 0.48);
     font-family: var(--ui-font-mono);
     font-size: 8px;
     letter-spacing: 0.04em;
@@ -316,11 +333,11 @@
     top: 0;
     display: flex;
     align-items: center;
-    min-height: 64px;
+    min-height: 60px;
     padding: 0 clamp(20px, 3vw, 48px);
-    background: rgba(245, 243, 239, 0.78);
-    border-bottom: 1px solid var(--ui-line);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+    background: rgba(44, 53, 77, 0.95);
+    border-bottom: 1px solid rgba(143, 167, 201, 0.2);
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
     backdrop-filter: blur(18px) saturate(150%);
 }
 
@@ -328,19 +345,19 @@
     display: flex;
     gap: 8px;
     align-items: center;
-    color: var(--ui-faint);
+    color: rgba(245, 243, 239, 0.42);
     font-family: var(--ui-font-mono);
     font-size: 10px;
     letter-spacing: 0.04em;
 }
 
 .ui-breadcrumb i {
-    color: var(--ui-periwinkle);
+    color: var(--ui-periwinkle-lit);
     font-style: normal;
 }
 
 .ui-breadcrumb strong {
-    color: var(--ui-slate);
+    color: var(--ui-paper);
     font-weight: 500;
 }
 
@@ -351,6 +368,24 @@
     margin-left: auto;
 }
 
+.ui-topbar .ui-button--quiet {
+    color: var(--ui-paper);
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(143, 167, 201, 0.26);
+}
+
+.ui-topbar .ui-button--quiet:hover {
+    color: #fff;
+    background: rgba(143, 167, 201, 0.13);
+    border-color: rgba(143, 167, 201, 0.42);
+}
+
+.ui-topbar .ui-badge--info {
+    color: var(--ui-periwinkle-lit);
+    background: rgba(143, 167, 201, 0.08);
+    border-color: rgba(143, 167, 201, 0.22);
+}
+
 .ui-content {
     width: min(100%, 1440px);
     margin: 0 auto;
@@ -359,7 +394,7 @@
 
 .ui-section {
     padding: 72px 0 4px;
-    scroll-margin-top: 64px;
+    scroll-margin-top: 60px;
 }
 
 .ui-section:first-child {
