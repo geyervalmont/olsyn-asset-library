@@ -11,7 +11,8 @@ class ImportLegacyLibraryCommand extends Command
         {--database=storage/app/legacy/material_assets.sqlite : Path to the legacy SQLite database}
         {--files=storage/app/legacy/files : Root of the legacy folder tree, or "none" to import metadata only}
         {--limit= : Import at most this many products}
-        {--only= : Import a single product by legacy slug}';
+        {--only= : Import a single product by legacy slug}
+        {--fresh : Remove everything a previous import created before importing}';
 
     protected $description = 'Import products, variants and available files from the Material Asset Library handoff';
 
@@ -35,6 +36,10 @@ class ImportLegacyLibraryCommand extends Command
         $limit = $this->option('limit') !== null ? (int) $this->option('limit') : null;
         $only = $this->option('only') !== null ? (string) $this->option('only') : null;
 
+        if ($this->option('fresh')) {
+            $this->components->info(sprintf('Removed %d previously imported materials.', $importer->forget()));
+        }
+
         $importer->run($database, $filesRoot, $limit, $only, fn (string $line) => $this->line($line));
 
         $this->newLine();
@@ -42,6 +47,7 @@ class ImportLegacyLibraryCommand extends Command
         $this->components->twoColumnDetail('Materials created', (string) $importer->stats['materials_created']);
         $this->components->twoColumnDetail('Materials already present', (string) $importer->stats['materials_existing']);
         $this->components->twoColumnDetail('Variants created', (string) $importer->stats['variants']);
+        $this->components->twoColumnDetail('Variants merged', (string) $importer->stats['variants_merged']);
         $this->components->twoColumnDetail('Files attached', (string) $importer->stats['files']);
         $this->components->twoColumnDetail('Representations created', (string) $importer->stats['representations']);
         $this->components->twoColumnDetail('Files not on disk', (string) $importer->stats['files_missing']);

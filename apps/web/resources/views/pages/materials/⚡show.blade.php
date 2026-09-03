@@ -245,7 +245,7 @@ new class extends Component {
     </div>
 
     <div class="ui-bento" style="margin-bottom: 12px">
-        <x-ui.panel class="ui-bento__wide ui-swatch-card ui-swatch-card--hero" :padding="false" x-on:mouseenter="enter" x-on:mousemove="move" x-on:mouseleave="leave" x-bind:class="hovering && 'is-hovering'" x-bind:style="tilt && { transform: tilt }" data-test="material-hero">
+        <x-ui.panel class="ui-bento__wide ui-swatch-card--hero" :padding="false" data-test="material-hero">
             <x-ui.swatch-preview :card="$this->card" :targets="$this->targets" :tag="$material->category->code" :variants-count="$this->variants->count()" :name="$material->name" :open="true" style="aspect-ratio: 21 / 9; border-bottom: 0; border-radius: inherit" />
         </x-ui.panel>
         <div class="ui-stat-stack">

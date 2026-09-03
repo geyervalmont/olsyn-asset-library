@@ -3182,10 +3182,6 @@ h1.ui-reveal.is-revealed em::after {
     display: block;
 }
 
-.ui-swatch-card--hero.is-hovering {
-    box-shadow: var(--ui-el-2);
-}
-
 .ui-swatch-card__preview--open .ui-swatch-card__label,
 .ui-swatch-card__preview--open .ui-swatch-card__colourways {
     opacity: 1;

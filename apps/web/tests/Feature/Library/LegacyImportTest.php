@@ -3,7 +3,9 @@
 use App\Enums\MaterialStatus;
 use App\Enums\ReviewState;
 use App\Library\Legacy\LegacyImporter;
+use App\Models\Alias;
 use App\Models\Material;
+use App\Models\ProvenanceEvent;
 use App\Models\Variant;
 use Database\Seeders\LibrarySeeder;
 use Illuminate\Support\Facades\Storage;
@@ -27,9 +29,11 @@ function legacyFixture(string $dir): string
     $db->exec("INSERT INTO product VALUES ('p2','s2','c2','Allura','allura',NULL,NULL,NULL,'','active','C:\\\\Library\\\\Vinyl_Flooring\\\\Forbo\\\\Allura',NULL,NULL,'')");
     $db->exec("INSERT INTO product VALUES ('p3','s2','c3','Old Vinyl','old_vinyl',NULL,NULL,NULL,'','active','C:\\\\Library\\\\_Archived_Historical\\\\Old Vinyl',NULL,NULL,'')");
     $db->exec("INSERT INTO product_generation_context VALUES ('p1','carpet tile','tile',500,500,6.5,NULL,NULL,NULL,'Monolithic',NULL,NULL,'500 x 500 mm','Tile',NULL)");
-    $db->exec("INSERT INTO material_variant VALUES ('v1','p1','carpet:tarkett:academix:634014001:ashen','Ashen','ashen','634014001','634014001','ASHEN',NULL,'',500,500,'tile')");
+    $db->exec("INSERT INTO material_variant VALUES ('v1','p1','carpet:tarkett:academix:634014001:ashen','Ashen 001','ashen','634014001','001','ASHEN',NULL,'',500,500,'tile')");
     $db->exec("INSERT INTO material_variant VALUES ('v2','p1','carpet:tarkett:academix:634014002:slate','Slate','slate','634014002','634014002','SLATE','Matte','EchoPanel.pdf',250,1000,'unknown')");
-    $db->exec("INSERT INTO material_variant VALUES ('v3','p2','vinyl_flooring:forbo:allura:na:oak','Oak','oak','na','na','Oak',NULL,'Herringbone',NULL,NULL,'approximate_surface_crop')");
+    $db->exec("INSERT INTO material_variant VALUES ('v3','p2','vinyl_flooring:forbo:allura:na:oak','Oak Allura Oak','oak','na','na','Oak',NULL,'Herringbone',NULL,NULL,'approximate_surface_crop')");
+    $db->exec("INSERT INTO material_variant VALUES ('v4','p2','vinyl_flooring:forbo:allura:na:duckegg_base','allura-fr duckegg BASE','duckegg_base','na','na','x',NULL,'',NULL,NULL,'unknown')");
+    $db->exec("INSERT INTO material_variant VALUES ('v5','p2','vinyl_flooring:forbo:allura:na:duckegg_nrm','allura-fr duckegg NRM','duckegg_nrm','na','na','x',NULL,'',NULL,NULL,'unknown')");
     $db->exec("INSERT INTO material_variant_metadata VALUES ('v1','grey','#8a8a86','warm grey',NULL), ('v2','grey','bad',NULL,NULL)");
     $db->exec("INSERT INTO asset_file VALUES ('a1','v1','p1','Enscape_Revit','albedo','active','Carpet/Tarkett/Academix/Enscape_Revit/ashen_albedo.png',64,64)");
     $db->exec("INSERT INTO asset_file VALUES ('a2','v1','p1','Enscape_Revit','ref_image','active','Carpet/Tarkett/Academix/Enscape_Revit/ashen_ref.png',64,64)");
@@ -66,13 +70,17 @@ test('the legacy library imports products, variants, files and provenance, and i
 
     expect($importer->errors)->toBe([])
         ->and($importer->stats['materials_created'])->toBe(3)
-        ->and($importer->stats['variants'])->toBe(4)
+        ->and($importer->stats['variants'])->toBe(5)
+        ->and($importer->stats['variants_merged'])->toBe(1)
         ->and($importer->stats['files'])->toBe(4)
         ->and($importer->stats['files_missing'])->toBe(1)
         ->and($importer->stats['representations'])->toBe(2);
 
     $academix = Material::resolveCode('CPT-TARKETT-ACADEMIX');
     $ashen = Variant::resolveCode('carpet:tarkett:academix:634014001:ashen');
+
+    expect($ashen?->name)->toBe('Ashen')
+        ->and($ashen?->attributes()->where('supplier_code', '001')->exists())->toBeTrue();
     $slate = Variant::resolveCode('CARPET:TARKETT:ACADEMIX:634014002:SLATE');
 
     expect($academix?->supplier?->name)->toBe('Tarkett')
@@ -88,7 +96,6 @@ test('the legacy library imports products, variants, files and provenance, and i
         ->and($academix?->provenanceEvents()->sole()->action)->toBe('imported')
         ->and($ashen?->code)->toBe('CPT-TARKETT-ACADEMIX-ASHEN')
         ->and($ashen?->attributeValue('colourway'))->toBe('Ashen')
-        ->and($ashen?->attributes()->where('supplier_code', '634014001')->exists())->toBeTrue()
         ->and($ashen?->dominant_hex)->toBe('#8a8a86')
         ->and($ashen?->colour_family)->toBe('grey')
         ->and($ashen?->tile_width_mm)->toBeNull()
@@ -114,7 +121,14 @@ test('the legacy library imports products, variants, files and provenance, and i
     $old = Material::query()->where('name', 'Old Vinyl')->sole();
     $oak = $allura?->variants->first();
 
+    $duckegg = Variant::resolveCode('vinyl_flooring:forbo:allura:na:duckegg_nrm');
+
     expect($allura?->category->code)->toBe('VNL')
+        ->and($oak?->name)->toBe('Oak')
+        ->and($allura?->variants()->count())->toBe(2)
+        ->and($duckegg?->name)->toBe('Duckegg')
+        ->and($duckegg?->is(Variant::resolveCode('vinyl_flooring:forbo:allura:na:duckegg_base')))->toBeTrue()
+        ->and($duckegg?->aliases()->count())->toBe(2)
         ->and($oak?->attributeValue('pattern'))->toBe('Herringbone')
         ->and($oak?->repeat_type)->toBe('surface_crop')
         ->and($old->category->code)->toBe('UNC')
@@ -124,9 +138,15 @@ test('the legacy library imports products, variants, files and provenance, and i
 
     expect($importer->stats['materials_existing'])->toBe(3)
         ->and(Material::query()->count())->toBe(3)
-        ->and(Variant::query()->count())->toBe(4)
+        ->and(Variant::query()->count())->toBe(5)
         ->and($ashen?->representations()->count())->toBe(2);
 
     $this->artisan('opal:import:legacy', ['--database' => str_replace(base_path().'/', '', $this->dir).'/legacy.sqlite', '--files' => 'none'])
         ->assertFailed();
+
+    expect($importer->forget())->toBe(3)
+        ->and(Material::query()->count())->toBe(0)
+        ->and(Variant::query()->count())->toBe(0)
+        ->and(Alias::query()->count())->toBe(0)
+        ->and(ProvenanceEvent::query()->count())->toBe(0);
 });

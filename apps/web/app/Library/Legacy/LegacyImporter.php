@@ -8,9 +8,12 @@ use App\Actions\Representations\CreateRepresentation;
 use App\Enums\MaterialStatus;
 use App\Enums\ReviewState;
 use App\Library\FileStore;
+use App\Models\Alias;
 use App\Models\Category;
 use App\Models\File;
 use App\Models\Material;
+use App\Models\ProvenanceEvent;
+use App\Models\Representation;
 use App\Models\Source;
 use App\Models\Supplier;
 use App\Models\Variant;
@@ -82,7 +85,7 @@ class LegacyImporter
     /** @var array<string, int> */
     public array $stats = [
         'products' => 0, 'materials_created' => 0, 'materials_existing' => 0, 'variants' => 0,
-        'files' => 0, 'representations' => 0, 'files_missing' => 0, 'files_skipped' => 0, 'errors' => 0,
+        'variants_merged' => 0, 'files' => 0, 'representations' => 0, 'files_missing' => 0, 'files_skipped' => 0, 'errors' => 0,
     ];
 
     /** @var list<string> */
@@ -105,6 +108,35 @@ class LegacyImporter
     /**
      * @param  Closure(string): void|null  $log
      */
+    /**
+     * Remove everything a previous import created, so a corrected import can
+     * replace it. Files are content-addressed and stay.
+     */
+    public function forget(): int
+    {
+        $materials = Material::query()->whereNotNull('specifications->legacy->product_id')->get();
+
+        foreach ($materials as $material) {
+            $variantIds = $material->variants()->pluck('id');
+            $representationIds = Representation::query()->whereIn('variant_id', $variantIds)->pluck('id');
+
+            ProvenanceEvent::query()
+                ->where(fn ($q) => $q->where('subject_type', 'material')->where('subject_id', $material->getKey()))
+                ->orWhere(fn ($q) => $q->where('subject_type', 'variant')->whereIn('subject_id', $variantIds))
+                ->orWhere(fn ($q) => $q->where('subject_type', 'representation')->whereIn('subject_id', $representationIds))
+                ->delete();
+
+            Alias::query()
+                ->where(fn ($q) => $q->where('aliasable_type', 'material')->where('aliasable_id', $material->getKey()))
+                ->orWhere(fn ($q) => $q->where('aliasable_type', 'variant')->whereIn('aliasable_id', $variantIds))
+                ->delete();
+
+            $material->delete();
+        }
+
+        return $materials->count();
+    }
+
     public function run(string $databasePath, ?string $filesRoot = null, ?int $limit = null, ?string $onlySlug = null, ?Closure $log = null): void
     {
         $this->legacy = $this->connect($databasePath);
@@ -239,18 +271,40 @@ class LegacyImporter
             return $variants;
         }
 
+        /** @var array<string, Variant> $byName */
+        $byName = [];
+
         foreach ($rows as $row) {
             $key = strtoupper(trim((string) $row->canonical_key));
             $existing = $key === '' ? null : Variant::resolveCode($key);
 
             if ($existing !== null && (string) $existing->material_id === (string) $material->getKey()) {
                 $variants[$row->id] = $existing;
+                $byName[strtolower($existing->name)] = $existing;
 
                 continue;
             }
 
-            $name = $this->clean($row->colourway_name) ?? $this->clean($row->supplier_colour_name) ?? 'Default';
             $supplierCode = $this->clean($row->supplier_colour_code);
+            $supplierCode = in_array(strtolower((string) $supplierCode), ['', 'na'], true) ? null : $supplierCode;
+            $name = LegacyNames::colourway($row->colourway_name, $material->name, $supplierCode, $product->supplier_name)
+                ?? LegacyNames::colourway($row->supplier_colour_name, $material->name, $supplierCode, $product->supplier_name)
+                ?? 'Default';
+
+            // Several legacy rows (one per texture map, or per pattern alias) can be one colourway.
+            if (isset($byName[strtolower($name)])) {
+                $variant = $byName[strtolower($name)];
+
+                if ($key !== '' && strlen($key) <= 191 && Alias::query()->where('code', $key)->doesntExist()) {
+                    $variant->addAlias($key, 'legacy canonical_key (merged)');
+                }
+
+                $variants[$row->id] = $variant;
+                $this->stats['variants_merged']++;
+
+                continue;
+            }
+
             $pattern = $this->clean($row->install_variant);
 
             if ($pattern !== null && (str_ends_with(strtolower($pattern), '.pdf') || strtolower($pattern) === 'material download')) {
@@ -258,7 +312,7 @@ class LegacyImporter
             }
 
             $attributes = array_filter([
-                'colourway' => ['value' => $name, 'supplier_code' => in_array(strtolower((string) $supplierCode), ['', 'na'], true) ? null : $supplierCode, 'supplier_name' => $this->clean($row->supplier_colour_name)],
+                'colourway' => ['value' => $name, 'supplier_code' => $supplierCode, 'supplier_name' => $this->clean($row->supplier_colour_name)],
                 'finish' => $this->clean($row->finish_name),
                 'pattern' => $pattern,
             ]);
@@ -278,6 +332,7 @@ class LegacyImporter
             }
 
             $variants[$row->id] = $variant;
+            $byName[strtolower($name)] = $variant;
             $this->stats['variants']++;
         }
 
