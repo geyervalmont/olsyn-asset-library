@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update web-test web-seed web-shell
+.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update prism-drive-up prism-drive-down prism-drive-check web-test web-seed web-shell
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -30,6 +30,15 @@ prism-e2e:
 
 prism-s3-test:
 	cd services/prismfs && set -a; . ./.env.example; set +a; AWS_ENDPOINT=https://s3.asset-library.test AWS_ALLOW_HTTP=false cargo test -p prismfs-storage --test s3_compat -- --ignored
+
+prism-drive-up:
+	$(MAKE) -C services/prismfs drive-up
+
+prism-drive-down:
+	$(MAKE) -C services/prismfs drive-down
+
+prism-drive-check:
+	$(MAKE) -C services/prismfs drive-check
 
 prism-publish:
 	./scripts/prismfs-subtree.sh publish

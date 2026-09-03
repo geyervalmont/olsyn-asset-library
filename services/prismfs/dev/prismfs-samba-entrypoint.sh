@@ -32,7 +32,22 @@ prismfs samba-config \
     --guest-account root > /etc/samba/smb.conf
 testparm -s /etc/samba/smb.conf >/dev/null
 
-prismfs --log-format json mount \
+if [ -n "${PRISMFS_EXTRA_CA:-}" ] && [ -f "$PRISMFS_EXTRA_CA" ]; then
+    cp "$PRISMFS_EXTRA_CA" /usr/local/share/ca-certificates/prismfs-extra.crt
+    update-ca-certificates >/dev/null 2>&1 || true
+fi
+
+# Compose passes unset optionals as empty strings; clap must not see them.
+for optional in PRISMFS_MANIFEST_URL PRISMFS_MANIFEST_TOKEN PRISMFS_AUDIT_URL PRISMFS_EXTRA_CA; do
+    eval "value=\${$optional:-}"
+    if [ -z "$value" ]; then
+        unset "$optional"
+    fi
+done
+
+# With PRISMFS_MANIFEST_URL set, prismfs reads the manifest from the control
+# plane (and ships access events back); --manifest is then ignored.
+prismfs --log-format "${PRISMFS_LOG_FORMAT:-json}" mount \
     --mountpoint "$mountpoint_path" \
     --manifest "$manifest_path" \
     --deny-prefix "$deny_prefix" &

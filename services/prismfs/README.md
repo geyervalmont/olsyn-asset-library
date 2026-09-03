@@ -100,6 +100,66 @@ FUSE mount owner, avoiding host `allow_other` configuration. Its published
 share is guest-only and read-only; production identity integration is a later
 control-plane concern.
 
+## Drive server
+
+`make drive-up` serves one control-plane drive as an SMB share on the LAN so
+a Windows machine (Revit) can map it. It is `dev/drive.compose.yaml`: one
+container running PrismFS against the control plane's manifest plus Samba
+exporting the mount, on the external `dev-proxy` network where the control
+plane (`asset-library-web`) and RustFS (`asset-library-rustfs`) are plain
+HTTP, so no TLS trust is needed inside the container.
+
+```bash
+cp drive.env.example drive.env      # set PRISMFS_MANIFEST_TOKEN from the Drives page
+make drive-up                       # builds the image, waits for the share
+make drive-check                    # lists the share, reads one file back, compares hashes
+make drive-logs
+make drive-down
+```
+
+Windows maps `\\<host-ip>\opal` (share name from `PRISMFS_SMB_SHARE`).
+`PRISMFS_DRIVE_BIND` picks the host address the share binds on: `0.0.0.0`
+for every interface, `192.168.122.1` for a libvirt guest only. Note that
+`make dev-up` with the local `compose.override.yaml` also binds 445 on the
+libvirt bridge; stop one before starting the other. Guest read-only access is
+the development identity model (ADR 0004).
+
+## Access events
+
+When mounted from a manifest URL, PrismFS ships `read` and `open` events to
+the control plane so drive reads appear next to web downloads in the file
+access record:
+
+```text
+POST {control plane}/prismfs/drives/{slug}/accesses
+Authorization: Bearer <drive token>
+{"events":[{"request_id":"…","occurred_at":"2026-09-03T03:32:24.481Z",
+  "principal":"uid:1000","operation":"read","path":"/materials/…/X.png",
+  "result":"allow","bytes":131072,"duration_ms":0.42}]}
+```
+
+Events are batched (`--audit-batch`, default 500) and flushed on an interval
+(`--audit-flush-interval`, default 5 s). A failed post keeps the batch for
+the next flush; the queue holds `--audit-queue` events (default 10 000) and
+drops the oldest beyond that. `--audit-operations` widens or narrows the set
+(everything is still in the local log). `--audit-url` overrides the derived
+endpoint; there is no shipping without a manifest URL.
+
+## Packaging
+
+`Dockerfile` builds two images: `--target runtime` (the binary with FUSE and
+CA certificates, entrypoint `prismfs-entrypoint`, which also trusts a CA
+mounted at `PRISMFS_EXTRA_CA`) and `--target samba` (the same plus Samba and
+the entrypoint that mounts and shares). `make image` builds both as
+`prismfs:local` and `prismfs-samba:local`.
+
+`deploy/k8s/prismfs` at the repository root is a kustomization for one drive
+as a pod: a privileged `prismfs` container mounting into a shared `emptyDir`
+with bidirectional propagation, a `samba` sidecar serving it on 445, a
+ConfigMap for the drive and object-store settings, a Secret for the drive
+token and credentials, and a Service. `deploy/systemd` runs the same binary
+on a bare host as `prismfs-drive@<slug>`. ADR 0005 records the layout.
+
 ## Workspace boundaries
 
 - `prismfs-core` — paths, manifests, nodes, namespace contracts

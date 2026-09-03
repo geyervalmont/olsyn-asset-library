@@ -1,0 +1,46 @@
+# One control-plane drive served over SMB. Unlike compose.yaml this has no
+# RustFS of its own: PrismFS reads the manifest from the control plane and the
+# objects from the shared dev RustFS, both over the external dev-proxy network.
+services:
+  prismfs-drive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: samba
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    environment:
+      PRISMFS_MANIFEST_URL: ${PRISMFS_CONTROL_PLANE:-http://asset-library-web}/prismfs/drives/${PRISMFS_DRIVE_SLUG:-studio-share}/manifest.yaml
+      PRISMFS_MANIFEST_TOKEN: ${PRISMFS_MANIFEST_TOKEN:?set PRISMFS_MANIFEST_TOKEN in drive.env}
+      PRISMFS_REFRESH_INTERVAL: ${PRISMFS_REFRESH_INTERVAL:-10}
+      PRISMFS_AUDIT_FLUSH_INTERVAL: ${PRISMFS_AUDIT_FLUSH_INTERVAL:-5}
+      PRISMFS_AUDIT_URL: ${PRISMFS_AUDIT_URL:-}
+      PRISMFS_TENANT_ID: ${PRISMFS_DRIVE_SLUG:-studio-share}
+      PRISMFS_MOUNTPOINT: /srv/prismfs
+      PRISMFS_SMB_SHARE: ${PRISMFS_SMB_SHARE:-opal}
+      PRISMFS_S3_BUCKET: ${PRISMFS_S3_BUCKET:-prismfs-dev}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:-http://asset-library-rustfs:9000}
+      AWS_ALLOW_HTTP: ${AWS_ALLOW_HTTP:-true}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-prismfs-dev}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-prismfs-local-secret-change-me}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      RUST_LOG: ${RUST_LOG:-prismfs=info}
+    ports:
+      - "${PRISMFS_DRIVE_BIND:-0.0.0.0}:445:445"
+    networks:
+      - dev-proxy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "smbclient //127.0.0.1/$${PRISMFS_SMB_SHARE} -N -c ls"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  dev-proxy:
+    external: true

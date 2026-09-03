@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-.PHONY: help check doctor samba-config mount dev-up dev-down dev-logs dev-status endpoints e2e s3-test
+.PHONY: help check doctor samba-config mount dev-up dev-down dev-logs dev-status endpoints e2e s3-test drive-up drive-down drive-logs drive-check image
 
 help:
 	@printf '%s\n' \
@@ -13,7 +13,12 @@ help:
 		'make dev-logs      Follow the PrismFS and Samba logs' \
 		'make dev-down      Stop the standalone stack and delete fixture data' \
 		'make e2e           Prove S3 -> FUSE -> POSIX and SMB, then clean up' \
-		'make s3-test       Run the object-store compatibility test against RustFS'
+		'make s3-test       Run the object-store compatibility test against RustFS' \
+		'make drive-up      Serve a control-plane drive over SMB on the LAN (needs drive.env)' \
+		'make drive-down    Stop the drive server' \
+		'make drive-logs    Follow the drive server log' \
+		'make drive-check   List the share and read one file back through SMB' \
+		'make image         Build the prismfs and prismfs-samba container images'
 
 check:
 	cargo fmt --all --check
@@ -50,3 +55,20 @@ e2e:
 
 s3-test:
 	./dev/s3-test.sh
+
+drive-up:
+	./dev/drive.sh up --build --detach --wait
+	@printf 'drive: share ready; map \\\\<host-ip>\\%s\n' "$$(sed -n 's/^PRISMFS_SMB_SHARE=//p' drive.env | tail -1)"
+
+drive-down:
+	./dev/drive.sh down --remove-orphans
+
+drive-logs:
+	./dev/drive.sh logs --follow prismfs-drive
+
+drive-check:
+	./dev/drive-check.sh
+
+image:
+	docker build --target runtime --tag prismfs:local .
+	docker build --target samba --tag prismfs-samba:local .

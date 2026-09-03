@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: prismfs-studio-share
+spec:
+  # SMB clients need TCP 445 on a stable address with no port in the UNC path.
+  # LoadBalancer (MetalLB / cloud LB) gives each drive its own IP; switch to
+  # ClusterIP when clients reach the cluster network directly (VPN, node port
+  # forwarding, or a Windows jump host inside the cluster network).
+  type: LoadBalancer
+  # type: ClusterIP
+  selector:
+    app.kubernetes.io/name: prismfs
+    app.kubernetes.io/instance: studio-share
+  ports:
+    - name: smb
+      port: 445
+      targetPort: smb
+      protocol: TCP

@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# One drive per instance. Copy this directory (or use an overlay) per drive
+# and change the slug, share name and Secret.
+namespace: opal
+
+resources:
+  - configmap.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/name: prismfs
+      app.kubernetes.io/instance: studio-share
+      app.kubernetes.io/part-of: opal
+
+images:
+  - name: prismfs
+    newName: ghcr.io/olsyn/prismfs
+    newTag: latest
+  - name: prismfs-samba
+    newName: ghcr.io/olsyn/prismfs-samba
+    newTag: latest

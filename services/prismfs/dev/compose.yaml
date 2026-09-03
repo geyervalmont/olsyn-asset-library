@@ -56,7 +56,8 @@ services:
   prismfs-smb:
     build:
       context: .
-      dockerfile: dev/Dockerfile
+      dockerfile: Dockerfile
+      target: samba
     cap_add:
       - SYS_ADMIN
     devices:

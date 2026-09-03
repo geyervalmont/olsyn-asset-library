@@ -3,3 +3,4 @@
 /mnt/*
 !/mnt/.gitkeep
 /dev/compose.override.yaml
+drive.env

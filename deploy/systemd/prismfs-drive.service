@@ -1,0 +1,30 @@
+# Serves one control-plane drive as a FUSE mount on a bare host.
+# Pair with a host smbd share of ${PRISMFS_MOUNTPOINT} if SMB is needed.
+#
+#   install -m 0644 prismfs-drive.service /etc/systemd/system/
+#   install -m 0600 prismfs-drive.env /etc/prismfs/studio-share.env
+#   systemctl enable --now prismfs-drive@studio-share
+[Unit]
+Description=PrismFS drive %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/prismfs/%i.env
+ExecStart=/usr/local/bin/prismfs --log-format json mount
+ExecStopPost=/bin/sh -c 'fusermount3 -u "${PRISMFS_MOUNTPOINT}" 2>/dev/null || true'
+Restart=on-failure
+RestartSec=5
+# FUSE needs /dev/fuse and the mount syscall; keep everything else tight.
+User=root
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/prismfs
+PrivateTmp=true
+ProtectHome=true
+DevicePolicy=closed
+DeviceAllow=/dev/fuse rw
+
+[Install]
+WantedBy=multi-user.target
