@@ -11,6 +11,8 @@ use App\Library\FileStore;
 use App\Models\Alias;
 use App\Models\Category;
 use App\Models\File;
+use App\Models\LegacyFileIngest;
+use App\Models\MapRole;
 use App\Models\Material;
 use App\Models\ProvenanceEvent;
 use App\Models\Representation;
@@ -19,6 +21,7 @@ use App\Models\Supplier;
 use App\Models\Variant;
 use Closure;
 use Illuminate\Database\Connection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use SplFileInfo;
@@ -86,6 +89,7 @@ class LegacyImporter
     public array $stats = [
         'products' => 0, 'materials_created' => 0, 'materials_existing' => 0, 'variants' => 0,
         'variants_merged' => 0, 'files' => 0, 'representations' => 0, 'files_missing' => 0, 'files_skipped' => 0, 'errors' => 0,
+        'files_ingested' => 0, 'files_unchanged' => 0, 'files_failed' => 0, 'files_attached' => 0, 'bytes' => 0,
     ];
 
     /** @var list<string> */
@@ -97,6 +101,15 @@ class LegacyImporter
 
     /** @var array<string, Source> */
     private array $supplierSources = [];
+
+    /** Record every corpus file in the ledger and skip the ones already ingested unchanged. */
+    public bool $useLedger = false;
+
+    /** Walk and hash nothing; count what would be stored. */
+    public bool $dryRun = false;
+
+    /** Called once per corpus file considered, for progress bars. */
+    public ?Closure $progress = null;
 
     public function __construct(
         private readonly AddVariant $addVariant,
@@ -381,7 +394,13 @@ class LegacyImporter
                 continue;
             }
 
-            $groups[$groupKey]['files'][$role] = $this->files->store(new SplFileInfo($path), basename($path));
+            $file = $this->storeCorpusFile($path);
+
+            if ($file === null) {
+                continue;
+            }
+
+            $groups[$groupKey]['files'][$role] = $file;
             $groups[$groupKey]['states'][] = (string) $row->asset_state;
             $groups[$groupKey]['ids'][] = $row->id;
             $groups[$groupKey]['paths'][] = (string) $row->relative_path;
@@ -389,10 +408,18 @@ class LegacyImporter
         }
 
         foreach ($groups as $group) {
+            if ($group['files'] === []) {
+                continue;
+            }
+
             $directory = dirname($group['paths'][0]);
             $variant = $group['variant'];
 
-            if ($variant->representations()->where('metadata->legacy->directory', $directory)->exists()) {
+            $existing = $variant->representations()->where('metadata->legacy->directory', $directory)->first();
+
+            if ($existing !== null) {
+                $this->attachMissing($existing, $group['files']);
+
                 continue;
             }
 
@@ -440,6 +467,89 @@ class LegacyImporter
             );
 
             $this->stats['representations']++;
+        }
+    }
+
+    /**
+     * Store one corpus file, through the ledger when enabled: unchanged files
+     * are not re-read, failures are recorded and skipped, dry runs only count.
+     */
+    private function storeCorpusFile(string $path): ?File
+    {
+        if ($this->progress !== null) {
+            ($this->progress)($path);
+        }
+
+        if (! $this->useLedger) {
+            return $this->files->store(new SplFileInfo($path), basename($path));
+        }
+
+        $bytes = (int) filesize($path);
+        $mtime = (int) filemtime($path);
+        $ledger = LegacyFileIngest::query()->where('source_path', $path)->first();
+
+        if ($ledger !== null && $ledger->matches($bytes, $mtime)) {
+            $this->stats['files_unchanged']++;
+
+            return $ledger->file;
+        }
+
+        if ($this->dryRun) {
+            $this->stats['files_ingested']++;
+            $this->stats['bytes'] += $bytes;
+
+            return null;
+        }
+
+        try {
+            $file = $this->files->store(new SplFileInfo($path), basename($path));
+        } catch (Throwable $exception) {
+            LegacyFileIngest::query()->updateOrCreate(['source_path' => $path], [
+                'bytes' => $bytes, 'mtime' => Carbon::createFromTimestamp($mtime), 'status' => LegacyFileIngest::FAILED,
+                'error' => Str::limit($exception->getMessage(), 1000), 'processed_at' => now(),
+            ]);
+            $this->stats['files_failed']++;
+            $this->errors[] = sprintf('%s: %s', $path, $exception->getMessage());
+
+            return null;
+        }
+
+        LegacyFileIngest::query()->updateOrCreate(['source_path' => $path], [
+            'bytes' => $bytes, 'mtime' => Carbon::createFromTimestamp($mtime), 'sha256' => $file->sha256, 'file_id' => $file->getKey(),
+            'status' => LegacyFileIngest::INGESTED, 'error' => null, 'processed_at' => now(),
+        ]);
+        $this->stats['files_ingested']++;
+        $this->stats['bytes'] += $bytes;
+
+        return $file;
+    }
+
+    /**
+     * A representation imported before the corpus was complete gains the
+     * roles that have since arrived.
+     *
+     * @param  array<string, File>  $files
+     */
+    private function attachMissing(Representation $representation, array $files): void
+    {
+        if ($this->dryRun) {
+            return;
+        }
+
+        $present = $representation->representationFiles()->with('role')->get()->map(fn ($representationFile): string => $representationFile->role->slug)->all();
+
+        foreach ($files as $role => $file) {
+            if (in_array($role, $present, true)) {
+                continue;
+            }
+
+            $mapRole = MapRole::fromSlug($role);
+            $representation->representationFiles()->create([
+                'file_id' => $file->getKey(),
+                'map_role_id' => $mapRole->getKey(),
+                'colour_space' => $file->colour_space ?? $mapRole->colour_space,
+            ]);
+            $this->stats['files_attached']++;
         }
     }
 

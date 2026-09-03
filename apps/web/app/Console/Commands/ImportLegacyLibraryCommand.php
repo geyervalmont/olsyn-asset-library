@@ -18,9 +18,9 @@ class ImportLegacyLibraryCommand extends Command
 
     public function handle(LegacyImporter $importer): int
     {
-        $database = base_path((string) $this->option('database'));
+        $database = $this->absolute((string) $this->option('database'));
         $files = (string) $this->option('files');
-        $filesRoot = $files === 'none' ? null : base_path($files);
+        $filesRoot = $files === 'none' ? null : $this->absolute($files);
 
         if (! is_file($database)) {
             $this->components->error("Legacy database not found at [{$database}].");
@@ -59,5 +59,10 @@ class ImportLegacyLibraryCommand extends Command
         }
 
         return $importer->stats['errors'] === 0 ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function absolute(string $path): string
+    {
+        return str_starts_with($path, '/') ? $path : base_path($path);
     }
 }
