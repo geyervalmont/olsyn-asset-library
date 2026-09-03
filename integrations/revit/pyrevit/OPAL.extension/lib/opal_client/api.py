@@ -1,0 +1,130 @@
+# -*- coding: utf-8 -*-
+"""HTTP client for the OPAL API v1, using only the standard library."""
+
+import json
+import ssl
+
+try:  # CPython 3
+    from urllib.request import Request, urlopen
+    from urllib.error import HTTPError, URLError
+    from urllib.parse import urlencode, quote
+except ImportError:  # IronPython 2.7
+    from urllib2 import Request, urlopen, HTTPError, URLError  # noqa: F401
+    from urllib import urlencode, quote  # noqa: F401
+
+
+class ApiError(Exception):
+    def __init__(self, status, message, body=None):
+        Exception.__init__(self, "%s: %s" % (status, message))
+        self.status = status
+        self.message = message
+        self.body = body
+
+
+class OpalApi(object):
+    """
+    A thin, explicit client. `fetch` can be replaced for tests.
+    """
+
+    def __init__(self, base_url, token, fetch=None, verify_tls=True, timeout=60):
+        self.base_url = base_url.rstrip("/")
+        self.token = token
+        self.timeout = timeout
+        self.verify_tls = verify_tls
+        self._fetch = fetch or self._http_fetch
+
+    # -- library ---------------------------------------------------------
+
+    def me(self):
+        return self._get("/api/v1/me")
+
+    def search(self, query="", category=None, supplier=None, status=None, per_page=25, page=1):
+        params = {"q": query, "per_page": per_page, "page": page}
+        if category:
+            params["category"] = category
+        if supplier:
+            params["supplier"] = supplier
+        if status:
+            params["status"] = status
+        return self._get("/api/v1/materials", params)
+
+    def material(self, code):
+        return self._get("/api/v1/materials/%s" % quote(code, safe=""))["data"]
+
+    def variant(self, code):
+        return self._get("/api/v1/variants/%s" % quote(code, safe=""))["data"]
+
+    def resolve(self, platform, reference):
+        try:
+            return self._get("/api/v1/variants/resolve", {"platform": platform, "reference": reference})["data"]
+        except ApiError as error:
+            if error.status == 404:
+                return None
+            raise
+
+    def drives(self):
+        return self._get("/api/v1/drives")["data"]
+
+    def variant_paths(self, code, drive):
+        return self._get("/api/v1/variants/%s/paths" % quote(code, safe=""), {"drive": drive})["data"]
+
+    def register_identity(self, code, platform, external_id=None, external_name=None, payload=None):
+        body = {"platform": platform}
+        if external_id:
+            body["external_id"] = external_id
+        if external_name:
+            body["external_name"] = external_name
+        if payload:
+            body["payload"] = payload
+        return self._post("/api/v1/variants/%s/identities" % quote(code, safe=""), body)["data"]
+
+    # -- transport -------------------------------------------------------
+
+    def _get(self, path, params=None):
+        url = self.base_url + path
+        if params:
+            url += "?" + urlencode(params)
+        return self._fetch("GET", url, None)
+
+    def _post(self, path, body):
+        return self._fetch("POST", self.base_url + path, body)
+
+    def _http_fetch(self, method, url, body):
+        data = None
+        headers = {
+            "Accept": "application/json",
+            "Authorization": "Bearer " + self.token,
+            "User-Agent": "opal-client/1.0",
+        }
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+
+        request = Request(url, data=data, headers=headers)
+        if hasattr(request, "get_method"):
+            request.get_method = lambda: method  # IronPython 2.7
+
+        context = None
+        if not self.verify_tls and hasattr(ssl, "_create_unverified_context"):
+            context = ssl._create_unverified_context()
+
+        try:
+            if context is not None:
+                response = urlopen(request, timeout=self.timeout, context=context)
+            else:
+                response = urlopen(request, timeout=self.timeout)
+            raw = response.read()
+        except HTTPError as error:
+            raw = error.read()
+            try:
+                parsed = json.loads(raw.decode("utf-8"))
+            except Exception:
+                parsed = None
+            message = (parsed or {}).get("message") if isinstance(parsed, dict) else None
+            raise ApiError(error.code, message or "HTTP %s" % error.code, parsed)
+        except URLError as error:
+            raise ApiError(0, "Cannot reach %s: %s" % (url, error.reason))
+
+        if not raw:
+            return {}
+        return json.loads(raw.decode("utf-8"))

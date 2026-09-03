@@ -1,0 +1,153 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Object Material Parameter Cleaner"
+        Height="760"
+        Width="1320"
+        MinHeight="600"
+        MinWidth="1040"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize">
+    <DockPanel Margin="12" LastChildFill="True">
+        <TextBlock x:Name="summary_text"
+                   DockPanel.Dock="Top"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"
+                   Foreground="#334155"
+                   Margin="0,0,0,10"/>
+
+        <WrapPanel DockPanel.Dock="Bottom"
+                   Orientation="Horizontal"
+                   Margin="0,10,0,0"
+                   VerticalAlignment="Center">
+            <Button Content="Use Existing Parameter"
+                    Width="162"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_use_existing_parameter"/>
+            <Button Content="New Parameter"
+                    Width="118"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_new_parameter"/>
+            <Button Content="Auto Name"
+                    Width="96"
+                    Height="30"
+                    Margin="0,0,12,0"
+                    Click="on_auto_name"/>
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Margin="0,0,12,0">
+                <TextBlock Text="New scope:"
+                           VerticalAlignment="Center"
+                           Foreground="#475569"
+                           Margin="0,0,8,0"/>
+                <RadioButton x:Name="scope_type_radio"
+                             Content="Type"
+                             IsChecked="True"
+                             VerticalAlignment="Center"
+                             Margin="0,0,8,0"/>
+                <RadioButton x:Name="scope_instance_radio"
+                             Content="Instance"
+                             VerticalAlignment="Center"/>
+            </StackPanel>
+            <Button Content="Apply Selected Fixes"
+                    Width="150"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    IsDefault="True"
+                    Click="on_apply_fixes"/>
+            <Button Content="Clear Target"
+                    Width="100"
+                    Height="30"
+                    Margin="0,0,12,0"
+                    Click="on_clear_target"/>
+            <Button Content="Delete Selected Parameters"
+                    Width="168"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_delete_selected_parameters"/>
+            <Button Content="Delete All Unused"
+                    Width="130"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_delete_all_unused_parameters"/>
+            <Button Content="Refresh Audit"
+                    Width="112"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_refresh"/>
+            <Button Content="Clear Project Unused Values"
+                    Width="178"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_clean_project_unused"/>
+            <Button Content="Close"
+                    Width="86"
+                    Height="30"
+                    IsCancel="True"
+                    Click="on_close"/>
+            <TextBlock x:Name="status_text"
+                       Width="500"
+                       Margin="12,6,0,0"
+                       VerticalAlignment="Center"
+                       Foreground="#475569"
+                       TextWrapping="Wrap"/>
+        </WrapPanel>
+
+        <TabControl x:Name="audit_tabs"
+                    MinHeight="420">
+            <TabItem Header="Object Material Slots">
+                <DataGrid x:Name="rows_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto"
+                          MouseDoubleClick="on_use_existing_parameter">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="126"/>
+                        <DataGridTextColumn Header="Family Object" Binding="{Binding ElementName}" Width="230"/>
+                        <DataGridTextColumn Header="Element Id" Binding="{Binding ElementIdText}" Width="84"/>
+                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="120"/>
+                        <DataGridTextColumn Header="Material Slot" Binding="{Binding MaterialSlot}" Width="140"/>
+                        <DataGridTextColumn Header="Current Parameter" Binding="{Binding CurrentParameter}" Width="180"/>
+                        <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="135"/>
+                        <DataGridTextColumn Header="Target Parameter" Binding="{Binding TargetParameter}" Width="210"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="82"/>
+                        <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="300"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem Header="Material Parameters">
+                <DataGrid x:Name="parameters_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="96"/>
+                        <DataGridTextColumn Header="In Use" Binding="{Binding InUse}" Width="74"/>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="260"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="82"/>
+                        <DataGridTextColumn Header="Used Count" Binding="{Binding UsedCount}" Width="92"/>
+                        <DataGridTextColumn Header="Can Delete" Binding="{Binding CanDelete}" Width="92"/>
+                        <DataGridTextColumn Header="Associated Objects" Binding="{Binding AssociatedObjects}" Width="360"/>
+                        <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="320"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

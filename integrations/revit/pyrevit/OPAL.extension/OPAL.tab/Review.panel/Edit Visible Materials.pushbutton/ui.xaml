@@ -1,0 +1,371 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit Visible Materials"
+        Height="720"
+        Width="1360"
+        MinHeight="560"
+        MinWidth="1040"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize">
+    <Window.Resources>
+        <Style x:Key="MaterialGroupItemStyle" TargetType="{x:Type GroupItem}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type GroupItem}">
+                        <Expander IsExpanded="False"
+                                  BorderBrush="#CBD5E1"
+                                  BorderThickness="0,0,0,1"
+                                  Background="{Binding Items[0].GroupBackground}">
+                            <Expander.Header>
+                                <Grid Margin="6,4,6,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Name}"
+                                               FontWeight="SemiBold"
+                                               Foreground="#0F172A"/>
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Margin="12,0,0,0">
+                                        <TextBlock Text="{Binding Items[0].GroupMarker}"
+                                                   Foreground="#854D0E"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,0,12,0"/>
+                                        <TextBlock Text="{Binding ItemCount}"
+                                                   Foreground="#475569"/>
+                                        <TextBlock Text=" rows"
+                                                   Foreground="#475569"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Expander.Header>
+                            <ItemsPresenter/>
+                        </Expander>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <ContextMenu x:Key="MaterialGridContextMenu">
+            <MenuItem Header="Copy Material" Click="on_copy_material_from_row"/>
+            <MenuItem Header="Paste as Pending Material" Click="on_paste_material_to_selected"/>
+            <Separator/>
+            <MenuItem Header="Explain Report Only" Click="on_explain_report_only"/>
+            <MenuItem Header="Can This Be Exposed as Type Parameter?" Click="on_explain_type_parameter_push"/>
+        </ContextMenu>
+    </Window.Resources>
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="summary_text"
+                       Grid.Column="0"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center"
+                       Foreground="#334155"/>
+            <Button Grid.Column="1"
+                    Content="Apply Updates"
+                    Width="120"
+                    Height="28"
+                    Margin="12,0,0,0"
+                    Click="on_apply"/>
+            <Button Grid.Column="2"
+                    Content="Refresh"
+                    Width="92"
+                    Height="28"
+                    Margin="8,0,0,0"
+                    Click="on_refresh"/>
+        </Grid>
+
+        <TabControl x:Name="tab_control"
+                    Grid.Row="1"
+                    SelectedIndex="2">
+            <TabItem x:Name="needs_tab" Header="Needs Amendment">
+                <DataGrid x:Name="needs_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          ContextMenu="{StaticResource MaterialGridContextMenu}"
+                          PreviewMouseRightButtonDown="on_grid_preview_mouse_right_button_down"
+                          MouseDoubleClick="on_change_material">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource MaterialGroupItemStyle}"/>
+                    </DataGrid.GroupStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Element / Type" Binding="{Binding ElementGroup}" Width="250"/>
+                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="130"/>
+                        <DataGridTextColumn Header="Material Source" Binding="{Binding MaterialSource}" Width="230"/>
+                        <DataGridTextColumn Header="Material Applied" Binding="{Binding CurrentMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Pending Material" Binding="{Binding PendingMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Editable" Binding="{Binding Editable}" Width="74"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding EditScope}" Width="130"/>
+                        <DataGridTextColumn Header="Visible Count" Binding="{Binding VisibleCount}" Width="96"/>
+                        <DataGridTextColumn Header="Targets" Binding="{Binding Targets}" Width="230"/>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
+                        <DataGridTextColumn Header="Exposure" Binding="{Binding Exposure}" Width="280"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem x:Name="report_tab" Header="Report Only">
+                <DataGrid x:Name="report_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          ContextMenu="{StaticResource MaterialGridContextMenu}"
+                          PreviewMouseRightButtonDown="on_grid_preview_mouse_right_button_down"
+                          MouseDoubleClick="on_change_material">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource MaterialGroupItemStyle}"/>
+                    </DataGrid.GroupStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Element / Type" Binding="{Binding ElementGroup}" Width="250"/>
+                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="130"/>
+                        <DataGridTextColumn Header="Material Source" Binding="{Binding MaterialSource}" Width="230"/>
+                        <DataGridTextColumn Header="Material Applied" Binding="{Binding CurrentMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Pending Material" Binding="{Binding PendingMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Editable" Binding="{Binding Editable}" Width="74"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding EditScope}" Width="130"/>
+                        <DataGridTextColumn Header="Visible Count" Binding="{Binding VisibleCount}" Width="96"/>
+                        <DataGridTextColumn Header="Targets" Binding="{Binding Targets}" Width="230"/>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="220"/>
+                        <DataGridTextColumn Header="Exposure" Binding="{Binding Exposure}" Width="280"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem x:Name="families_tab" Header="Loadable Families">
+                <DataGrid x:Name="families_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          ContextMenu="{StaticResource MaterialGridContextMenu}"
+                          PreviewMouseRightButtonDown="on_grid_preview_mouse_right_button_down"
+                          MouseDoubleClick="on_change_material">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource MaterialGroupItemStyle}"/>
+                    </DataGrid.GroupStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Element / Type" Binding="{Binding ElementGroup}" Width="250"/>
+                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="130"/>
+                        <DataGridTextColumn Header="Material Source" Binding="{Binding MaterialSource}" Width="230"/>
+                        <DataGridTextColumn Header="Material Applied" Binding="{Binding CurrentMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Pending Material" Binding="{Binding PendingMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Editable" Binding="{Binding Editable}" Width="74"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding EditScope}" Width="130"/>
+                        <DataGridTextColumn Header="Visible Count" Binding="{Binding VisibleCount}" Width="96"/>
+                        <DataGridTextColumn Header="Targets" Binding="{Binding Targets}" Width="230"/>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
+                        <DataGridTextColumn Header="Exposure" Binding="{Binding Exposure}" Width="280"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem x:Name="walls_tab" Header="Walls">
+                <DataGrid x:Name="walls_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          ContextMenu="{StaticResource MaterialGridContextMenu}"
+                          PreviewMouseRightButtonDown="on_grid_preview_mouse_right_button_down"
+                          MouseDoubleClick="on_change_material">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource MaterialGroupItemStyle}"/>
+                    </DataGrid.GroupStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Element / Type" Binding="{Binding ElementGroup}" Width="250"/>
+                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="130"/>
+                        <DataGridTextColumn Header="Material Source" Binding="{Binding MaterialSource}" Width="230"/>
+                        <DataGridTextColumn Header="Material Applied" Binding="{Binding CurrentMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Pending Material" Binding="{Binding PendingMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Editable" Binding="{Binding Editable}" Width="74"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding EditScope}" Width="130"/>
+                        <DataGridTextColumn Header="Visible Count" Binding="{Binding VisibleCount}" Width="96"/>
+                        <DataGridTextColumn Header="Targets" Binding="{Binding Targets}" Width="230"/>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
+                        <DataGridTextColumn Header="Exposure" Binding="{Binding Exposure}" Width="280"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem x:Name="ceilings_tab" Header="Ceilings">
+                <DataGrid x:Name="ceilings_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          ContextMenu="{StaticResource MaterialGridContextMenu}"
+                          PreviewMouseRightButtonDown="on_grid_preview_mouse_right_button_down"
+                          MouseDoubleClick="on_change_material">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource MaterialGroupItemStyle}"/>
+                    </DataGrid.GroupStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Element / Type" Binding="{Binding ElementGroup}" Width="250"/>
+                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="130"/>
+                        <DataGridTextColumn Header="Material Source" Binding="{Binding MaterialSource}" Width="230"/>
+                        <DataGridTextColumn Header="Material Applied" Binding="{Binding CurrentMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Pending Material" Binding="{Binding PendingMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Editable" Binding="{Binding Editable}" Width="74"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding EditScope}" Width="130"/>
+                        <DataGridTextColumn Header="Visible Count" Binding="{Binding VisibleCount}" Width="96"/>
+                        <DataGridTextColumn Header="Targets" Binding="{Binding Targets}" Width="230"/>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
+                        <DataGridTextColumn Header="Exposure" Binding="{Binding Exposure}" Width="280"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem x:Name="floors_tab" Header="Floors">
+                <DataGrid x:Name="floors_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          ContextMenu="{StaticResource MaterialGridContextMenu}"
+                          PreviewMouseRightButtonDown="on_grid_preview_mouse_right_button_down"
+                          MouseDoubleClick="on_change_material">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource MaterialGroupItemStyle}"/>
+                    </DataGrid.GroupStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Element / Type" Binding="{Binding ElementGroup}" Width="250"/>
+                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="130"/>
+                        <DataGridTextColumn Header="Material Source" Binding="{Binding MaterialSource}" Width="230"/>
+                        <DataGridTextColumn Header="Material Applied" Binding="{Binding CurrentMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Pending Material" Binding="{Binding PendingMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Editable" Binding="{Binding Editable}" Width="74"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding EditScope}" Width="130"/>
+                        <DataGridTextColumn Header="Visible Count" Binding="{Binding VisibleCount}" Width="96"/>
+                        <DataGridTextColumn Header="Targets" Binding="{Binding Targets}" Width="230"/>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
+                        <DataGridTextColumn Header="Exposure" Binding="{Binding Exposure}" Width="280"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem x:Name="other_tab" Header="Other">
+                <DataGrid x:Name="other_grid"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          IsReadOnly="True"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          GridLinesVisibility="Horizontal"
+                          AlternatingRowBackground="#F8FAFC"
+                          ContextMenu="{StaticResource MaterialGridContextMenu}"
+                          PreviewMouseRightButtonDown="on_grid_preview_mouse_right_button_down"
+                          MouseDoubleClick="on_change_material">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource MaterialGroupItemStyle}"/>
+                    </DataGrid.GroupStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Element / Type" Binding="{Binding ElementGroup}" Width="250"/>
+                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="130"/>
+                        <DataGridTextColumn Header="Material Source" Binding="{Binding MaterialSource}" Width="230"/>
+                        <DataGridTextColumn Header="Material Applied" Binding="{Binding CurrentMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Pending Material" Binding="{Binding PendingMaterial}" Width="220"/>
+                        <DataGridTextColumn Header="Editable" Binding="{Binding Editable}" Width="74"/>
+                        <DataGridTextColumn Header="Scope" Binding="{Binding EditScope}" Width="130"/>
+                        <DataGridTextColumn Header="Visible Count" Binding="{Binding VisibleCount}" Width="96"/>
+                        <DataGridTextColumn Header="Targets" Binding="{Binding Targets}" Width="230"/>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
+                        <DataGridTextColumn Header="Exposure" Binding="{Binding Exposure}" Width="280"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
+
+        <Grid Grid.Row="2" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0"
+                    Content="Change Material"
+                    Width="130"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_change_material"/>
+            <Button Grid.Column="1"
+                    x:Name="by_category_highlight_button"
+                    Content="Show Needs Amendment"
+                    Width="190"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_toggle_by_category_highlight"/>
+            <Button Grid.Column="2"
+                    x:Name="report_only_button"
+                    Content="Show Report Only"
+                    Width="150"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_toggle_report_only"/>
+            <Button Grid.Column="3"
+                    Content="Clear Pending"
+                    Width="112"
+                    Height="30"
+                    Click="on_clear_pending"/>
+            <TextBlock Grid.Column="4"
+                       x:Name="status_text"
+                       Margin="12,0,12,0"
+                       VerticalAlignment="Center"
+                       Foreground="#475569"
+                       TextWrapping="Wrap"/>
+            <Button Grid.Column="5"
+                    Content="Apply Updates"
+                    Width="120"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Click="on_apply"/>
+            <Button Grid.Column="6"
+                    Content="Close"
+                    Width="86"
+                    Height="30"
+                    Click="on_close"/>
+        </Grid>
+    </Grid>
+</Window>

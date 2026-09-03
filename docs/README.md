@@ -14,6 +14,7 @@ narrative:
 - [`architecture/material-domain.md`](architecture/material-domain.md) — the
   material model: readable codes, variants, provenance, search;
 - [`../services/prismfs/README.md`](../services/prismfs/README.md) — standalone
+- [`../integrations/revit/README.md`](../integrations/revit/README.md) — the pyRevit extension, its Revit-independent client, and the Unix proxy harness
   PrismFS usage, configuration, and development;
 - [`adr/`](adr/) — architectural decision records; and
 - [`api/README.md`](api/README.md) — API documentation placeholder.

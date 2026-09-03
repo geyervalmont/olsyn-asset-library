@@ -1,0 +1,11 @@
+title: "Edit\nVisible Materials"
+tooltip: |
+  Editable table for materials found on model elements visible in the current 3D view.
+  Painted surfaces are priority rows.
+  Loadable-family material parameters are included only when tied to real family geometry.
+  Includes a quick-add material picker that creates a project material with a random graphics colour.
+
+author: "AIVOSI"
+
+highlight: new
+wip: false

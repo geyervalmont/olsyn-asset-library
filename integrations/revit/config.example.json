@@ -1,0 +1,7 @@
+{
+  "api": "https://asset-library.test",
+  "token": "opal_paste_a_token_from_settings_api_tokens",
+  "drive": "studio-share",
+  "mount": "M:\\",
+  "verify_tls": true
+}

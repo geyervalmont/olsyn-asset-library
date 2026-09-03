@@ -1,0 +1,55 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Select Project Material"
+        Height="700"
+        Width="560"
+        MinHeight="460"
+        MinWidth="420"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize">
+    <DockPanel Margin="10">
+        <TextBox x:Name="filter_box"
+                 DockPanel.Dock="Top"
+                 Height="28"
+                 Margin="0,0,0,8"
+                 VerticalContentAlignment="Center"
+                 TextChanged="on_filter_changed"/>
+
+        <Grid DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0"
+                    Content="Quick Add New Material"
+                    Width="170"
+                    Height="30"
+                    Click="on_quick_add"/>
+            <TextBlock Grid.Column="1"
+                       x:Name="status_text"
+                       Margin="10,0,10,0"
+                       VerticalAlignment="Center"
+                       Foreground="#475569"
+                       TextWrapping="Wrap"/>
+            <Button Grid.Column="2"
+                    Content="Use Material"
+                    Width="104"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    IsDefault="True"
+                    Click="on_use_material"/>
+            <Button Grid.Column="3"
+                    Content="Cancel"
+                    Width="82"
+                    Height="30"
+                    IsCancel="True"
+                    Click="on_cancel"/>
+        </Grid>
+
+        <ListBox x:Name="materials_list"
+                 DisplayMemberPath="Name"
+                 MouseDoubleClick="on_use_material"/>
+    </DockPanel>
+</Window>

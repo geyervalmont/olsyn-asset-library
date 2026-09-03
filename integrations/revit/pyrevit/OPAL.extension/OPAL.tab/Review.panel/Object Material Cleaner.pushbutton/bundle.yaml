@@ -1,0 +1,3 @@
+﻿title: "Object Material\nCleaner"
+tooltip: "Audit a selected loadable family for material slots used by family objects and all family material parameters. Fix missing object-to-parameter associations, sort parameters by in-use status, delete selected unused parameters, or delete all unused material parameters."
+author: Material Asset Library
