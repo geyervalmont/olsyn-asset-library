@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\DownscaleRepresentation;
+use App\Jobs\RenderPreview;
 
 return [
 
@@ -42,6 +43,21 @@ return [
 
     'workers' => [
         'downscale_representation' => DownscaleRepresentation::class,
+        'render_preview' => RenderPreview::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Previews
+    |--------------------------------------------------------------------------
+    |
+    | Render a swatch automatically when a canonical set is approved. Off in
+    | tests so approvals stay cheap; the render job is exercised directly.
+    |
+    */
+
+    'previews' => [
+        'auto_render' => (bool) env('OPAL_AUTO_RENDER_PREVIEWS', true),
     ],
 
 ];

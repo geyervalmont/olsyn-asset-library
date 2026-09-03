@@ -11,15 +11,15 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * What a material looks like in a list: a real image when one exists
- * (thumbnail, base colour or reference image of a usable representation),
- * otherwise a strip of its variants' dominant colours.
+ * What a material looks like in a list: a rendered swatch when one exists,
+ * else a thumbnail, base colour or reference image of a usable
+ * representation, otherwise a strip of its variants' dominant colours.
  */
 class MaterialPreviews
 {
     public const CHIPS = 8;
 
-    private const ROLE_PRIORITY = ['thumbnail' => 0, 'base_color' => 1, 'ref_image' => 2, 'render' => 3];
+    private const ROLE_PRIORITY = ['render' => 0, 'thumbnail' => 1, 'base_color' => 2, 'ref_image' => 3];
 
     /**
      * Preview files keyed by material id, for the given materials.

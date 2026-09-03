@@ -4,6 +4,7 @@ namespace App\Actions\Representations;
 
 use App\Actions\Provenance\RecordProvenance;
 use App\Enums\ReviewState;
+use App\Jobs\RenderPreview;
 use App\Models\Representation;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +49,31 @@ class ReviewRepresentation
                 notes: $notes,
             );
 
-            return $representation->refresh();
+            $representation->refresh();
+            $this->renderPreview($representation);
+
+            return $representation;
         });
+    }
+
+    /**
+     * A newly approved canonical set gets a swatch rendered, unless one
+     * already exists for exactly these inputs.
+     */
+    private function renderPreview(Representation $representation): void
+    {
+        if (! config('opal.previews.auto_render') || ! $representation->isApproved() || ! $representation->target->is_canonical) {
+            return;
+        }
+
+        if ($representation->fileFor('base_color')?->isImage() !== true) {
+            return;
+        }
+
+        if (RenderPreview::renderedFor($representation->variant, RenderPreview::inputHash($representation)) !== null) {
+            return;
+        }
+
+        RenderPreview::forVariant($representation->variant);
     }
 }

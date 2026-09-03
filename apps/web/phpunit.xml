@@ -29,6 +29,7 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="FILESYSTEM_DISK" value="local"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="OPAL_AUTO_RENDER_PREVIEWS" value="false"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
