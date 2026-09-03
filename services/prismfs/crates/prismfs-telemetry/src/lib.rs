@@ -4,6 +4,8 @@ use prismfs_core::{RequestContext, VirtualPath};
 use serde::Serialize;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
+pub mod audit;
+
 /// Stable metric names consumed by dashboards and alerts.
 pub mod metrics {
     /// Filesystem requests by operation and result.
@@ -73,6 +75,8 @@ pub struct AuditEvent<'a> {
     pub path: &'a VirtualPath,
     /// Policy or operation result.
     pub result: &'a str,
+    /// Bytes returned to the client, for reads.
+    pub bytes: Option<u64>,
     /// Operation duration in milliseconds.
     pub duration_ms: f64,
 }
@@ -97,6 +101,12 @@ pub fn record(event: &AuditEvent<'_>) {
         duration_ms = event.duration_ms,
         "filesystem access"
     );
+
+    if let Some(queue) = audit::installed()
+        && queue.accepts(event.operation)
+    {
+        queue.push(audit::AccessEvent::now(event));
+    }
 }
 
 /// Records a cache result without placing object identities in metric labels.

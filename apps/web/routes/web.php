@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Drives\DriveManifestController;
 use App\Http\Controllers\Files\FileController;
+use App\Http\Controllers\Prismfs\PrismfsAccessController;
 use App\Http\Controllers\Prismfs\PrismfsManifestController;
 use App\Http\Controllers\Tenants\SwitchTenantController;
 use Illuminate\Support\Facades\Route;
@@ -13,6 +14,7 @@ if (app()->environment(['local', 'testing'])) {
 }
 
 Route::get('prismfs/drives/{drive:slug}/manifest.yaml', PrismfsManifestController::class)->name('prismfs.drives.manifest');
+Route::post('prismfs/drives/{drive:slug}/accesses', PrismfsAccessController::class)->name('prismfs.drives.accesses');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'dashboard')->name('dashboard');

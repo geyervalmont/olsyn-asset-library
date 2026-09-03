@@ -325,11 +325,24 @@ impl PrismFilesystem {
         result: &str,
         started: Instant,
     ) {
+        self.audit_bytes(context, operation, path, result, None, started);
+    }
+
+    fn audit_bytes(
+        &self,
+        context: &RequestContext,
+        operation: &str,
+        path: &VirtualPath,
+        result: &str,
+        bytes: Option<u64>,
+        started: Instant,
+    ) {
         record(&AuditEvent {
             context,
             operation,
             path,
             result,
+            bytes,
             duration_ms: started.elapsed().as_secs_f64() * 1_000.0,
         });
     }
@@ -426,13 +439,14 @@ impl Filesystem for PrismFilesystem {
             return;
         }
         let context = self.context(request);
+        let started = Instant::now();
         let result = (|| {
             let path = self.path(inode)?;
             let node = self
                 .runtime
                 .block_on(self.namespace.lookup(&context, &path))?;
             if node.kind == NodeKind::Directory {
-                return Err(PrismError::NotDirectory(path));
+                return Err(PrismError::NotDirectory(path.clone()));
             }
             self.runtime.block_on(authorize(
                 self.policy.as_ref(),
@@ -441,10 +455,11 @@ impl Filesystem for PrismFilesystem {
                 &path,
                 Some(&node),
             ))?;
-            Ok(())
+            Ok(path)
         })();
         match result {
-            Ok(()) => {
+            Ok(path) => {
+                self.audit(&context, "open", &path, "allow", started);
                 record_file_handle(1.0);
                 let open_flags = if self.config.direct_io {
                     FopenFlags::FOPEN_DIRECT_IO
@@ -453,7 +468,11 @@ impl Filesystem for PrismFilesystem {
                 };
                 reply.opened(FileHandle(inode.0), open_flags);
             }
-            Err(error) => reply.error(errno(&error)),
+            Err(error) => {
+                let path = self.path(inode).unwrap_or_else(|_| VirtualPath::root());
+                self.audit(&context, "open", &path, result_label(&error), started);
+                reply.error(errno(&error));
+            }
         }
     }
 
@@ -502,7 +521,14 @@ impl Filesystem for PrismFilesystem {
 
         match result {
             Ok((path, bytes)) => {
-                self.audit(&context, "read", &path, "allow", started);
+                self.audit_bytes(
+                    &context,
+                    "read",
+                    &path,
+                    "allow",
+                    Some(bytes.len() as u64),
+                    started,
+                );
                 reply.data(&bytes);
             }
             Err(error) => {

@@ -22,11 +22,11 @@ class DriveNamespace
     public const MANIFEST_VERSION = 1;
 
     /**
-     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}>
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}>
      */
     public function entries(Drive $drive): array
     {
-        /** @var list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}> $entries */
+        /** @var list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}> $entries */
         $entries = [];
 
         $materials = Material::query()
@@ -56,6 +56,7 @@ class DriveNamespace
                     $entries[] = [
                         'path' => $drive->root_path.'/'.$directory.'/'.$this->fileName($variant->code, $representationFile),
                         'object' => $this->object($representationFile->file),
+                        'file_id' => $representationFile->file->getKey(),
                         'variant' => $variant->code,
                         'target' => $representation->target->slug,
                         'quality' => $representation->quality->slug,
@@ -85,7 +86,7 @@ class DriveNamespace
     /**
      * The entries a drive projects for one variant.
      *
-     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}>
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}>
      */
     public function entriesForVariant(Drive $drive, Variant $variant): array
     {

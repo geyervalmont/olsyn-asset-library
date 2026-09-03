@@ -19,11 +19,13 @@ use prismfs_fuse::{FuseAdapter, FuseConfig};
 use prismfs_policy::{AccessPolicy, DenyPrefixes};
 use prismfs_smb::SambaConfig;
 use prismfs_storage::{ObjectReader, ObjectStoreReader};
-use prismfs_telemetry::{LogFormat, TelemetryConfig};
+use prismfs_telemetry::{LogFormat, TelemetryConfig, audit::AuditQueue};
 use tracing::{info, warn};
 
+mod audit;
 mod remote;
 
+use audit::AuditShipper;
 use remote::RemoteManifest;
 
 #[derive(Debug, Parser)]
@@ -91,6 +93,23 @@ enum Command {
         /// Hide and deny this absolute path and every descendant. Repeatable.
         #[arg(long, env = "PRISMFS_DENY_PREFIX", value_delimiter = ',')]
         deny_prefix: Vec<VirtualPath>,
+        /// Where access events are posted. Defaults to the manifest URL with
+        /// `/manifest.yaml` replaced by `/accesses`; off without a manifest URL.
+        #[arg(long, env = "PRISMFS_AUDIT_URL")]
+        audit_url: Option<String>,
+        /// Seconds between access event flushes.
+        #[arg(long, env = "PRISMFS_AUDIT_FLUSH_INTERVAL", default_value_t = 5)]
+        audit_flush_interval: u64,
+        /// Most events posted per request.
+        #[arg(long, env = "PRISMFS_AUDIT_BATCH", default_value_t = 500)]
+        audit_batch: usize,
+        /// Most events kept while the control plane is unreachable; the
+        /// oldest are dropped beyond this.
+        #[arg(long, env = "PRISMFS_AUDIT_QUEUE", default_value_t = 10_000)]
+        audit_queue: usize,
+        /// Operations shipped; everything else stays in the local log.
+        #[arg(long, env = "PRISMFS_AUDIT_OPERATIONS", value_delimiter = ',', default_values_t = default_audit_operations())]
+        audit_operations: Vec<String>,
     },
     /// Render a validated read-only Samba configuration for a PrismFS mount.
     SambaConfig {
@@ -132,18 +151,94 @@ fn main() -> Result<()> {
             refresh_interval,
             tenant_id,
             deny_prefix,
-        } => mount(
-            mountpoint,
-            ManifestSource::new(manifest, manifest_url, manifest_token)?,
-            Duration::from_secs(refresh_interval.max(1)),
-            tenant_id,
-            deny_prefix,
-        ),
+            audit_url,
+            audit_flush_interval,
+            audit_batch,
+            audit_queue,
+            audit_operations,
+        } => {
+            let audit = AuditSettings::new(
+                audit_url,
+                manifest_url.as_deref(),
+                manifest_token.as_deref(),
+                Duration::from_secs(audit_flush_interval.max(1)),
+                audit_batch,
+                audit_queue,
+                audit_operations,
+            )?;
+            mount(
+                mountpoint,
+                ManifestSource::new(manifest, manifest_url, manifest_token)?,
+                Duration::from_secs(refresh_interval.max(1)),
+                tenant_id,
+                deny_prefix,
+                audit,
+            )
+        }
         Command::SambaConfig {
             mountpoint,
             share_name,
             guest_account,
         } => samba_config(mountpoint, share_name, guest_account),
+    }
+}
+
+fn default_audit_operations() -> Vec<String> {
+    prismfs_telemetry::audit::DEFAULT_OPERATIONS
+        .iter()
+        .map(|operation| (*operation).to_owned())
+        .collect()
+}
+
+/// How access events reach the control plane, if at all.
+struct AuditSettings {
+    url: Option<String>,
+    token: Option<String>,
+    interval: Duration,
+    batch: usize,
+    capacity: usize,
+    operations: Vec<String>,
+}
+
+impl AuditSettings {
+    fn new(
+        url: Option<String>,
+        manifest_url: Option<&str>,
+        manifest_token: Option<&str>,
+        interval: Duration,
+        batch: usize,
+        capacity: usize,
+        operations: Vec<String>,
+    ) -> Result<Self> {
+        let url = match (url, manifest_url) {
+            (Some(url), _) => Some(url),
+            (None, Some(manifest_url)) => Some(audit::derive_url(manifest_url)?),
+            (None, None) => None,
+        };
+        if url.is_some() && manifest_token.is_none() {
+            bail!("--manifest-token is required to ship access events");
+        }
+        Ok(Self {
+            url,
+            token: manifest_token.map(str::to_owned),
+            interval,
+            batch,
+            capacity,
+            operations,
+        })
+    }
+
+    /// Installs the queue and starts the shipper when a URL is configured.
+    fn start(self) -> Result<()> {
+        let (Some(url), Some(token)) = (self.url, self.token) else {
+            info!("access events stay in the local log: no control plane URL");
+            return Ok(());
+        };
+        let queue = Arc::new(AuditQueue::new(self.capacity, self.operations));
+        prismfs_telemetry::audit::install(Arc::clone(&queue))
+            .map_err(|_| anyhow::anyhow!("the audit queue was already installed"))?;
+        AuditShipper::new(url, token, queue, self.batch, self.interval)?.spawn();
+        Ok(())
     }
 }
 
@@ -310,10 +405,12 @@ fn mount(
     refresh_interval: Duration,
     tenant_id: String,
     deny_prefix: Vec<VirtualPath>,
+    audit: AuditSettings,
 ) -> Result<()> {
     let manifest = source.load()?;
     let bucket = serving_bucket(&manifest)?;
     let swappable = Arc::new(SwappableNamespace::new(namespace(&manifest)?));
+    audit.start()?;
     if let ManifestSource::Remote(remote) = source {
         info!(
             url = remote.url(),

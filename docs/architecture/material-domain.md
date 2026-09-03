@@ -292,6 +292,55 @@ workspace membership or super-admin).
 Matt's Revit-only review tools (Edit Visible Materials, Object Material
 Cleaner) are carried over unchanged under the Review panel.
 
+## Access trail (implemented)
+
+`file_accesses` is the one place a read is recorded, whatever the channel.
+Web downloads are written by the file controller with the signed-in user.
+Drive reads arrive from PrismFS in batches at
+`POST /prismfs/drives/{slug}/accesses`, authenticated with the drive's bearer
+token like the manifest: each event carries a request id, timestamp,
+principal (`uid:1000`), operation, path, result, bytes and duration. The
+controller maps the drive path back to the library file through the drive's
+namespace (a cached path index) and inserts with `insert … on conflict do
+nothing` on `(drive_id, request_id)`, so a retried batch records nothing
+twice. Paths that map to nothing are kept with a null file, so probes and
+listings of things that are not there stay visible. The material page shows
+the last reads of its files in an Access panel: when, channel (drive name or
+web), who (user or principal), operation, file.
+
+## Rendered previews (implemented)
+
+Swatches prefer a rendered image over a raw base colour. `RenderPreview` is
+a tracked job that takes a variant's approved canonical set (the smallest
+tier at or above 512 px), shades a lit sphere in plain PHP
+(`SphereRenderer`: equirectangular tiling of the base colour, normal-map
+perturbation, Lambert plus Blinn-Phong scaled by one minus roughness,
+metallic tint, key/fill/rim/ambient rig, transparent outside the sphere) and
+stores the PNG as an approved `preview`-target representation with a
+`rendered` provenance event whose inputs are the maps used. The render is
+deterministic for its inputs: a hash of the map SHA-256s, renderer version
+and rig is kept in the representation metadata, so re-running for unchanged
+inputs is a no-op and a forced re-render supersedes the previous one.
+Approving a canonical set queues a render automatically
+(`OPAL_AUTO_RENDER_PREVIEWS`, off in tests); `opal:previews:render
+[--material=CODE] [--missing] [--force] [--sync]` fills gaps, and the material
+page has a Render preview button per variant. A 512 px render takes about a
+second on the dev container.
+
+## Corpus ingest (implemented)
+
+`opal:import:legacy` stays as it was. `opal:import:legacy-files
+--source=<dir> [--limit] [--only] [--dry-run]` is the file stage built for
+the full 75 GB corpus: it runs the same importer with a ledger
+(`legacy_file_ingests`: source path, size, mtime, sha256, file, status,
+error, processed at). A file whose size and mtime match an ingested ledger
+row is not re-read; a failed store is recorded with its error and retried on
+the next run; a set imported before its files were complete gains the roles
+that arrive later. Each product commits in its own transaction, so the
+command can be stopped and rerun at any point. A progress bar names the file
+in flight and the summary reports ingested, unchanged, failed, attached,
+representations created, files not on disk and bytes read.
+
 ## Inspector
 
 The material record renders the picked colourway's canonical PBR maps in

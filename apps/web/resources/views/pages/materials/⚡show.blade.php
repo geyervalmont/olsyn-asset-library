@@ -12,6 +12,7 @@ use App\Enums\ReviewState;
 use App\Enums\Visibility;
 use App\Library\Previews\MaterialPreviews;
 use App\Models\Drive;
+use App\Models\FileAccess;
 use App\Models\Material;
 use App\Models\ProvenanceEvent;
 use App\Models\QualityTier;
@@ -21,6 +22,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use Flux\Flux;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -146,6 +148,22 @@ new class extends Component {
             ->get();
     }
 
+    /**
+     * Recent reads of this material's files, from the web and from drives.
+     *
+     * @return Collection<int, FileAccess>
+     */
+    #[Computed]
+    public function accesses(): Collection
+    {
+        $fileIds = DB::table('representation_files')
+            ->join('representations', 'representations.id', '=', 'representation_files.representation_id')
+            ->whereIn('representations.variant_id', $this->material->variants()->select('id'))
+            ->pluck('representation_files.file_id');
+
+        return FileAccess::query()->with(['file', 'user', 'drive'])->whereIn('file_id', $fileIds)->orderByDesc('accessed_at')->orderByDesc('id')->limit(20)->get();
+    }
+
     #[Computed]
     public function drives(): Collection
     {
@@ -211,6 +229,24 @@ new class extends Component {
 
         unset($this->variants, $this->timeline);
         Flux::toast(variant: 'success', text: __('Queued tiers :tiers (run :run).', ['tiers' => implode(', ', $tiers), 'run' => substr($run->uuid, 0, 8)]));
+    }
+
+    public function renderPreview(int $variantId): void
+    {
+        abort_unless(auth()->user()?->can('materials.contribute'), 403);
+
+        $variant = $this->material->variants()->findOrFail($variantId);
+
+        if (\App\Jobs\RenderPreview::sourceFor($variant) === null) {
+            Flux::toast(variant: 'warning', text: __('Approve a canonical set with a base colour first.'));
+
+            return;
+        }
+
+        $run = \App\Jobs\RenderPreview::forVariant($variant, auth()->user(), force: true);
+
+        unset($this->variants, $this->timeline, $this->preview, $this->card);
+        Flux::toast(variant: 'success', text: __('Queued a preview render (run :run).', ['run' => substr($run->uuid, 0, 8)]));
     }
 
     public function publish(CutVersion $cut, PublishVersion $publish): void
@@ -353,6 +389,7 @@ new class extends Component {
                                     <x-ui.button wire:click="derive({{ $variant->id }}, '{{ $target->slug }}')" variant="secondary" size="sm" data-test="derive-{{ $target->slug }}">{{ __('Derive :target', ['target' => $target->name]) }}</x-ui.button>
                                 @endforeach
                                 <x-ui.button wire:click="generateTiers({{ $variant->id }})" variant="quiet" size="sm" data-test="generate-tiers">{{ __('Generate tiers') }}</x-ui.button>
+                                <x-ui.button wire:click="renderPreview({{ $variant->id }})" variant="quiet" size="sm" data-test="render-preview">{{ __('Render preview') }}</x-ui.button>
                             </div>
                         @endcan
                     </div>
@@ -499,6 +536,36 @@ new class extends Component {
                     </div>
                 @endforeach
             </div>
+        @endif
+    </x-ui.panel>
+
+    <x-ui.panel style="margin-top: 12px" data-test="access-trail">
+        <div class="ui-panel__heading"><div><h3>{{ __('Access') }}</h3><p>{{ __('Recent reads of this material\'s files, from the web and from mounted drives.') }}</p></div></div>
+        @if ($this->accesses->isEmpty())
+            <p class="ui-variant__attrs">{{ __('No reads recorded.') }}</p>
+        @else
+            <table class="ui-table">
+                <thead>
+                    <tr>
+                        <th>{{ __('When') }}</th>
+                        <th>{{ __('Channel') }}</th>
+                        <th>{{ __('Who') }}</th>
+                        <th>{{ __('Operation') }}</th>
+                        <th>{{ __('File') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($this->accesses as $access)
+                        <tr wire:key="access-{{ $access->id }}" data-test="access-row">
+                            <td><time datetime="{{ $access->accessed_at->toIso8601String() }}">{{ $access->accessed_at->format('Y-m-d H:i') }}</time></td>
+                            <td><span class="ui-code">{{ $access->drive?->name ?? $access->channel }}</span></td>
+                            <td>{{ $access->who() }}</td>
+                            <td>{{ $access->action }}@if ($access->result && $access->result !== 'allow') · {{ $access->result }}@endif</td>
+                            <td>{{ $access->file?->original_name ?? basename((string) $access->path) }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
         @endif
     </x-ui.panel>
 </section>
