@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\DrivesController;
+use App\Http\Controllers\Api\IdentitiesController;
 use App\Http\Controllers\Api\MaterialsController;
 use App\Http\Controllers\Api\VariantsController;
 use Illuminate\Http\Request;
@@ -25,4 +27,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('materials/{code}', [MaterialsController::class, 'show'])->name('api.materials.show');
     Route::get('variants/resolve', [VariantsController::class, 'resolve'])->name('api.variants.resolve');
     Route::get('variants/{code}', [VariantsController::class, 'show'])->name('api.variants.show');
+    Route::get('variants/{code}/paths', [DrivesController::class, 'variantPaths'])->name('api.variants.paths');
+    Route::post('variants/{code}/identities', [IdentitiesController::class, 'store'])->name('api.variants.identities.store');
+    Route::get('drives', [DrivesController::class, 'index'])->name('api.drives.index');
 });

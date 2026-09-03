@@ -4,10 +4,15 @@ use App\Actions\Authorization\SyncRolesAndPermissions;
 use App\Actions\Materials\AddVariant;
 use App\Actions\Platforms\AssignPlatformIdentity;
 use App\Actions\Representations\CreateRepresentation;
+use App\Actions\Representations\ReviewRepresentation;
+use App\Actions\Versions\CutVersion;
+use App\Actions\Versions\PublishVersion;
+use App\Enums\ReviewState;
 use App\Enums\Role;
 use App\Enums\Visibility;
 use App\Library\FileStore;
 use App\Models\Category;
+use App\Models\Drive;
 use App\Models\Material;
 use App\Models\Supplier;
 use App\Models\Tenant;
@@ -97,4 +102,33 @@ test('users create and revoke api tokens from settings and the docs render', fun
 
     $this->actingAs($this->viewer)->get('/docs/api')->assertOk();
     $this->actingAs($this->viewer)->get('/docs/api.json')->assertOk()->assertJsonPath('info.title', 'OPAL API')->assertJsonPath('paths./v1/materials.get.summary', 'Search the library');
+});
+
+test('clients can list drives, find a variant on a drive, and write platform identities back', function () {
+    Storage::fake(config('opal.files_disk'));
+    app(ReviewRepresentation::class)->handle($this->ashen->representations()->sole(), ReviewState::Approved);
+    app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
+    $drive = Drive::factory()->create(['name' => 'Studio share', 'root_path' => '/materials']);
+    Sanctum::actingAs($this->viewer);
+
+    $this->getJson('/api/v1/drives')->assertOk()->assertJsonPath('data.0.slug', 'studio-share')->assertJsonPath('data.0.root_path', '/materials');
+
+    $this->getJson('/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/paths?drive=studio-share')
+        ->assertOk()
+        ->assertJsonPath('data.published', true)
+        ->assertJsonPath('data.files.0.path', '/materials/Carpet/Academix/Ashen/pbr/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png')
+        ->assertJsonPath('data.files.0.role', 'base_color')
+        ->assertJsonPath('data.files.0.sha256', $this->file->sha256);
+
+    $this->getJson('/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/paths?drive=nope')->assertUnprocessable();
+
+    $this->postJson('/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/identities', ['platform' => 'revit', 'external_id' => 'guid-1', 'external_name' => 'Carpet - Academix Ashen', 'payload' => ['document' => 'Tower A']])
+        ->assertCreated()
+        ->assertJsonPath('data.platform', 'revit');
+
+    $this->getJson('/api/v1/variants/resolve?platform=revit&reference=guid-1')->assertOk()->assertJsonPath('data.code', 'CPT-TARKETT-ACADEMIX-ASHEN');
+    $this->postJson('/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/identities', ['platform' => 'nope'])->assertUnprocessable();
+
+    Sanctum::actingAs(User::factory()->create());
+    $this->postJson('/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/identities', ['platform' => 'revit', 'external_id' => 'x'])->assertForbidden();
 });

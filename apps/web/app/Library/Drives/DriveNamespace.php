@@ -8,6 +8,7 @@ use App\Models\Material;
 use App\Models\MaterialVersion;
 use App\Models\Representation;
 use App\Models\RepresentationFile;
+use App\Models\Variant;
 
 /**
  * Projects a drive's visible, published materials into a PrismFS namespace
@@ -21,10 +22,11 @@ class DriveNamespace
     public const MANIFEST_VERSION = 1;
 
     /**
-     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}}>
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}>
      */
     public function entries(Drive $drive): array
     {
+        /** @var list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}> $entries */
         $entries = [];
 
         $materials = Material::query()
@@ -54,6 +56,12 @@ class DriveNamespace
                     $entries[] = [
                         'path' => $drive->root_path.'/'.$directory.'/'.$this->fileName($variant->code, $representationFile),
                         'object' => $this->object($representationFile->file),
+                        'variant' => $variant->code,
+                        'target' => $representation->target->slug,
+                        'quality' => $representation->quality->slug,
+                        'role' => $representationFile->role->slug,
+                        'sha256' => $representationFile->file->sha256,
+                        'mime_type' => $representationFile->file->mime_type,
                     ];
                 }
             }
@@ -69,7 +77,22 @@ class DriveNamespace
      */
     public function manifest(Drive $drive): array
     {
-        return ['version' => self::MANIFEST_VERSION, 'files' => $this->entries($drive)];
+        $files = array_map(fn (array $entry): array => ['path' => $entry['path'], 'object' => $entry['object']], $this->entries($drive));
+
+        return ['version' => self::MANIFEST_VERSION, 'files' => $files];
+    }
+
+    /**
+     * The entries a drive projects for one variant.
+     *
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}>
+     */
+    public function entriesForVariant(Drive $drive, Variant $variant): array
+    {
+        return array_values(array_filter(
+            $this->entries($drive),
+            fn (array $entry): bool => $entry['variant'] === $variant->code,
+        ));
     }
 
     public function toYaml(Drive $drive): string
@@ -98,7 +121,7 @@ class DriveNamespace
      */
     private function pinnedRepresentations(MaterialVersion $version, Drive $drive): iterable
     {
-        $query = $version->representations()->with(['variant', 'target', 'representationFiles.file', 'representationFiles.role']);
+        $query = $version->representations()->with(['variant', 'target', 'quality', 'representationFiles.file', 'representationFiles.role']);
 
         if ($drive->target_id !== null) {
             $query->where('representations.target_id', $drive->target_id);
