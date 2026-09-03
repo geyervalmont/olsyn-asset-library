@@ -72,6 +72,41 @@ new class extends Component {
     }
 
     /**
+     * Canonical maps per variant for the inspector, keyed by variant id.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    #[Computed]
+    public function viewerSets(): array
+    {
+        $canonical = Target::canonical();
+        $sets = [];
+
+        foreach ($this->variants as $variant) {
+            $representation = $variant->representations
+                ->filter(fn ($representation) => $canonical !== null && $representation->target_id === $canonical->getKey() && $representation->review_state->value !== 'rejected')
+                ->sortBy([['review_state', 'asc'], ['quality.pixels', 'desc']])
+                ->first();
+
+            if ($representation === null) {
+                continue;
+            }
+
+            $set = ['key' => (string) $representation->getKey(), 'tile_mm' => (float) ($variant->effectiveTileWidthMm() ?? 1000), 'hex' => $variant->dominant_hex];
+
+            foreach ($representation->representationFiles as $representationFile) {
+                if ($representationFile->file->isImage()) {
+                    $set[$representationFile->role->slug] = $representationFile->file->url();
+                }
+            }
+
+            $sets[$variant->id] = $set;
+        }
+
+        return $sets;
+    }
+
+    /**
      * @return array<string, string>
      */
     #[Computed]
@@ -156,6 +191,26 @@ new class extends Component {
 
         unset($this->variants, $this->timeline);
         Flux::toast(variant: 'success', text: __(':target set derived as a candidate.', ['target' => $target]));
+    }
+
+    public function generateTiers(int $variantId): void
+    {
+        abort_unless(auth()->user()?->can('materials.contribute'), 403);
+
+        $variant = $this->material->variants()->findOrFail($variantId);
+        $source = app(DeriveRepresentation::class)->canonicalFor($variant, QualityTier::fromSlug('8k'));
+        $tiers = QualityTier::query()->whereNotNull('pixels')->where('pixels', '<', $source->quality->pixels ?? 0)->orderByDesc('pixels')->pluck('slug')->all();
+
+        if ($tiers === []) {
+            Flux::toast(variant: 'warning', text: __('No smaller tiers exist for this set.'));
+
+            return;
+        }
+
+        $run = \App\Jobs\DownscaleRepresentation::forRepresentation($source, $tiers, auth()->user());
+
+        unset($this->variants, $this->timeline);
+        Flux::toast(variant: 'success', text: __('Queued tiers :tiers (run :run).', ['tiers' => implode(', ', $tiers), 'run' => substr($run->uuid, 0, 8)]));
     }
 
     public function publish(CutVersion $cut, PublishVersion $publish): void
@@ -255,6 +310,22 @@ new class extends Component {
         </div>
     </div>
 
+    <div class="ui-viewer" style="margin-bottom: 12px" x-data="materialViewer(@js(['sets' => $this->viewerSets, 'objectSizeMm' => 1000]))" x-effect="show(current?.id)" data-test="material-viewer">
+        <div class="ui-viewer__bar">
+            <p>{{ __('Inspector') }} · {{ __('canonical maps under studio light') }} · <span x-text="status"></span></p>
+            <div class="ui-segment" role="group" aria-label="{{ __('Shape') }}">
+                <button type="button" x-on:click="shape = 'sphere'" x-bind:class="shape === 'sphere' && 'is-active'">{{ __('Sphere') }}</button>
+                <button type="button" x-on:click="shape = 'plane'" x-bind:class="shape === 'plane' && 'is-active'">{{ __('Plane') }}</button>
+                <button type="button" x-on:click="shape = 'cube'" x-bind:class="shape === 'cube' && 'is-active'">{{ __('Cube') }}</button>
+            </div>
+        </div>
+        @if ($this->viewerSets === [])
+            <div class="ui-viewer__empty">{{ __('No canonical maps to inspect yet') }}</div>
+        @else
+            <canvas x-ref="canvas"></canvas>
+        @endif
+    </div>
+
     @if ($material->description)
         <x-ui.panel style="margin-bottom: 12px"><p style="margin: 0; color: var(--ui-muted); font-size: 13px; line-height: 1.7">{{ $material->description }}</p></x-ui.panel>
     @endif
@@ -281,6 +352,7 @@ new class extends Component {
                                 @foreach ($this->derivableTargets as $target)
                                     <x-ui.button wire:click="derive({{ $variant->id }}, '{{ $target->slug }}')" variant="secondary" size="sm" data-test="derive-{{ $target->slug }}">{{ __('Derive :target', ['target' => $target->name]) }}</x-ui.button>
                                 @endforeach
+                                <x-ui.button wire:click="generateTiers({{ $variant->id }})" variant="quiet" size="sm" data-test="generate-tiers">{{ __('Generate tiers') }}</x-ui.button>
                             </div>
                         @endcan
                     </div>

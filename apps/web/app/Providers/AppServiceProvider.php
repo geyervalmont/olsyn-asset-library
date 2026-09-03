@@ -13,7 +13,11 @@ use App\Models\ProvenanceEvent;
 use App\Models\Representation;
 use App\Models\User;
 use App\Models\Variant;
+use App\Models\WorkerRun;
 use Carbon\CarbonImmutable;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -48,12 +52,23 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configureAuthorization();
         $this->configureMorphMap();
+        $this->configureApiDocs();
 
         Livewire::addPersistentMiddleware([
             UseCurrentTenant::class,
             NeedsTenant::class,
             EnsureValidTenantSession::class,
         ]);
+    }
+
+    /**
+     * Every API route takes a Sanctum bearer token.
+     */
+    protected function configureApiDocs(): void
+    {
+        Scramble::configure()->withDocumentTransformers(function (OpenApi $openApi): void {
+            $openApi->secure(SecurityScheme::http('bearer'));
+        });
     }
 
     /**
@@ -69,6 +84,7 @@ class AppServiceProvider extends ServiceProvider
             'provenance_event' => ProvenanceEvent::class,
             'representation' => Representation::class,
             'drive' => Drive::class,
+            'worker_run' => WorkerRun::class,
         ]);
     }
 

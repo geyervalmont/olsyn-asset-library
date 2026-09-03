@@ -24,6 +24,7 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::livewire('materials/create', 'pages::materials.create')->name('materials.create');
     Route::livewire('materials/{material:code}', 'pages::materials.show')->name('materials.show');
     Route::livewire('drives', 'pages::drives.index')->name('drives.index');
+    Route::livewire('jobs', 'pages::jobs.index')->name('jobs.index');
     Route::get('files/{file}/{name?}', FileController::class)->name('files.show');
     Route::get('drives/{drive:slug}/manifest.yaml', DriveManifestController::class)->name('drives.manifest');
 });

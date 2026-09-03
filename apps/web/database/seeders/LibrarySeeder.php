@@ -56,6 +56,7 @@ class LibrarySeeder extends Seeder
         ['slug' => 'imported', 'name' => 'Imported', 'description' => 'Brought in from another system or the legacy library.'],
         ['slug' => 'generated', 'name' => 'Generated', 'description' => 'Produced from a prompt or procedure.'],
         ['slug' => 'upscaled', 'name' => 'Upscaled', 'description' => 'Resolution increased.'],
+        ['slug' => 'downscaled', 'name' => 'Downscaled', 'description' => 'A lower quality tier produced from a larger set.'],
         ['slug' => 'tiled', 'name' => 'Made seamless', 'description' => 'Edges reworked to tile.'],
         ['slug' => 'edited', 'name' => 'Edited', 'description' => 'Adjusted by a person in an image tool.'],
         ['slug' => 'converted', 'name' => 'Converted', 'description' => 'Translated to another format or target.'],

@@ -10,9 +10,11 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use LogicException;
+use RuntimeException;
 
 /**
  * Immutable, content-addressed bytes in object storage. A file never changes;
@@ -78,7 +80,21 @@ class File extends Model
 
     public function contents(): string
     {
-        return (string) Storage::disk($this->disk)->get($this->object_key);
+        $contents = Storage::disk($this->disk)->get($this->object_key);
+
+        if ($contents === null || $contents === '') {
+            throw new RuntimeException(sprintf('File [%s] has no readable bytes on disk [%s] at [%s].', $this->sha256, $this->disk, $this->object_key));
+        }
+
+        return $contents;
+    }
+
+    /**
+     * @return HasMany<FileAccess, $this>
+     */
+    public function accesses(): HasMany
+    {
+        return $this->hasMany(FileAccess::class)->orderByDesc('accessed_at');
     }
 
     /**

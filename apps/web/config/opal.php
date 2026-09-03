@@ -1,5 +1,7 @@
 <?php
 
+use App\Jobs\DownscaleRepresentation;
+
 return [
 
     /*
@@ -27,5 +29,19 @@ return [
     */
 
     'bucket' => env('OPAL_BUCKET', env('AWS_BUCKET', 'prismfs-dev')),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Workers
+    |--------------------------------------------------------------------------
+    |
+    | Tracked job types by registry key, so a run can be re-queued from its
+    | record and the jobs page can name what ran.
+    |
+    */
+
+    'workers' => [
+        'downscale_representation' => DownscaleRepresentation::class,
+    ],
 
 ];

@@ -50,9 +50,10 @@ services:
 
   queue:
     <<: *sail-app
-    command: php artisan queue:work redis --sleep=1 --tries=3 --max-time=3600
+    command: php artisan horizon
     networks:
-      - sail
+      sail:
+      dev-proxy:
     depends_on:
       pgsql:
         condition: service_healthy
