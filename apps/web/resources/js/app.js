@@ -173,14 +173,22 @@ const stage = {
             scene.backgroundBlurriness = 0.85;
             scene.backgroundIntensity = 0.5;
 
-            const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+            const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 100);
             camera.position.set(0, 0.6, 3.4);
 
             const controls = new OrbitControls(camera, canvas);
             controls.enableDamping = true;
             controls.enablePan = false;
+            // Zooming follows the pointer, and close enough to read a weave.
+            controls.zoomToCursor = true;
             controls.autoRotate = ! window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             controls.autoRotateSpeed = 1.4;
+            // Turning by hand pauses the drift; it resumes when let go.
+            controls.addEventListener('start', () => { controls.autoRotate = false; });
+            controls.addEventListener('end', () => {
+                controls.autoRotate = ! window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            });
+            canvas.addEventListener('dblclick', () => this.frame_());
 
             // The environment does the lighting; this one light is here to
             // drop a soft shadow, which is what seats the sample on a surface.
@@ -247,6 +255,7 @@ const stage = {
         host.appendChild(gl.canvas);
         gl.controls.enableZoom = options.zoom !== false;
         gl.controls.enableRotate = options.rotate !== false;
+        gl.canvas.title = options.zoom === false ? '' : 'Drag to turn · scroll or pinch to zoom · double-click to reset';
 
         if (! this.observer) {
             this.observer = new IntersectionObserver((entries) => {
@@ -323,8 +332,8 @@ const stage = {
 
         gl.controls.target.copy(centre);
         gl.camera.position.set(centre.x, centre.y + size.y * 0.12, centre.z + distance);
-        gl.controls.minDistance = distance * 0.5;
-        gl.controls.maxDistance = distance * 2.4;
+        gl.controls.minDistance = distance * 0.12;
+        gl.controls.maxDistance = distance * 3;
         gl.controls.update();
     },
 
