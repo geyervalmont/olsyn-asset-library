@@ -2,13 +2,16 @@
 # user over SSH (the account must be a local administrator for the hosts
 # entry); everything else is per-user. Re-runnable.
 #
-#   ssh harrison@192.168.122.82 'powershell -NoProfile -ExecutionPolicy Bypass -Command -' < setup-windows-vm.ps1
+#   make -s vm-bridge-ca > opal-dev-root.crt
+#   tar czf - setup-windows-vm.ps1 opal-dev-root.crt | ssh harrison@192.168.122.82 'tar -xzf - -C .'
+#   ssh harrison@192.168.122.82 'powershell -NoProfile -ExecutionPolicy Bypass -File setup-windows-vm.ps1'
 param(
   [string]$HostAddress = "192.168.122.1",
   [string]$Share = "opal",
   [string]$DriveLetter = "M",
   [string]$PyRevitVersion = "6.5.5.26237",
   [string]$RepoOnShare = "olsyn-asset-library\integrations\revit\pyrevit\OPAL.extension",
+  [string]$CaPath = (Join-Path $env:USERPROFILE "opal-dev-root.crt"),
   [switch]$SkipPyRevit
 )
 $ErrorActionPreference = "Stop"
@@ -16,13 +19,21 @@ $report = [ordered]@{}
 
 # 1. hosts: the control plane and its websocket host resolve to the bridge.
 $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
-$wanted = "$HostAddress asset-library.test ws.asset-library.test # opal-dev"
+$wanted = "$HostAddress asset-library.test vite.asset-library.test ws.asset-library.test s3.asset-library.test mail.asset-library.test # opal-dev"
 $lines = Get-Content $hosts -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch "# opal-dev$" }
 try {
   Set-Content -Path $hosts -Value (@($lines) + $wanted) -Encoding ASCII
   $report.hosts = "written"
 } catch {
   $report.hosts = "FAILED (not elevated?): $($_.Exception.Message)"
+}
+
+# 1b. trust the edge CA (make -s vm-bridge-ca > opal-dev-root.crt, copied next to this script).
+if (Test-Path $CaPath) {
+  $out = cmd /c "certutil -addstore -f Root `"$CaPath`" 2>&1"
+  $report.ca = if ($LASTEXITCODE -eq 0) { "installed from $CaPath" } else { "FAILED: " + ($out -join " ") }
+} else {
+  $report.ca = "no $CaPath; https will show as insecure in the VM"
 }
 
 # 2. the drive: map the PrismFS share persistently.
@@ -86,11 +97,12 @@ $configDir = Join-Path $env:APPDATA "OPAL"
 New-Item -ItemType Directory -Path $configDir -Force | Out-Null
 $configPath = Join-Path $configDir "config.json"
 $config = if (Test-Path $configPath) { Get-Content $configPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
-$config | Add-Member -NotePropertyName api -NotePropertyValue "http://asset-library.test" -Force
+$config | Add-Member -NotePropertyName api -NotePropertyValue "https://asset-library.test" -Force
 $config | Add-Member -NotePropertyName drive -NotePropertyValue "studio-share" -Force
 $config | Add-Member -NotePropertyName mount -NotePropertyValue "${DriveLetter}:\" -Force
-$config | Add-Member -NotePropertyName verify_tls -NotePropertyValue $false -Force
-$config | ConvertTo-Json | Set-Content -Path $configPath -Encoding UTF8
+$config | Add-Member -NotePropertyName verify_tls -NotePropertyValue (Test-Path $CaPath) -Force
+# No BOM: IronPython 2.7 json cannot parse a UTF-8 BOM.
+[IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
 $report.config = $configPath
 
 $report.GetEnumerator() | ForEach-Object { "{0,-10} {1}" -f $_.Key, $_.Value }

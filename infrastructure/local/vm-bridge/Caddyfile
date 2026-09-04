@@ -1,0 +1,37 @@
+# TLS edge for the Windows VM. Caddy signs the dev hostnames with its own
+# local CA (root.crt in the caddy-data volume); install that root in the VM
+# and every https URL the app emits works there unchanged.
+{
+	local_certs
+	skip_install_trust
+	auto_https disable_redirects
+}
+
+asset-library.test {
+	tls internal
+	reverse_proxy asset-library-web:80
+}
+
+vite.asset-library.test {
+	tls internal
+	reverse_proxy asset-library-vite:5173
+}
+
+ws.asset-library.test {
+	tls internal
+	reverse_proxy asset-library-reverb:8080
+}
+
+s3.asset-library.test {
+	tls internal
+	reverse_proxy asset-library-rustfs:9000
+}
+
+mail.asset-library.test {
+	tls internal
+	reverse_proxy asset-library-mailpit:8025
+}
+
+http://asset-library.test {
+	redir https://{host}{uri} permanent
+}

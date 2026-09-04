@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update prism-drive-up prism-drive-down prism-drive-check vm-bridge-up vm-bridge-down revit-sync web-test web-seed web-shell
+.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update prism-drive-up prism-drive-down prism-drive-check vm-bridge-up vm-bridge-down vm-bridge-ca revit-sync web-test web-seed web-shell
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -40,12 +40,16 @@ prism-drive-down:
 prism-drive-check:
 	$(MAKE) -C services/prismfs drive-check
 
-# Expose the dev control plane to the Windows VM on the libvirt bridge (port 80).
+# Expose the dev control plane to the Windows VM on the libvirt bridge (https edge).
 vm-bridge-up:
 	docker compose -p olsyn-vm-bridge -f infrastructure/local/vm-bridge/compose.yaml up -d
 
 vm-bridge-down:
 	docker compose -p olsyn-vm-bridge -f infrastructure/local/vm-bridge/compose.yaml down
+
+# Print the edge's CA root certificate (install it in the VM's Trusted Root store).
+vm-bridge-ca:
+	docker compose -p olsyn-vm-bridge -f infrastructure/local/vm-bridge/compose.yaml exec -T edge cat /data/caddy/pki/authorities/local/root.crt
 
 prism-publish:
 	./scripts/prismfs-subtree.sh publish

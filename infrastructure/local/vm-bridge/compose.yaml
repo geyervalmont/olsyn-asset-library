@@ -1,21 +1,27 @@
 # Makes the dev control plane reachable from the Windows VM on the libvirt
-# bridge. Gerrymander binds the host proxy to loopback only, so this publishes
-# the Laravel container's plain-HTTP port on the bridge address. The VM's
-# hosts file maps asset-library.test to that address and talks HTTP.
+# bridge. Gerrymander binds the host proxy to loopback only, so this runs a
+# second TLS edge on the bridge address: Caddy terminates https for the dev
+# hostnames with its own local CA and proxies to the containers.
 #
-#   make vm-bridge-up / vm-bridge-down   (repo root)
+#   make vm-bridge-up / vm-bridge-down / vm-bridge-ca   (repo root)
 #
 # Port 445 (the drive) comes from services/prismfs (PRISMFS_DRIVE_BIND) and
-# port 8080 (Reverb) is published by apps/web/compose.yaml.
+# port 8080 (Reverb, plain ws) is published by apps/web/compose.yaml.
 services:
-  web-http:
-    image: alpine/socat:1.8.0.0
-    command: ["TCP-LISTEN:80,fork,reuseaddr", "TCP:asset-library-web:80"]
+  edge:
+    image: caddy:2.10
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
     ports:
       - "${VM_BRIDGE_BIND:-192.168.122.1}:80:80"
+      - "${VM_BRIDGE_BIND:-192.168.122.1}:443:443"
     networks:
       - dev-proxy
     restart: unless-stopped
+
+volumes:
+  caddy-data:
 
 networks:
   dev-proxy:
