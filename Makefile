@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update prism-drive-up prism-drive-down prism-drive-check web-test web-seed web-shell
+.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update prism-drive-up prism-drive-down prism-drive-check vm-bridge-up vm-bridge-down revit-sync web-test web-seed web-shell
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -40,6 +40,13 @@ prism-drive-down:
 prism-drive-check:
 	$(MAKE) -C services/prismfs drive-check
 
+# Expose the dev control plane to the Windows VM on the libvirt bridge (port 80).
+vm-bridge-up:
+	docker compose -p olsyn-vm-bridge -f infrastructure/local/vm-bridge/compose.yaml up -d
+
+vm-bridge-down:
+	docker compose -p olsyn-vm-bridge -f infrastructure/local/vm-bridge/compose.yaml down
+
 prism-publish:
 	./scripts/prismfs-subtree.sh publish
 
@@ -55,3 +62,9 @@ web-seed:
 
 web-shell:
 	docker compose -f apps/web/compose.yaml --project-directory apps/web exec laravel.test bash
+
+# Push the pyRevit extension into the Windows VM over SSH (fallback when the
+# virtiofs share is not mounted in the guest). Then Reload in pyRevit.
+REVIT_VM ?= harrison@192.168.122.82
+revit-sync:
+	cd integrations/revit && tar czf - pyrevit/OPAL.extension | ssh $(REVIT_VM) 'powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path opal | Out-Null; tar -xzf - -C opal; Write-Host synced"'

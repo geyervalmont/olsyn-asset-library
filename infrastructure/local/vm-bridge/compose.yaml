@@ -1,0 +1,22 @@
+# Makes the dev control plane reachable from the Windows VM on the libvirt
+# bridge. Gerrymander binds the host proxy to loopback only, so this publishes
+# the Laravel container's plain-HTTP port on the bridge address. The VM's
+# hosts file maps asset-library.test to that address and talks HTTP.
+#
+#   make vm-bridge-up / vm-bridge-down   (repo root)
+#
+# Port 445 (the drive) comes from services/prismfs (PRISMFS_DRIVE_BIND) and
+# port 8080 (Reverb) is published by apps/web/compose.yaml.
+services:
+  web-http:
+    image: alpine/socat:1.8.0.0
+    command: ["TCP-LISTEN:80,fork,reuseaddr", "TCP:asset-library-web:80"]
+    ports:
+      - "${VM_BRIDGE_BIND:-192.168.122.1}:80:80"
+    networks:
+      - dev-proxy
+    restart: unless-stopped
+
+networks:
+  dev-proxy:
+    external: true
