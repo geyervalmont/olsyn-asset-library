@@ -471,6 +471,8 @@ new class extends Component {
                         <div class="ui-revit" data-test="apply-in-revit">
                             @if ($this->revitSessions->isEmpty())
                                 <span class="ui-revit__none">{{ __('No Revit connected') }}</span>
+                            @elseif ($this->material->current_version_id === null)
+                                <span class="ui-revit__none">{{ __('Publish a version first; nothing is on the drive yet') }}</span>
                             @else
                                 @if ($this->revitSessions->count() > 1)
                                     <select class="ui-select ui-select--sm" wire:model="revitSessionId" aria-label="{{ __('Revit session') }}">
