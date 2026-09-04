@@ -24,6 +24,21 @@ class MaterialPreviews
     private const ROLE_PRIORITY = ['render' => 0, 'thumbnail' => 1, 'base_color' => 2, 'ref_image' => 3];
 
     /**
+     * How a category behaves in the inspector beyond its maps: fibre catches
+     * light along its strands, marble and solid surface pass a little through,
+     * anodised aluminium is metal.
+     */
+    private const FINISHES = [
+        'CPT' => 'textile', 'FAB' => 'textile', 'CUR' => 'textile', 'ACP' => 'textile',
+        'LTH' => 'leather',
+        'STN' => 'stone', 'SOL' => 'stone',
+        'CER' => 'polished', 'LAM' => 'polished', 'VNL' => 'polished',
+        'TMB' => 'wood', 'VNR' => 'wood',
+        'ANO' => 'metal',
+        'PNT' => 'matte', 'PLS' => 'matte',
+    ];
+
+    /**
      * Preview files keyed by material id, for the given materials.
      *
      * @param  EloquentCollection<int, Material>  $materials
@@ -178,9 +193,10 @@ class MaterialPreviews
      * @param  Collection<int, Variant>  $variants
      * @return array<int, array<string, mixed>>
      */
-    public function viewerSets(Collection $variants): array
+    public function viewerSets(Material $material, Collection $variants): array
     {
         $canonical = Target::canonical();
+        $finish = self::FINISHES[$material->category->code] ?? 'default';
         $sets = [];
 
         foreach ($variants as $variant) {
@@ -199,6 +215,7 @@ class MaterialPreviews
                 'key' => (string) $representation->getKey(),
                 'tile_mm' => (float) ($variant->effectiveTileWidthMm() ?? 1000),
                 'hex' => $variant->dominant_hex,
+                'finish' => $finish,
             ];
 
             foreach ($representation->representationFiles as $representationFile) {

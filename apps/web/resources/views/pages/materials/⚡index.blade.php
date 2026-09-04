@@ -118,12 +118,13 @@ new #[Title('Library')] class extends Component {
     #[Computed]
     public function quickViewerSets(): array
     {
-        $variants = $this->quickMaterial
+        $material = $this->quickMaterial;
+        $variants = $material
             ->variants()
             ->with(['representations.target', 'representations.quality', 'representations.representationFiles.role', 'representations.representationFiles.file'])
             ->get();
 
-        return app(MaterialPreviews::class)->viewerSets($variants);
+        return app(MaterialPreviews::class)->viewerSets($material, $variants);
     }
 
     /**

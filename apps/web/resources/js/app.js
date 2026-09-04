@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
@@ -109,7 +110,28 @@ document.addEventListener('alpine:init', () => {
  * Pages swap texture maps; nothing else is rebuilt.
  */
 const MODEL_URL = '/models/shader-ball.glb';
+// studio_small_09 from Poly Haven, CC0.
+const HDRI_URL = '/hdri/studio.hdr';
 const CACHE_LIMIT = 16;
+
+/**
+ * How a finish behaves beyond its maps. Categories carry this: a carpet needs
+ * sheen to read as fibre, marble and solid surface need a little light through
+ * them, anodised aluminium is metal. Values stay conservative: this is a
+ * material library, so the sample should look like the sample.
+ */
+const FINISHES = {
+    textile: { sheen: 0.55, sheenRoughness: 0.9, roughness: 0.95, normalScale: 1.1 },
+    leather: { sheen: 0.25, sheenRoughness: 0.6, clearcoat: 0.12, clearcoatRoughness: 0.6, normalScale: 1 },
+    polished: { clearcoat: 0.35, clearcoatRoughness: 0.15, roughness: 0.4 },
+    // Honed, not polished: most of the library's stone is a matte finish, and
+    // a roughness map raises the gloss where the sample really is glossy.
+    stone: { clearcoat: 0.14, clearcoatRoughness: 0.5, transmission: 0.06, thickness: 0.5, roughness: 0.62 },
+    wood: { clearcoat: 0.16, clearcoatRoughness: 0.42, roughness: 0.6 },
+    metal: { metalness: 1, roughness: 0.35, anisotropy: 0.4 },
+    matte: { roughness: 0.92 },
+    default: { roughness: 0.7 },
+};
 
 const stage = {
     gl: null,
@@ -133,13 +155,23 @@ const stage = {
 
             const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1;
+            // Khronos PBR Neutral: made for showing products, so a colour on
+            // screen is the colour of the sample rather than a filmic grade.
+            renderer.toneMapping = THREE.NeutralToneMapping;
+            renderer.toneMappingExposure = 0.95;
             renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
             const scene = new THREE.Scene();
-            const pmrem = new THREE.PMREMGenerator(renderer);
-            scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+            const environment = await loadEnvironment(renderer);
+            scene.environment = environment;
+            scene.environmentIntensity = 0.9;
+            // The studio sits behind the sample as a soft gradient: enough to
+            // ground it, never enough to compete with the material.
+            scene.background = environment;
+            scene.backgroundBlurriness = 0.85;
+            scene.backgroundIntensity = 0.5;
 
             const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
             camera.position.set(0, 0.6, 3.4);
@@ -147,25 +179,55 @@ const stage = {
             const controls = new OrbitControls(camera, canvas);
             controls.enableDamping = true;
             controls.enablePan = false;
-            controls.minDistance = 1.8;
-            controls.maxDistance = 6;
             controls.autoRotate = ! window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             controls.autoRotateSpeed = 1.4;
 
-            const key = new THREE.DirectionalLight(0xfff4e6, 0.5);
-            key.position.set(2, 3, 2);
-            scene.add(key);
+            // The environment does the lighting; this one light is here to
+            // drop a soft shadow, which is what seats the sample on a surface.
+            const sun = new THREE.DirectionalLight(0xffffff, 1);
+            sun.position.set(2.6, 4.2, 2.2);
+            sun.castShadow = true;
+            sun.shadow.mapSize.set(1024, 1024);
+            sun.shadow.camera.near = 0.5;
+            sun.shadow.camera.far = 14;
+            sun.shadow.camera.left = -3;
+            sun.shadow.camera.right = 3;
+            sun.shadow.camera.top = 3;
+            sun.shadow.camera.bottom = -3;
+            sun.shadow.bias = -0.0006;
+            sun.shadow.normalBias = 0.02;
+            sun.shadow.radius = 5;
+            scene.add(sun);
+
+            const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.22 }));
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
 
             const material = new THREE.MeshPhysicalMaterial({ color: 0xcfcbc1, roughness: 0.8, metalness: 0 });
             const shapes = {
                 ball: await loadShaderBall(material),
-                plane: new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4, 64, 64), material),
-                cube: new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6, 32, 32, 32), material),
+                // A slab rather than a plane: the sample keeps a face while
+                // the view turns, which a single-sided plane does not.
+                panel: sitOnGround(new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 0.07), material)),
+                cube: sitOnGround(new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6, 32, 32, 32), material)),
             };
+
+            Object.values(shapes).forEach((shape) => shape.traverse((object) => {
+                if (object.isMesh) {
+                    object.castShadow = true;
+                    object.receiveShadow = true;
+                }
+            }));
 
             scene.add(shapes.ball);
 
-            this.gl = { canvas, renderer, scene, camera, controls, material, shapes, shown: shapes.ball, loader: new THREE.TextureLoader() };
+            this.gl = {
+                canvas, renderer, scene, camera, controls, material, shapes, ground, sun,
+                shown: shapes.ball,
+                loader: new THREE.TextureLoader(),
+                anisotropy: renderer.capabilities.getMaxAnisotropy(),
+            };
 
             this.sizeObserver = new ResizeObserver(() => this.resize());
             this.sizeObserver.observe(canvas);
@@ -315,16 +377,40 @@ const stage = {
                 }
 
                 const maps = await this.maps(gl, set, objectSizeMm);
+                const finish = FINISHES[set.finish] ?? FINISHES.default;
                 const material = gl.material;
 
                 material.map = maps.base_color ?? null;
                 material.normalMap = maps.normal ?? null;
+                material.bumpMap = maps.normal ? null : (maps.bump ?? maps.height ?? null);
+                material.bumpScale = 0.03;
                 material.roughnessMap = maps.roughness ?? null;
                 material.metalnessMap = maps.metallic ?? null;
                 material.aoMap = maps.ao ?? null;
+                material.aoMapIntensity = maps.ao ? 1 : 0;
+                material.emissiveMap = maps.emissive ?? null;
+                material.emissive.set(maps.emissive ? 0xffffff : 0x000000);
+                material.alphaMap = maps.opacity ?? null;
+                material.transparent = Boolean(maps.opacity);
                 material.color.set(maps.base_color ? 0xffffff : (set.hex || '#cfcbc1'));
-                material.roughness = maps.roughness ? 1 : 0.75;
-                material.metalness = maps.metallic ? 1 : 0;
+
+                // A map drives the channel; the finish sets what a map cannot.
+                material.roughness = maps.roughness ? 1 : (finish.roughness ?? 0.7);
+                material.metalness = maps.metallic ? 1 : (finish.metalness ?? 0);
+                material.normalScale.setScalar(finish.normalScale ?? 1);
+                material.sheen = finish.sheen ?? 0;
+                material.sheenRoughness = finish.sheenRoughness ?? 1;
+                material.sheenColor.set(0xffffff);
+                material.clearcoat = finish.clearcoat ?? 0;
+                material.clearcoatRoughness = finish.clearcoatRoughness ?? 0.3;
+                material.anisotropy = finish.anisotropy ?? 0;
+                // Light through the sample: marble and solid surface only, and
+                // never far enough to see the other side.
+                material.transmission = finish.transmission ?? 0;
+                material.thickness = finish.thickness ?? 0;
+                material.attenuationColor.set(0xffffff);
+                material.attenuationDistance = finish.transmission ? 1.4 : Infinity;
+                material.envMapIntensity = 1;
                 material.needsUpdate = true;
 
                 this.shownKey = set.key;
@@ -353,18 +439,27 @@ const stage = {
                 texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
                 texture.repeat.set(repeat, repeat);
                 texture.colorSpace = colorSpace;
-                texture.anisotropy = 8;
+                texture.anisotropy = gl.anisotropy;
+                // The model carries one UV set; ambient occlusion reads it too.
+                texture.channel = 0;
                 resolve(texture);
             }, undefined, () => resolve(null));
         });
 
-        const loading = Promise.all([
-            load(set.base_color, THREE.SRGBColorSpace),
-            load(set.normal, THREE.NoColorSpace),
-            load(set.roughness, THREE.NoColorSpace),
-            load(set.metallic, THREE.NoColorSpace),
-            load(set.ao, THREE.NoColorSpace),
-        ]).then(([base_color, normal, roughness, metallic, ao]) => ({ base_color, normal, roughness, metallic, ao }));
+        const roles = [
+            ['base_color', THREE.SRGBColorSpace],
+            ['normal', THREE.NoColorSpace],
+            ['roughness', THREE.NoColorSpace],
+            ['metallic', THREE.NoColorSpace],
+            ['ao', THREE.NoColorSpace],
+            ['bump', THREE.NoColorSpace],
+            ['height', THREE.NoColorSpace],
+            ['emissive', THREE.SRGBColorSpace],
+            ['opacity', THREE.NoColorSpace],
+        ];
+
+        const loading = Promise.all(roles.map(([role, colorSpace]) => load(set[role], colorSpace)))
+            .then((textures) => Object.fromEntries(roles.map(([role], index) => [role, textures[index]])));
 
         this.cache.set(set.key, { maps: loading });
 
@@ -408,7 +503,34 @@ async function loadShaderBall(material) {
     model.position.sub(centre.multiplyScalar(scale));
     group.add(model);
 
-    return group;
+    return sitOnGround(group);
+}
+
+/** Drop an object so its lowest point rests on y = 0. */
+function sitOnGround(object) {
+    const box = new THREE.Box3().setFromObject(object);
+    object.position.y -= box.min.y;
+
+    return object;
+}
+
+/**
+ * The studio environment. A real HDRI lights the sample and, blurred, sits
+ * behind it; a procedural room stands in if the file cannot be fetched.
+ */
+async function loadEnvironment(renderer) {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+
+    try {
+        const hdr = await new RGBELoader().loadAsync(HDRI_URL);
+        const environment = pmrem.fromEquirectangular(hdr).texture;
+        hdr.dispose();
+
+        return environment;
+    } catch (error) {
+        return pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    }
 }
 
 document.addEventListener('alpine:init', () => {

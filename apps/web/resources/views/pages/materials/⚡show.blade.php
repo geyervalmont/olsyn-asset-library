@@ -95,7 +95,7 @@ new class extends Component {
     #[Computed]
     public function viewerSets(): array
     {
-        return app(MaterialPreviews::class)->viewerSets($this->variants);
+        return app(MaterialPreviews::class)->viewerSets($this->material, $this->variants);
     }
 
     /**
@@ -435,7 +435,7 @@ new class extends Component {
             <p>{{ __('Inspector') }} · {{ __('canonical maps under studio light') }} · <span x-text="status"></span></p>
             <div class="ui-segment" role="group" aria-label="{{ __('Shape') }}">
                 <button type="button" x-on:click="shape = 'ball'" x-bind:class="shape === 'ball' && 'is-active'">{{ __('Ball') }}</button>
-                <button type="button" x-on:click="shape = 'plane'" x-bind:class="shape === 'plane' && 'is-active'">{{ __('Plane') }}</button>
+                <button type="button" x-on:click="shape = 'panel'" x-bind:class="shape === 'panel' && 'is-active'">{{ __('Panel') }}</button>
                 <button type="button" x-on:click="shape = 'cube'" x-bind:class="shape === 'cube' && 'is-active'">{{ __('Cube') }}</button>
             </div>
         </div>

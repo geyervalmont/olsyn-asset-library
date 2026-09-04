@@ -359,6 +359,19 @@ sphere, plane or cube, tiled by the variant's real-world size. It shows what
 the maps look like lit; it is not an MDL renderer. True MDL renders need
 NVIDIA's MDL SDK or an Omniverse render worker.
 
+Rendering: one WebGL context serves the whole app. A single canvas, shader
+ball (`public/models/shader-ball.glb`) and material move to whichever host is
+on screen, and pages swap texture maps; loaded maps are cached and rendering
+stops when the stage leaves the screen. Lighting comes from a studio HDRI
+(`public/hdri/studio.hdr`, studio_small_09 from Poly Haven, CC0) through
+PMREM, with one shadow-casting light and a shadow catcher to seat the sample.
+Tone mapping is Khronos PBR Neutral, so a colour on screen is the colour of
+the sample. Base colour, normal (or bump), roughness, metalness, ambient
+occlusion, emissive and opacity maps are all used, and the material's
+category picks a finish profile on top: sheen for textiles, clearcoat for
+polished surfaces, a little transmission for marble and solid surface,
+metalness for anodised aluminium.
+
 ## Search and similarity
 
 - `search_text` is rebuilt on save from names, codes, supplier, product code,
