@@ -542,6 +542,13 @@ def get_runner():
         domain = System.AppDomain.CurrentDomain
         existing = domain.GetData("OPAL_RUNNER")
         if existing is not None:
+            # A pyRevit Reload loads this module afresh; point the live runner
+            # at the new code so host fixes apply without restarting Revit.
+            try:
+                existing.__class__ = RevitAgentRunner
+                log_line("runner rebound to reloaded code")
+            except Exception as error:
+                log_line("runner kept old code: %s" % error)
             return existing
         created = RevitAgentRunner()
         domain.SetData("OPAL_RUNNER", created)
