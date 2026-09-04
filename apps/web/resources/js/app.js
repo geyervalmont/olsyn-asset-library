@@ -1,3 +1,16 @@
+/**
+ * A plain click opens the material quick view; a modifier or middle click is
+ * left alone so the full record still opens in a new tab.
+ */
+function quickOpen(component, event, code) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) {
+        return;
+    }
+
+    event.preventDefault();
+    component.$wire?.openQuick(code);
+}
+
 document.addEventListener('alpine:init', () => {
     /**
      * A material swatch: lifts and tilts toward the pointer, and previews
@@ -41,6 +54,17 @@ document.addEventListener('alpine:init', () => {
 
         pick(index) {
             this.active = index;
+        },
+
+        quickOpen(event, code) {
+            quickOpen(this, event, code);
+        },
+    }));
+
+    // Table rows want the quick view without the swatch behaviour.
+    window.Alpine.data('quickLink', () => ({
+        quickOpen(event, code) {
+            quickOpen(this, event, code);
         },
     }));
 });

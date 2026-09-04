@@ -2751,6 +2751,7 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-pagination nav {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
 }
 
@@ -3018,6 +3019,12 @@ h1.ui-reveal.is-revealed em::after {
 @media (max-width: 560px) {
     .ui-variant {
         grid-template-columns: 1fr;
+    }
+
+    /* Grid and flex children shrink instead of pushing the page sideways. */
+    .ui-variant > *,
+    .ui-variant__head > * {
+        min-width: 0;
     }
 
     .ui-swatch-grid {
@@ -3318,6 +3325,7 @@ h1.ui-reveal.is-revealed em::after {
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
+    justify-content: flex-end;
     flex-basis: 100%;
 }
 
@@ -3361,4 +3369,353 @@ h1.ui-reveal.is-revealed em::after {
 .ui-status-light--stale {
     background: var(--ui-faint);
     box-shadow: 0 0 0 1px rgba(168, 169, 176, 0.45);
+}
+
+/* ---------------------------------------------------------------------------
+   Material quick view
+
+   The record compacted into a dialog so the library stays put: preview,
+   colourways, the facts worth reading, and one Apply in Revit. On a phone the
+   panel becomes a bottom sheet whose action bar stays under the thumb.
+   --------------------------------------------------------------------------- */
+
+.ui-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    overscroll-behavior: contain;
+}
+
+.ui-modal__scrim {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    background: rgba(44, 53, 77, 0.34);
+    border: 0;
+    animation: ui-modal-fade var(--ui-fast) var(--ui-ease) both;
+    backdrop-filter: blur(3px);
+}
+
+.ui-modal__panel {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    width: min(720px, 100%);
+    max-height: min(88vh, 900px);
+    overflow: hidden;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-card);
+    box-shadow: var(--ui-el-3);
+    animation: ui-modal-rise var(--ui-medium) var(--ui-ease) both;
+}
+
+.ui-modal__panel:focus {
+    outline: none;
+}
+
+.ui-modal__head {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 18px 20px 12px;
+}
+
+.ui-modal__head h2 {
+    margin: 3px 0 0;
+    color: var(--ui-ink);
+    font-family: var(--ui-font-display);
+    font-size: clamp(22px, 3.4vw, 30px);
+    font-weight: 350;
+    line-height: 1.08;
+    letter-spacing: -0.018em;
+}
+
+.ui-modal__code {
+    margin: 6px 0 0;
+}
+
+.ui-modal__code code {
+    color: var(--ui-periwinkle-deep);
+    font-family: var(--ui-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+}
+
+.ui-modal__close {
+    flex: 0 0 auto;
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    color: var(--ui-muted);
+    background: transparent;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-button);
+    transition: color var(--ui-fast), border-color var(--ui-fast), background var(--ui-fast);
+}
+
+.ui-modal__close svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+}
+
+.ui-modal__close:hover,
+.ui-modal__close:focus-visible {
+    color: var(--ui-ink);
+    background: var(--ui-paper-deep);
+    border-color: var(--ui-line-strong);
+}
+
+.ui-modal__body {
+    flex: 1 1 auto;
+    padding: 0 20px 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.ui-modal__preview {
+    /* Full width, short enough that the facts and the apply bar stay in view. */
+    aspect-ratio: auto;
+    height: clamp(180px, 34vh, 300px);
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-panel);
+}
+
+.ui-modal__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px 20px;
+    margin: 16px 0 0;
+    font-size: 13px;
+}
+
+.ui-modal__facts dt {
+    margin-bottom: 3px;
+    color: var(--ui-muted);
+    font-family: var(--ui-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.ui-modal__facts dd {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    align-items: baseline;
+    margin: 0;
+    color: var(--ui-ink);
+}
+
+.ui-modal__facts code {
+    color: var(--ui-periwinkle-deep);
+    font-family: var(--ui-font-mono);
+    font-size: 10px;
+}
+
+.ui-modal__badges {
+    gap: 6px;
+}
+
+.ui-modal__foot {
+    flex: 0 0 auto;
+    display: grid;
+    gap: 10px;
+    padding: 14px 20px 16px;
+    background: var(--ui-paper);
+    border-top: 1px solid var(--ui-line);
+}
+
+.ui-modal__actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.ui-modal__apply {
+    flex: 1 1 auto;
+    justify-content: center;
+    max-width: 60%;
+}
+
+.ui-modal__apply em {
+    overflow: hidden;
+    max-width: 14ch;
+    color: rgba(245, 243, 239, 0.72);
+    font-style: normal;
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ui-modal__apply:disabled {
+    opacity: 0.5;
+}
+
+.ui-modal__note {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    align-items: center;
+    margin: 0;
+    color: var(--ui-muted);
+    font-size: 12px;
+}
+
+@keyframes ui-modal-fade {
+    from {
+        opacity: 0;
+    }
+}
+
+@keyframes ui-modal-rise {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.99);
+    }
+}
+
+@media (max-width: 640px) {
+    .ui-modal {
+        place-items: end center;
+        padding: 0;
+    }
+
+    .ui-modal__panel {
+        width: 100%;
+        max-height: 92dvh;
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: var(--ui-radius-card) var(--ui-radius-card) 0 0;
+        animation-name: ui-sheet-rise;
+    }
+
+    .ui-modal__head {
+        padding: 16px 16px 10px;
+    }
+
+    .ui-modal__body {
+        padding: 0 16px 12px;
+    }
+
+    .ui-modal__preview {
+        height: clamp(160px, 32dvh, 260px);
+    }
+
+    /* Thumb-sized colourway chips, and room for them under the label. */
+    .ui-modal__preview .ui-swatch-card__colourways {
+        gap: 6px;
+        padding: 6px;
+    }
+
+    .ui-modal__preview .ui-swatch-card__colourways button {
+        flex: 0 0 32px;
+        width: 32px;
+        height: 32px;
+    }
+
+    .ui-modal__preview .ui-swatch-card__label {
+        bottom: 56px;
+    }
+
+    .ui-modal__foot {
+        position: sticky;
+        bottom: 0;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .ui-modal__actions .ui-button {
+        min-height: 44px;
+    }
+
+    .ui-modal__apply {
+        max-width: none;
+    }
+
+    /* Thumb-sized page links. */
+    .ui-pagination a,
+    .ui-pagination span[aria-current],
+    .ui-pagination span[aria-disabled] {
+        min-width: 34px;
+        min-height: 34px;
+    }
+
+    /* Filters pair up so the swatches start higher on the screen. */
+    .ui-toolbar {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .ui-toolbar .ui-search,
+    .ui-toolbar .ui-segment {
+        grid-column: 1 / -1;
+        max-width: none;
+    }
+
+    .ui-toolbar .ui-select {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .ui-toolbar .ui-segment button {
+        flex: 1 1 0;
+        justify-content: center;
+    }
+
+    .ui-page-head__actions .ui-button {
+        min-height: 40px;
+    }
+
+    /* The record's apply is the primary action: full width, thumb height. */
+    .ui-revit {
+        justify-content: flex-start;
+    }
+
+    .ui-revit__apply {
+        flex: 1 1 100%;
+        justify-content: center;
+        min-height: 44px;
+    }
+}
+
+@keyframes ui-sheet-rise {
+    from {
+        transform: translateY(14px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-modal__scrim,
+    .ui-modal__panel {
+        animation: none;
+    }
+}
+
+.ui-revit__apply em {
+    overflow: hidden;
+    max-width: 12ch;
+    color: rgba(245, 243, 239, 0.72);
+    font-style: normal;
+    font-size: 11px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ui-revit__apply:disabled {
+    opacity: 0.5;
 }

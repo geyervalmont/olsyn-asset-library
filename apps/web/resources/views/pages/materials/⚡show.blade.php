@@ -76,7 +76,7 @@ new class extends Component {
     }
 
     /**
-     * @return array{variants: list<array{id: int, name: string, hex: string, image: string|null}>, active: int}
+     * @return array{variants: list<array{id: int, code: string, name: string, hex: string, image: string|null}>, active: int}
      */
     #[Computed]
     public function card(): array
@@ -207,13 +207,27 @@ new class extends Component {
             : ClientCommand::query()->with('session')->whereKey($this->revitCommandId)->where('issued_by', $this->userId)->first();
     }
 
+    /**
+     * Why the record cannot be applied right now, or null when it can.
+     */
+    public function applyBlockedReason(): ?string
+    {
+        if ($this->revitSessions->isEmpty()) {
+            return __('No Revit connected. Open OPAL → Connect in Revit.');
+        }
+
+        return $this->material->current_version_id === null
+            ? __('Publish a version first; nothing is on the drive yet.')
+            : null;
+    }
+
     public function applyInRevit(int $variantId, IssueClientCommand $issue): void
     {
         $variant = $this->material->variants()->whereKey($variantId)->firstOrFail();
         $session = $this->revitSessions->firstWhere('id', $this->revitSessionId) ?? $this->revitSessions->first();
 
-        if ($session === null) {
-            Flux::toast(variant: 'warning', text: __('No Revit session is connected.'));
+        if ($session === null || $this->applyBlockedReason() !== null) {
+            Flux::toast(variant: 'warning', text: $this->applyBlockedReason() ?? __('No Revit session is connected.'));
 
             return;
         }
@@ -394,8 +408,32 @@ new class extends Component {
             <x-ui.badge :tone="match ($material->status->value) { 'active' => 'success', 'archived' => 'neutral', default => 'warning' }" dot>{{ $material->status->label() }}</x-ui.badge>
             <x-ui.badge tone="info" data-test="current-version">{{ $material->currentVersion ? 'v'.$material->currentVersion->number : __('Unpublished') }}</x-ui.badge>
             @can('materials.publish')
-                <x-ui.button wire:click="publish" size="sm" data-test="publish">{{ __('Publish new version') }}</x-ui.button>
+                <x-ui.button wire:click="publish" variant="secondary" size="sm" data-test="publish">{{ __('Publish new version') }}</x-ui.button>
             @endcan
+            <div class="ui-revit" data-test="apply-in-revit">
+                <button
+                    type="button"
+                    class="ui-button ui-button--primary ui-button--sm ui-revit__apply"
+                    x-on:click="$wire.applyInRevit(current.id)"
+                    @disabled($this->applyBlockedReason() !== null)
+                    data-test="apply-in-revit-button"
+                >
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>
+                    <span>{{ __('Apply in Revit') }}</span>
+                    <em x-text="current?.name ?? ''">{{ $this->card['variants'][$this->card['active']]['name'] ?? '' }}</em>
+                </button>
+                @if ($this->applyBlockedReason())
+                    <span class="ui-revit__none">{{ $this->applyBlockedReason() }}</span>
+                @elseif ($this->revitSessions->count() > 1)
+                    <select class="ui-select ui-select--sm" wire:model.live="revitSessionId" aria-label="{{ __('Revit session') }}">
+                        @foreach ($this->revitSessions as $session)
+                            <option value="{{ $session->id }}">{{ $session->label() }}</option>
+                        @endforeach
+                    </select>
+                @else
+                    <span class="ui-revit__target">{{ $this->revitSessions->first()->label() }}</span>
+                @endif
+            </div>
         </div>
     </div>
 
@@ -444,7 +482,7 @@ new class extends Component {
 
     <div class="ui-stack">
         @foreach ($this->variants as $variant)
-            <div class="ui-variant" wire:key="variant-{{ $variant->id }}" data-test="variant" id="variant-{{ $variant->id }}" x-bind:class="current && current.id === {{ $variant->id }} && 'is-highlighted'" x-on:mouseenter="pick({{ $loop->index }})">
+            <div class="ui-variant" wire:key="variant-{{ $variant->id }}" data-test="variant" id="variant-{{ $variant->id }}" x-bind:class="current && current.id === {{ $variant->id }} && 'is-highlighted'" x-on:mouseenter="pick({{ $loop->index }})" x-on:click="pick({{ $loop->index }})">
                 <div class="ui-variant__chip" style="--chip: {{ $variant->dominant_hex ?? \App\Library\Previews\MaterialPreviews::fallbackHex($variant->code) }}" aria-hidden="true"></div>
                 <div>
                     <div class="ui-variant__head">
@@ -468,68 +506,52 @@ new class extends Component {
                                 <x-ui.button wire:click="renderPreview({{ $variant->id }})" variant="quiet" size="sm" data-test="render-preview">{{ __('Render preview') }}</x-ui.button>
                             </div>
                         @endcan
-                        <div class="ui-revit" data-test="apply-in-revit">
-                            @if ($this->revitSessions->isEmpty())
-                                <span class="ui-revit__none">{{ __('No Revit connected') }}</span>
-                            @elseif ($this->material->current_version_id === null)
-                                <span class="ui-revit__none">{{ __('Publish a version first; nothing is on the drive yet') }}</span>
-                            @else
-                                @if ($this->revitSessions->count() > 1)
-                                    <select class="ui-select ui-select--sm" wire:model="revitSessionId" aria-label="{{ __('Revit session') }}">
-                                        @foreach ($this->revitSessions as $session)
-                                            <option value="{{ $session->id }}">{{ $session->label() }}</option>
-                                        @endforeach
-                                    </select>
-                                @else
-                                    <span class="ui-revit__target">{{ $this->revitSessions->first()->label() }}</span>
-                                @endif
-                                <x-ui.button wire:click="applyInRevit({{ $variant->id }})" variant="secondary" size="sm" data-test="apply-in-revit-{{ $variant->id }}">{{ __('Apply in Revit') }}</x-ui.button>
-                            @endif
-                        </div>
                     </div>
 
                     @if ($variant->representations->isEmpty())
                         <p class="ui-variant__attrs" style="margin-top: 10px">{{ __('No representations yet.') }}</p>
                     @else
-                        <table class="ui-table">
-                            <thead>
-                                <tr>
-                                    <th>{{ __('Target') }}</th>
-                                    <th>{{ __('Quality') }}</th>
-                                    <th>{{ __('Kind') }}</th>
-                                    <th>{{ __('Files') }}</th>
-                                    <th>{{ __('State') }}</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($variant->representations->sortBy([['target.sort_order', 'asc'], ['id', 'desc']]) as $representation)
-                                    <tr wire:key="rep-{{ $representation->id }}" data-test="representation">
-                                        <td><strong style="color: var(--ui-ink)">{{ $representation->target->name }}</strong></td>
-                                        <td>{{ $representation->quality->name }}</td>
-                                        <td><span class="ui-code">{{ $representation->kind }}</span></td>
-                                        <td>
-                                            @foreach ($representation->representationFiles as $representationFile)
-                                                <a class="ui-code" href="{{ $representationFile->file->url() }}" target="_blank" rel="noopener">{{ $representationFile->role->slug }}</a>@if (! $loop->last), @endif
-                                            @endforeach
-                                        </td>
-                                        <td>
-                                            <x-ui.badge :tone="match ($representation->review_state->value) { 'approved' => 'success', 'rejected' => 'danger', 'superseded' => 'neutral', default => 'warning' }" dot data-test="review-state">{{ $representation->review_state->label() }}</x-ui.badge>
-                                        </td>
-                                        <td>
-                                            @can('materials.review')
-                                                @if ($representation->review_state->value === 'candidate')
-                                                    <span class="ui-actions">
-                                                        <x-ui.button wire:click="review({{ $representation->id }}, 'approved')" size="sm" data-test="approve">{{ __('Approve') }}</x-ui.button>
-                                                        <x-ui.button wire:click="review({{ $representation->id }}, 'rejected')" variant="danger" size="sm" data-test="reject">{{ __('Reject') }}</x-ui.button>
-                                                    </span>
-                                                @endif
-                                            @endcan
-                                        </td>
+                        <div class="ui-table-scroll">
+                            <table class="ui-table">
+                                <thead>
+                                    <tr>
+                                        <th>{{ __('Target') }}</th>
+                                        <th>{{ __('Quality') }}</th>
+                                        <th>{{ __('Kind') }}</th>
+                                        <th>{{ __('Files') }}</th>
+                                        <th>{{ __('State') }}</th>
+                                        <th></th>
                                     </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    @foreach ($variant->representations->sortBy([['target.sort_order', 'asc'], ['id', 'desc']]) as $representation)
+                                        <tr wire:key="rep-{{ $representation->id }}" data-test="representation">
+                                            <td><strong style="color: var(--ui-ink)">{{ $representation->target->name }}</strong></td>
+                                            <td>{{ $representation->quality->name }}</td>
+                                            <td><span class="ui-code">{{ $representation->kind }}</span></td>
+                                            <td>
+                                                @foreach ($representation->representationFiles as $representationFile)
+                                                    <a class="ui-code" href="{{ $representationFile->file->url() }}" target="_blank" rel="noopener">{{ $representationFile->role->slug }}</a>@if (! $loop->last), @endif
+                                                @endforeach
+                                            </td>
+                                            <td>
+                                                <x-ui.badge :tone="match ($representation->review_state->value) { 'approved' => 'success', 'rejected' => 'danger', 'superseded' => 'neutral', default => 'warning' }" dot data-test="review-state">{{ $representation->review_state->label() }}</x-ui.badge>
+                                            </td>
+                                            <td>
+                                                @can('materials.review')
+                                                    @if ($representation->review_state->value === 'candidate')
+                                                        <span class="ui-actions">
+                                                            <x-ui.button wire:click="review({{ $representation->id }}, 'approved')" size="sm" data-test="approve">{{ __('Approve') }}</x-ui.button>
+                                                            <x-ui.button wire:click="review({{ $representation->id }}, 'rejected')" variant="danger" size="sm" data-test="reject">{{ __('Reject') }}</x-ui.button>
+                                                        </span>
+                                                    @endif
+                                                @endcan
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
                     @endif
                 </div>
             </div>
@@ -638,28 +660,30 @@ new class extends Component {
         @if ($this->accesses->isEmpty())
             <p class="ui-variant__attrs">{{ __('No reads recorded.') }}</p>
         @else
-            <table class="ui-table">
-                <thead>
-                    <tr>
-                        <th>{{ __('When') }}</th>
-                        <th>{{ __('Channel') }}</th>
-                        <th>{{ __('Who') }}</th>
-                        <th>{{ __('Operation') }}</th>
-                        <th>{{ __('File') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($this->accesses as $access)
-                        <tr wire:key="access-{{ $access->id }}" data-test="access-row">
-                            <td><time datetime="{{ $access->accessed_at->toIso8601String() }}">{{ $access->accessed_at->format('Y-m-d H:i') }}</time></td>
-                            <td><span class="ui-code">{{ $access->drive?->name ?? $access->channel }}</span></td>
-                            <td>{{ $access->who() }}</td>
-                            <td>{{ $access->action }}@if ($access->result && $access->result !== 'allow') · {{ $access->result }}@endif</td>
-                            <td>{{ $access->file?->original_name ?? basename((string) $access->path) }}</td>
+            <div class="ui-table-scroll">
+                <table class="ui-table">
+                    <thead>
+                        <tr>
+                            <th>{{ __('When') }}</th>
+                            <th>{{ __('Channel') }}</th>
+                            <th>{{ __('Who') }}</th>
+                            <th>{{ __('Operation') }}</th>
+                            <th>{{ __('File') }}</th>
                         </tr>
-                    @endforeach
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        @foreach ($this->accesses as $access)
+                            <tr wire:key="access-{{ $access->id }}" data-test="access-row">
+                                <td><time datetime="{{ $access->accessed_at->toIso8601String() }}">{{ $access->accessed_at->format('Y-m-d H:i') }}</time></td>
+                                <td><span class="ui-code">{{ $access->drive?->name ?? $access->channel }}</span></td>
+                                <td>{{ $access->who() }}</td>
+                                <td>{{ $access->action }}@if ($access->result && $access->result !== 'allow') · {{ $access->result }}@endif</td>
+                                <td>{{ $access->file?->original_name ?? basename((string) $access->path) }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         @endif
     </x-ui.panel>
 </section>

@@ -173,7 +173,7 @@ class MaterialPreviews
      *
      * @param  Collection<int, Variant>  $chips
      * @param  array<int, File>  $variantFiles
-     * @return array{variants: list<array{id: int, name: string, hex: string, image: string|null}>, active: int}
+     * @return array{variants: list<array{id: int, code: string, name: string, hex: string, image: string|null}>, active: int}
      */
     public function cardData(Material $material, Collection $chips, array $variantFiles, ?File $preview): array
     {
@@ -184,6 +184,7 @@ class MaterialPreviews
             $file = $variantFiles[$chip->id] ?? null;
             $variants[] = [
                 'id' => (int) $chip->id,
+                'code' => (string) $chip->code,
                 'name' => (string) $chip->name,
                 'hex' => $chip->dominant_hex ?? self::fallbackHex($chip->code),
                 'image' => $file?->url(),
@@ -195,7 +196,7 @@ class MaterialPreviews
         }
 
         if ($variants === []) {
-            $variants[] = ['id' => 0, 'name' => $material->name, 'hex' => self::fallbackHex($material->code), 'image' => $preview?->url()];
+            $variants[] = ['id' => 0, 'code' => $material->code, 'name' => $material->name, 'hex' => self::fallbackHex($material->code), 'image' => $preview?->url()];
         }
 
         return ['variants' => $variants, 'active' => $active];

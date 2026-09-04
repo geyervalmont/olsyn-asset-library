@@ -43,7 +43,7 @@ beforeEach(function () {
     $this->material->refresh();
 });
 
-test('an unpublished material explains why it cannot be applied', function () {
+test('an unpublished material shows the apply button disabled, with the reason', function () {
     ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'HARRISON-VM', 'app_version' => '2027', 'last_seen_at' => now()]);
     $draft = Material::factory()->create(['name' => 'Draft', 'category_id' => Category::query()->where('code', 'CPT')->sole(), 'supplier_id' => Supplier::factory()->create()]);
     app(AddVariant::class)->handle($draft, ['colourway' => ['value' => 'Plain']]);
@@ -51,16 +51,17 @@ test('an unpublished material explains why it cannot be applied', function () {
     Livewire::actingAs($this->viewer)
         ->test('pages::materials.show', ['material' => $draft])
         ->assertSee('Publish a version first')
-        ->assertDontSee('Apply in Revit');
+        ->assertSeeHtml('data-test="apply-in-revit-button"')
+        ->assertSeeHtml('disabled');
 });
 
-test('the material page offers apply in revit only when a session is live, and issues a command', function () {
+test('the material page keeps one apply button, and issues a command for the chosen colourway', function () {
     Event::fake([CommandQueued::class]);
 
     Livewire::actingAs($this->viewer)
         ->test('pages::materials.show', ['material' => $this->material])
         ->assertSee('No Revit connected')
-        ->assertDontSee('Apply in Revit');
+        ->assertSeeHtml('disabled');
 
     $session = ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'HARRISON-VM', 'app_version' => '2027', 'document' => 'Tower A.rvt', 'last_seen_at' => now()]);
     ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'OLD', 'last_seen_at' => now()->subMinutes(5)]);

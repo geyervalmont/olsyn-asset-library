@@ -1,12 +1,18 @@
 <?php
 
+use App\Actions\Clients\IssueClientCommand;
+use App\Enums\CommandType;
 use App\Library\Previews\MaterialPreviews;
 use App\Models\Category;
+use App\Models\ClientCommand;
+use App\Models\ClientSession;
 use App\Models\Material;
 use App\Models\Supplier;
+use Flux\Flux;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -30,9 +36,145 @@ new #[Title('Library')] class extends Component {
     #[Url]
     public string $view = 'swatches';
 
+    /** Material code shown in the quick view; empty when the modal is closed. */
+    #[Url(as: 'material')]
+    public string $quick = '';
+
+    public int $userId = 0;
+
+    public ?int $revitSessionId = null;
+
+    public ?int $revitCommandId = null;
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->can('materials.view'), 403);
+
+        $this->userId = (int) auth()->id();
+        $this->revitSessionId = $this->revitSessions->first()?->id;
+    }
+
+    public function openQuick(string $code): void
+    {
+        $this->quick = $code;
+        $this->revitCommandId = null;
+        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->revitCommand);
+    }
+
+    public function closeQuick(): void
+    {
+        $this->quick = '';
+        $this->revitCommandId = null;
+        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->revitCommand);
+    }
+
+    /** The material behind the quick view, or null when it is closed or out of reach. */
+    #[Computed]
+    public function quickMaterial(): ?Material
+    {
+        if ($this->quick === '') {
+            return null;
+        }
+
+        $material = Material::resolveCode($this->quick);
+
+        return $material !== null && $material->isVisibleTo(auth()->user())
+            ? $material->load(['category', 'supplier', 'currentVersion'])->loadCount('variants')
+            : null;
+    }
+
+    /**
+     * @return array{variants: list<array{id: int, code: string, name: string, hex: string, image: string|null}>, active: int}
+     */
+    #[Computed]
+    public function quickCard(): array
+    {
+        $material = $this->quickMaterial;
+        $previews = app(MaterialPreviews::class);
+        $collection = $material->newCollection([$material]);
+        $chips = $previews->chipsFor($collection, 24)[$material->id] ?? collect();
+
+        return $previews->cardData($material, $chips, $previews->variantFilesFor($chips), $previews->filesFor($collection)[$material->id] ?? null);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function quickTargets(): array
+    {
+        $material = $this->quickMaterial;
+
+        return app(MaterialPreviews::class)->targetsFor($material->newCollection([$material]))[$material->id] ?? [];
+    }
+
+    /**
+     * Why the quick view cannot apply right now, or null when it can.
+     */
+    public function applyBlockedReason(): ?string
+    {
+        if ($this->revitSessions->isEmpty()) {
+            return __('No Revit connected. Open OPAL → Connect in Revit.');
+        }
+
+        return $this->quickMaterial?->current_version_id === null
+            ? __('Publish a version first; nothing is on the drive yet.')
+            : null;
+    }
+
+    /**
+     * @return Collection<int, ClientSession>
+     */
+    #[Computed]
+    public function revitSessions(): Collection
+    {
+        return ClientSession::query()->where('user_id', $this->userId)->live()->orderByDesc('last_seen_at')->get();
+    }
+
+    #[Computed]
+    public function revitCommand(): ?ClientCommand
+    {
+        return $this->revitCommandId === null
+            ? null
+            : ClientCommand::query()->with('session')->whereKey($this->revitCommandId)->where('issued_by', $this->userId)->first();
+    }
+
+    public function applyInRevit(int $variantId, IssueClientCommand $issue): void
+    {
+        $material = $this->quickMaterial;
+        $variant = $material?->variants()->whereKey($variantId)->first();
+        $session = $this->revitSessions->firstWhere('id', $this->revitSessionId) ?? $this->revitSessions->first();
+
+        if ($material === null || $variant === null || $session === null || $this->applyBlockedReason() !== null) {
+            Flux::toast(variant: 'warning', text: $this->applyBlockedReason() ?? __('That colourway is no longer available.'));
+
+            return;
+        }
+
+        $this->revitSessionId = $session->id;
+        $this->revitCommandId = $issue->handle($session, auth()->user(), CommandType::Apply, [
+            'variant' => $variant->code,
+            'material' => $material->code,
+        ])->id;
+
+        unset($this->revitCommand);
+    }
+
+    #[On('echo-private:user.{userId},.command.acked')]
+    #[On('echo-private:user.{userId},.command.completed')]
+    public function revitCommandUpdated(): void
+    {
+        unset($this->revitCommand);
+    }
+
+    #[On('echo-private:user.{userId},.session.updated')]
+    public function revitSessionsUpdated(): void
+    {
+        unset($this->revitSessions);
+
+        if ($this->revitSessionId === null || ! $this->revitSessions->contains('id', $this->revitSessionId)) {
+            $this->revitSessionId = $this->revitSessions->first()?->id;
+        }
     }
 
     public function updatedSearch(): void
@@ -112,7 +254,7 @@ new #[Title('Library')] class extends Component {
     }
 
     /**
-     * @return array{variants: list<array{id: int, name: string, hex: string, image: string|null}>, active: int}
+     * @return array{variants: list<array{id: int, code: string, name: string, hex: string, image: string|null}>, active: int}
      */
     public function cardData(Material $material): array
     {
@@ -213,7 +355,7 @@ new #[Title('Library')] class extends Component {
                             @php $preview = $this->previews[$material->id] ?? null; $chips = $this->chips[$material->id] ?? collect(); @endphp
                             <tr wire:key="row-{{ $material->id }}" data-test="material-row">
                                 <td>
-                                    <a class="ui-table__material" href="{{ route('materials.show', $material) }}" wire:navigate style="text-decoration: none">
+                                    <a class="ui-table__material" href="{{ route('materials.show', $material) }}" x-data="quickLink" x-on:click="quickOpen($event, @js($material->code))" style="text-decoration: none">
                                         @if ($preview)
                                             <img class="ui-table__swatch" src="{{ $preview->url() }}" alt="" loading="lazy" style="object-fit: cover" />
                                         @else
@@ -254,12 +396,12 @@ new #[Title('Library')] class extends Component {
                     class="ui-swatch-card"
                     href="{{ route('materials.show', $material) }}"
                     wire:key="card-{{ $material->id }}"
-                    wire:navigate
                     data-test="material-card"
                     x-data="swatchCard(@js($card))"
                     x-on:mouseenter="enter"
                     x-on:mousemove="move"
                     x-on:mouseleave="leave"
+                    x-on:click="quickOpen($event, @js($material->code))"
                     x-bind:class="hovering && 'is-hovering'"
                     x-bind:style="tilt && { transform: tilt }"
                 >
@@ -278,4 +420,16 @@ new #[Title('Library')] class extends Component {
     @endif
 
     {{ $this->materials->links('vendor.pagination.opal') }}
+
+    @if ($this->quickMaterial)
+        <x-ui.material-modal
+            :material="$this->quickMaterial"
+            :card="$this->quickCard"
+            :targets="$this->quickTargets"
+            :variants-count="$this->quickMaterial->variants_count"
+            :sessions="$this->revitSessions"
+            :command="$this->revitCommand"
+            :blocked="$this->applyBlockedReason()"
+        />
+    @endif
 </section>
