@@ -83,3 +83,14 @@ test('a material with nothing approved cannot be versioned', function () {
 
     expect(fn () => app(CutVersion::class)->handle($this->material))->toThrow(LogicException::class);
 });
+
+test('cutting a version keeps one representation per key, the fuller and newer one', function () {
+    $thin = ($this->approve)($this->create->handle($this->ashen, 'pbr', '1k', ['base_color' => File::factory()->create()]));
+    $full = ($this->approve)($this->create->handle($this->ashen, 'pbr', '1k', ['base_color' => File::factory()->create(), 'normal' => File::factory()->create(), 'roughness' => File::factory()->create()]));
+    // An importer can leave two approved at one key; force that state.
+    $thin->update(['review_state' => ReviewState::Approved]);
+
+    $version = app(CutVersion::class)->handle($this->material);
+
+    expect($version->representations()->pluck('representations.id')->all())->toBe([$full->id]);
+});

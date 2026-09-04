@@ -19,10 +19,16 @@ class CutVersion
     public function handle(Material $material, ?User $createdBy = null, ?string $notes = null): MaterialVersion
     {
         return DB::transaction(function () use ($material, $createdBy, $notes): MaterialVersion {
+            // One representation per (variant, target, quality): should two be
+            // approved (an importer can do that), the fuller and newer one wins.
             $approved = Representation::query()
                 ->approved()
                 ->whereIn('variant_id', $material->variants()->select('id'))
-                ->get();
+                ->withCount('representationFiles')
+                ->get()
+                ->sortByDesc(fn (Representation $representation): array => [$representation->representation_files_count, $representation->getKey()])
+                ->unique(fn (Representation $representation): string => $representation->variant_id.':'.$representation->target_id.':'.$representation->quality_tier_id)
+                ->values();
 
             if ($approved->isEmpty()) {
                 throw new LogicException("Material [{$material->code}] has no approved representations to version.");

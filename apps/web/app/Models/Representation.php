@@ -23,6 +23,7 @@ use LogicException;
  * @property int $target_id
  * @property int $quality_tier_id
  * @property string $kind
+ * @property-read int|null $representation_files_count
  * @property ReviewState $review_state
  * @property int|null $reviewed_by_user_id
  * @property Carbon|null $reviewed_at
