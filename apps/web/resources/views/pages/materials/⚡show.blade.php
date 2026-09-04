@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Clients\IssueClientCommand;
 use App\Actions\Materials\AddVariant;
 use App\Actions\Representations\DeriveRepresentation;
 use App\Actions\Representations\ReviewRepresentation;
@@ -8,9 +9,12 @@ use App\Actions\Versions\PublishVersion;
 use App\Actions\Visibility\GrantMaterialAccess;
 use App\Actions\Visibility\RevokeMaterialAccess;
 use App\Actions\Visibility\SetMaterialVisibility;
+use App\Enums\CommandType;
 use App\Enums\ReviewState;
 use App\Enums\Visibility;
 use App\Library\Previews\MaterialPreviews;
+use App\Models\ClientCommand;
+use App\Models\ClientSession;
 use App\Models\Drive;
 use App\Models\FileAccess;
 use App\Models\Material;
@@ -24,6 +28,7 @@ use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
@@ -37,8 +42,17 @@ new class extends Component {
 
     public string $newColourwayCode = '';
 
+    public int $userId = 0;
+
+    public ?int $revitSessionId = null;
+
+    public ?int $revitCommandId = null;
+
     public function mount(Material $material): void
     {
+        $this->userId = (int) auth()->id();
+        $this->revitSessionId = $this->revitSessions->first()?->id;
+
         abort_unless(auth()->user()?->can('materials.view') && $material->isVisibleTo(auth()->user()), 403);
 
         $this->material = $material;
@@ -174,6 +188,56 @@ new class extends Component {
     public function derivableTargets(): Collection
     {
         return Target::query()->where('is_canonical', false)->where('slug', '!=', 'preview')->orderBy('sort_order')->get();
+    }
+
+    /**
+     * @return Collection<int, ClientSession>
+     */
+    #[Computed]
+    public function revitSessions(): Collection
+    {
+        return ClientSession::query()->where('user_id', $this->userId)->live()->orderByDesc('last_seen_at')->get();
+    }
+
+    #[Computed]
+    public function revitCommand(): ?ClientCommand
+    {
+        return $this->revitCommandId === null
+            ? null
+            : ClientCommand::query()->with('session')->whereKey($this->revitCommandId)->where('issued_by', $this->userId)->first();
+    }
+
+    public function applyInRevit(int $variantId, IssueClientCommand $issue): void
+    {
+        $variant = $this->material->variants()->whereKey($variantId)->firstOrFail();
+        $session = $this->revitSessions->firstWhere('id', $this->revitSessionId) ?? $this->revitSessions->first();
+
+        if ($session === null) {
+            Flux::toast(variant: 'warning', text: __('No Revit session is connected.'));
+
+            return;
+        }
+
+        $this->revitSessionId = $session->id;
+        $command = $issue->handle($session, auth()->user(), CommandType::Apply, [
+            'variant' => $variant->code,
+            'material' => $this->material->code,
+        ]);
+        $this->revitCommandId = $command->id;
+        unset($this->revitCommand);
+    }
+
+    #[On('echo-private:user.{userId},.command.acked')]
+    #[On('echo-private:user.{userId},.command.completed')]
+    public function revitCommandUpdated(): void
+    {
+        unset($this->revitCommand);
+    }
+
+    #[On('echo-private:user.{userId},.session.updated')]
+    public function revitSessionsUpdated(): void
+    {
+        unset($this->revitSessions);
     }
 
     public function addVariant(AddVariant $addVariant): void
@@ -366,6 +430,18 @@ new class extends Component {
         <x-ui.panel style="margin-bottom: 12px"><p style="margin: 0; color: var(--ui-muted); font-size: 13px; line-height: 1.7">{{ $material->description }}</p></x-ui.panel>
     @endif
 
+    @if ($this->revitCommand)
+        <x-ui.panel style="margin-bottom: 12px" data-test="revit-command">
+            <p class="ui-revit__status" data-status="{{ $this->revitCommand->status->value }}">
+                <span class="ui-status-light ui-status-light--{{ $this->revitCommand->status->value }}" aria-hidden="true"></span>
+                <strong>{{ __('Apply :variant', ['variant' => $this->revitCommand->payload['variant'] ?? '']) }}</strong>
+                <span>→ {{ $this->revitCommand->session->label() }}</span>
+                <span>· {{ $this->revitCommand->status->label() }}</span>
+                @if ($this->revitCommand->message)<span>· {{ $this->revitCommand->message }}</span>@endif
+            </p>
+        </x-ui.panel>
+    @endif
+
     <div class="ui-stack">
         @foreach ($this->variants as $variant)
             <div class="ui-variant" wire:key="variant-{{ $variant->id }}" data-test="variant" id="variant-{{ $variant->id }}" x-bind:class="current && current.id === {{ $variant->id }} && 'is-highlighted'" x-on:mouseenter="pick({{ $loop->index }})">
@@ -392,6 +468,22 @@ new class extends Component {
                                 <x-ui.button wire:click="renderPreview({{ $variant->id }})" variant="quiet" size="sm" data-test="render-preview">{{ __('Render preview') }}</x-ui.button>
                             </div>
                         @endcan
+                        <div class="ui-revit" data-test="apply-in-revit">
+                            @if ($this->revitSessions->isEmpty())
+                                <span class="ui-revit__none">{{ __('No Revit connected') }}</span>
+                            @else
+                                @if ($this->revitSessions->count() > 1)
+                                    <select class="ui-select ui-select--sm" wire:model="revitSessionId" aria-label="{{ __('Revit session') }}">
+                                        @foreach ($this->revitSessions as $session)
+                                            <option value="{{ $session->id }}">{{ $session->label() }}</option>
+                                        @endforeach
+                                    </select>
+                                @else
+                                    <span class="ui-revit__target">{{ $this->revitSessions->first()->label() }}</span>
+                                @endif
+                                <x-ui.button wire:click="applyInRevit({{ $variant->id }})" variant="secondary" size="sm" data-test="apply-in-revit-{{ $variant->id }}">{{ __('Apply in Revit') }}</x-ui.button>
+                            @endif
+                        </div>
                     </div>
 
                     @if ($variant->representations->isEmpty())

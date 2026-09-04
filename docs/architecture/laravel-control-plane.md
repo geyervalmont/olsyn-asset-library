@@ -80,6 +80,47 @@ workspace, the user's memberships, and, for super-admins, every workspace.
 - Email addresses must be verified (`MustVerifyEmail`) before the dashboard
   or any `verified` route is available. Locally, Mailpit receives the mail.
 
+## Live clients (implemented)
+
+A running Revit is a *client session*; the web can hand it commands and
+watch them complete. Nothing on the workstation listens: the client opens
+outbound connections only.
+
+**Linking.** The extension does not paste tokens. It calls
+`POST /api/v1/link` with its client name, machine and version, gets a code
+like `K7PQ-4M2X`, and shows `/link?code=…`. A signed-in person opens that
+page and approves; the link mints a Sanctum token named "Revit on MACHINE".
+The client polls `GET /api/v1/link/{code}?secret=…` (the secret is only
+ever known to the client) and receives the token exactly once, together
+with the realtime endpoint it should connect to. Codes expire after ten
+minutes; the token is an ordinary API token and is revoked from Settings.
+
+**Sessions.** `POST /api/v1/sessions` announces a running client
+(platform, machine, version, open document); heartbeats every so often
+keep it live (90 s window); `DELETE` ends it. Live sessions are listed on
+the material page as apply targets and under Settings → Revit sessions.
+
+**Commands.** `apply`, `sync` and `resolve` commands are rows in
+`client_commands` with a payload, and go through `queued → acked →
+done|failed`. The client acknowledges and reports results over the API, so
+the ledger is complete even if the websocket drops.
+
+**Realtime.** Laravel Reverb serves websockets. Browsers connect over
+`wss://ws.asset-library.test` (TLS at the proxy); LAN clients connect
+directly to the address in `config/opal.php` `realtime`
+(`OPAL_REALTIME_*`, the libvirt bridge in dev). Channels:
+
+| Channel | Events | Who |
+| --- | --- | --- |
+| `private-revit-session.{id}` | `command.queued`, `command.acked`, `command.completed` | the session's owner (the client) |
+| `private-user.{id}` | `session.updated`, `command.acked`, `command.completed` | that person's browser tabs |
+
+`/broadcasting/auth` accepts the web session or a bearer token
+(`auth:sanctum`) and is CSRF-exempt so the client can call it. Broadcasts
+are `ShouldBroadcastNow` and go through `App\Support\Realtime::publish`,
+which reports a down websocket server instead of failing the request; the
+client still finds its work by polling `GET /api/v1/sessions/{id}/commands`.
+
 ## Development accounts
 
 `php artisan migrate --seed` (run by `make bootstrap`) is idempotent and

@@ -60,4 +60,38 @@ return [
         'auto_render' => (bool) env('OPAL_AUTO_RENDER_PREVIEWS', true),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Realtime
+    |--------------------------------------------------------------------------
+    |
+    | What LAN clients (the Revit extension) connect to for live commands:
+    | the Reverb server as reachable from their machine, not from this app.
+    | Browsers use the VITE_REVERB_* values instead.
+    |
+    */
+
+    'realtime' => [
+        'scheme' => env('OPAL_REALTIME_SCHEME', 'http'),
+        'host' => env('OPAL_REALTIME_HOST', env('REVERB_HOST', '127.0.0.1')),
+        'port' => (int) env('OPAL_REALTIME_PORT', env('REVERB_PORT', 8080)),
+        'key' => env('REVERB_APP_KEY'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Client sessions
+    |--------------------------------------------------------------------------
+    |
+    | A session is live while it heartbeats within this many seconds.
+    | Device links (the code a client shows to be linked) expire after
+    | link_ttl minutes.
+    |
+    */
+
+    'sessions' => [
+        'live_seconds' => (int) env('OPAL_SESSION_LIVE_SECONDS', 90),
+        'link_ttl' => (int) env('OPAL_LINK_TTL_MINUTES', 10),
+    ],
+
 ];

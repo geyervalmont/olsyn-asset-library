@@ -18,6 +18,7 @@ Route::post('prismfs/drives/{drive:slug}/accesses', PrismfsAccessController::cla
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'dashboard')->name('dashboard');
+    Route::livewire('link', 'pages::link')->name('link');
     Route::post('tenants/{tenant}/switch', SwitchTenantController::class)->name('tenants.switch');
 });
 

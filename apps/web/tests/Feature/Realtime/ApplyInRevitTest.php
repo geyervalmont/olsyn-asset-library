@@ -1,0 +1,71 @@
+<?php
+
+use App\Actions\Authorization\SyncRolesAndPermissions;
+use App\Actions\Materials\AddVariant;
+use App\Enums\Role;
+use App\Events\Realtime\CommandQueued;
+use App\Models\Category;
+use App\Models\ClientCommand;
+use App\Models\ClientSession;
+use App\Models\Material;
+use App\Models\Supplier;
+use App\Models\Tenant;
+use App\Models\User;
+use Database\Seeders\LibrarySeeder;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
+
+beforeEach(function () {
+    Storage::fake(config('opal.files_disk'));
+    $this->seed(LibrarySeeder::class);
+    app(SyncRolesAndPermissions::class)->handle();
+    $tenant = Tenant::factory()->create();
+    $tenant->makeCurrent();
+    $this->viewer = User::factory()->withTenant($tenant, Role::Viewer)->create();
+    $carpet = Category::query()->where('code', 'CPT')->sole();
+    $this->material = Material::factory()->create(['name' => 'Academix', 'category_id' => $carpet, 'supplier_id' => Supplier::factory()->create(['name' => 'Tarkett'])]);
+    $this->ashen = app(AddVariant::class)->handle($this->material, ['colourway' => ['value' => 'Ashen']]);
+});
+
+test('the material page offers apply in revit only when a session is live, and issues a command', function () {
+    Event::fake([CommandQueued::class]);
+
+    Livewire::actingAs($this->viewer)
+        ->test('pages::materials.show', ['material' => $this->material])
+        ->assertSee('No Revit connected')
+        ->assertDontSee('Apply in Revit');
+
+    $session = ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'HARRISON-VM', 'app_version' => '2027', 'document' => 'Tower A.rvt', 'last_seen_at' => now()]);
+    ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'OLD', 'last_seen_at' => now()->subMinutes(5)]);
+
+    $page = Livewire::actingAs($this->viewer)
+        ->test('pages::materials.show', ['material' => $this->material])
+        ->assertSet('revitSessionId', $session->id)
+        ->assertSee('Revit 2027 · HARRISON-VM · Tower A.rvt')
+        ->assertDontSee('OLD')
+        ->call('applyInRevit', $this->ashen->id)
+        ->assertSee('Queued');
+
+    $command = ClientCommand::sole();
+    expect($command->client_session_id)->toBe($session->id)
+        ->and($command->issued_by)->toBe($this->viewer->id)
+        ->and($command->payload['variant'])->toBe($this->ashen->code)
+        ->and($page->get('revitCommandId'))->toBe($command->id);
+    Event::assertDispatched(CommandQueued::class);
+
+    $command->forceFill(['status' => 'done', 'message' => 'Applied to Carpet - Academix'])->save();
+    $page->call('revitCommandUpdated')->assertSee('Applied to Carpet - Academix');
+});
+
+test('the sessions settings page lists live sessions and can end one', function () {
+    $session = ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'HARRISON-VM', 'last_seen_at' => now()]);
+
+    Livewire::actingAs($this->viewer)
+        ->test('pages::settings.sessions')
+        ->assertSee('HARRISON-VM')
+        ->call('end', $session->id)
+        ->assertDontSee('HARRISON-VM');
+
+    expect($session->fresh()->ended_at)->not->toBeNull();
+});

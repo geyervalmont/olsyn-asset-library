@@ -14,6 +14,11 @@ services:
     hostnames: [vite.asset-library.test]
     docker: { network: dev-proxy, host: asset-library-vite, port: 5173 }
 
+  ws:
+    # Reverb (websockets) for browsers; TLS terminates at the proxy.
+    hostnames: [ws.asset-library.test]
+    docker: { network: dev-proxy, host: asset-library-reverb, port: 8080 }
+
   mail:
     hostnames: [mail.asset-library.test]
     docker: { network: dev-proxy, host: asset-library-mailpit, port: 8025 }

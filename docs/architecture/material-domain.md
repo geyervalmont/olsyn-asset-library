@@ -341,6 +341,16 @@ command can be stopped and rerun at any point. A progress bar names the file
 in flight and the summary reports ingested, unchanged, failed, attached,
 representations created, files not on disk and bytes read.
 
+## Apply in Revit (implemented)
+
+Each variant on the material page has an "Apply in Revit" control listing
+the current person's live client sessions. Choosing one issues an `apply`
+command with the variant code; the extension resolves the drive paths as it
+does for a local apply, applies to the picked or selected material, and
+reports back. The command's state (queued, received by Revit, done, failed
+with message) updates on the page over the websocket. Sessions, linking and
+channels are described in `laravel-control-plane.md`.
+
 ## Inspector
 
 The material record renders the picked colourway's canonical PBR maps in

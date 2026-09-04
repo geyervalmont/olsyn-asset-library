@@ -48,6 +48,24 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  reverb:
+    <<: *sail-app
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080 --debug
+    networks:
+      sail:
+      dev-proxy:
+        aliases:
+          - asset-library-reverb
+    ports:
+      # Browsers reach Reverb as wss://ws.asset-library.test through Gerrymander;
+      # LAN clients (the Revit VM on the libvirt bridge) connect to 8080 directly.
+      - "127.0.0.1:8080:8080"
+      - "${OPAL_REALTIME_HOST:-192.168.122.1}:8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   queue:
     <<: *sail-app
     command: php artisan horizon
