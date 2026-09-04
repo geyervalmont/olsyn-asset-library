@@ -29,6 +29,7 @@ rows = [
 output.print_table(rows, columns=["", ""])
 if not status.get("running") and config.get("token"):
     if forms.alert("The agent is not running. Start it now?", yes=True, no=True):
+        opal_revit.runner.ensure_event()
         opal_revit.runner.thread = None
-        opal_revit.runner.start(config)
+        opal_revit.runner.start(config, document_title=opal_revit.current_document_title())
         forms.toast("OPAL agent started.", title="OPAL")

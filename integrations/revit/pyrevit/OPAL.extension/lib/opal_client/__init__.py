@@ -12,7 +12,7 @@ from .host import Host, UnixHost, HostMaterial
 from .workflow import Workflow, SyncReport, ApplyPlan
 from .realtime import RealtimeClient, PurePythonWebSocket, DotNetWebSocket, WebSocketClosed
 from .agent import Agent, CommandExecutor
-from .link import link, Config, LinkExpired
+from .link import start_link, wait_for_link, link, Config, LinkExpired
 
 __all__ = [
     "OpalApi", "ApiError", "Drive", "Host", "UnixHost", "HostMaterial",

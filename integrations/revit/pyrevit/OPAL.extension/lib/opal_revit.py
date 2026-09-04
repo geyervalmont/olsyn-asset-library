@@ -23,6 +23,23 @@ from pyrevit import HOST_APP, forms, revit, script  # noqa: E402
 from opal_client import Agent, CommandExecutor, Config, Drive, OpalApi, Workflow  # noqa: E402
 from opal_client.host import Host, HostMaterial  # noqa: E402
 
+
+LOG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "OPAL", "agent.log")
+
+
+def log_line(message):
+    """Append to %APPDATA%\\OPAL\\agent.log; the only trace that survives a closed output window."""
+    try:
+        import datetime
+        directory = os.path.dirname(LOG_PATH)
+        if not os.path.isdir(directory):
+            os.makedirs(directory)
+        with open(LOG_PATH, "a") as handle:
+            handle.write("%s %s\n" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message))
+    except Exception:
+        pass
+
+
 CONFIG_PATH = Config.default_path()
 
 # Identity parameters we read to recognise a material and write on apply.
@@ -260,6 +277,15 @@ def print_plan(plan):
 # the Revit thread with a fresh RevitHost for the active document.
 
 
+
+def current_document_title():
+    """Revit thread only."""
+    try:
+        return revit.doc.Title if revit.doc else ""
+    except Exception:
+        return ""
+
+
 class OpalCommandHandler(UI.IExternalEventHandler):
     def __init__(self, runner):
         self.runner = runner
@@ -269,6 +295,7 @@ class OpalCommandHandler(UI.IExternalEventHandler):
             self.runner.drain(uiapp)
         except Exception as error:  # never let an exception escape into Revit
             self.runner.last_error = str(error)
+            log_line("command handler: %s" % error)
 
     def GetName(self):
         return "OPAL command handler"
@@ -297,6 +324,7 @@ class RevitAgentRunner(object):
         self.document_title = ""
         self.last_error = None
         self._queue = []
+        self._notices = []
         self._lock = threading.Lock()
 
     # -- lifecycle (call from the Revit thread) --------------------------------
@@ -312,19 +340,20 @@ class RevitAgentRunner(object):
         config = Config().load()
         if config.get("token") and config.get("api"):
             try:
-                self.start(config)
+                self.start(config, document_title=current_document_title())
             except Exception as error:
                 self.last_error = "agent did not start: %s" % error
+                log_line("startup: " + self.last_error)
 
-    def start(self, config):
+    def start(self, config, document_title=None):
+        """Safe on any thread: no Revit API, no WPF. Pass the title from the Revit thread."""
         if self.running():
             return self.agent
-        self.ensure_event()
+        if self.event is None:
+            raise RuntimeError("ensure_event() must run on the Revit thread first")
         self.config = config
-        try:
-            self.document_title = revit.doc.Title if revit.doc else ""
-        except Exception:
-            self.document_title = ""
+        if document_title is not None:
+            self.document_title = document_title
         api = OpalApi(config["api"], config["token"], verify_tls=config.get("verify_tls", True))
         self.drive = self._drive(api, config)
         self.agent = Agent(
@@ -362,8 +391,23 @@ class RevitAgentRunner(object):
             self._queue.append(command)
         self.event.Raise()
 
+    def notify(self, message):
+        """Background thread: show a toast, later, on the Revit thread."""
+        log_line(message)
+        with self._lock:
+            self._notices.append(message)
+        if self.event is not None:
+            self.event.Raise()
+
     def drain(self, uiapp):
-        """Revit thread: execute everything queued against the active document."""
+        """Revit thread: show pending notices, then execute everything queued."""
+        with self._lock:
+            notices, self._notices = self._notices, []
+        for message in notices:
+            try:
+                forms.toast(message, title="OPAL")
+            except Exception:
+                pass
         uidoc = uiapp.ActiveUIDocument
         doc = uidoc.Document if uidoc is not None else None
         self.document_title = doc.Title if doc is not None else ""
@@ -385,6 +429,7 @@ class RevitAgentRunner(object):
             self.agent.run()
         except Exception as error:
             self.last_error = str(error)
+            log_line("agent thread stopped: %s" % error)
 
     def _drive(self, api, config):
         drives = dict((d["slug"], d) for d in api.drives())
@@ -393,10 +438,9 @@ class RevitAgentRunner(object):
         return Drive(config["drive"], config.get("mount") or "", drives[config["drive"]]["root_path"])
 
     def _log(self, message):
-        try:
-            script.get_logger().info(message)
-        except Exception:
-            pass
+        # File only: this runs on the agent thread, and pyRevit's logger may
+        # touch the WPF output window, which is only legal on the Revit thread.
+        log_line(message)
 
 
 class _FailingExecutor(object):
@@ -408,4 +452,24 @@ class _FailingExecutor(object):
 
 
 # One runner per Revit session; startup.py and the buttons share it.
-runner = RevitAgentRunner()
+def get_runner():
+    """
+    One runner per Revit process. pyRevit gives every button its own Python
+    engine (and so its own copy of this module), so the instance lives in
+    AppDomain data, which all engines share.
+    """
+    try:
+        import System
+        domain = System.AppDomain.CurrentDomain
+        existing = domain.GetData("OPAL_RUNNER")
+        if existing is not None:
+            return existing
+        created = RevitAgentRunner()
+        domain.SetData("OPAL_RUNNER", created)
+        return created
+    except Exception as error:
+        log_line("runner is engine-local (AppDomain data unavailable: %s)" % error)
+        return RevitAgentRunner()
+
+
+runner = get_runner()

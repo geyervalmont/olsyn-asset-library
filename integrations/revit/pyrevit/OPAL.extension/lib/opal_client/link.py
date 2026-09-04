@@ -7,6 +7,7 @@ signed in; the client polls until the link is claimed and receives a token
 plus the realtime connection details. No credentials pass through the client.
 """
 
+import io
 import json
 import os
 import time
@@ -18,22 +19,18 @@ class LinkExpired(Exception):
     pass
 
 
-def link(api_base, client="revit", machine=None, app_version=None, open_browser=None,
-         poll=None, verify_tls=True, sleep=time.sleep, timeout=600, log=None, api_factory=None):
-    """Runs the flow; returns `{token, user, realtime}`."""
+def start_link(api_base, client="revit", machine=None, app_version=None, verify_tls=True, log=None, api_factory=None):
+    """Asks the library for a code. Returns (api, started); nothing here needs a UI."""
     log = log or (lambda message: None)
     api = (api_factory or OpalApi)(api_base, None, verify_tls=verify_tls)
     started = api.start_link(client, machine, app_version)
-    code, secret = started["code"], started["secret"]
-    log("Link code %s — enter it at %s" % (code, started.get("verify_url")))
-    if poll:
-        poll(started)
-    if open_browser and started.get("verify_url"):
-        try:
-            open_browser(started["verify_url"])
-        except Exception as error:
-            log("could not open a browser: %s" % error)
+    log("Link code %s — enter it at %s" % (started["code"], started.get("verify_url")))
+    return api, started
 
+
+def wait_for_link(api, started, sleep=time.sleep, timeout=600):
+    """Polls until the code is claimed. Safe on a background thread: no UI, no host calls."""
+    code, secret = started["code"], started["secret"]
     interval = max(1, int(started.get("poll_interval") or 3))
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -49,6 +46,21 @@ def link(api_base, client="revit", machine=None, app_version=None, open_browser=
         if state.get("status") == "delivered":
             raise LinkExpired("link code %s was already used" % code)
     raise LinkExpired("nobody claimed link code %s" % code)
+
+
+def link(api_base, client="revit", machine=None, app_version=None, open_browser=None,
+         poll=None, verify_tls=True, sleep=time.sleep, timeout=600, log=None, api_factory=None):
+    """Runs the whole flow on the calling thread; returns `{token, user, realtime}`."""
+    log = log or (lambda message: None)
+    api, started = start_link(api_base, client, machine, app_version, verify_tls, log, api_factory)
+    if poll:
+        poll(started)
+    if open_browser and started.get("verify_url"):
+        try:
+            open_browser(started["verify_url"])
+        except Exception as error:
+            log("could not open a browser: %s" % error)
+    return wait_for_link(api, started, sleep=sleep, timeout=timeout)
 
 
 class Config(object):
@@ -72,8 +84,9 @@ class Config(object):
     def load(self):
         if not self.exists():
             return {}
-        with open(self.path, "r") as handle:
-            return json.load(handle)
+        # utf-8-sig: tolerate the BOM PowerShell's Set-Content writes.
+        with io.open(self.path, "r", encoding="utf-8-sig") as handle:
+            return json.loads(handle.read())
 
     def save(self, values):
         directory = os.path.dirname(self.path)
