@@ -26,10 +26,24 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$mountpoint_path" /run/samba
-prismfs samba-config \
-    --mountpoint "$mountpoint_path" \
-    --share-name "$share_name" \
-    --guest-account root > /etc/samba/smb.conf
+smb_user="${PRISMFS_SMB_USER:-}"
+if [ -n "$smb_user" ]; then
+    # Authenticated share: Windows 11 requires SMB signing, which a guest
+    # cannot do. The Samba account is local to this container.
+    : "${PRISMFS_SMB_PASSWORD:?PRISMFS_SMB_PASSWORD is required with PRISMFS_SMB_USER}"
+    id -u "$smb_user" >/dev/null 2>&1 || useradd -M -s /usr/sbin/nologin "$smb_user"
+    printf '%s\n%s\n' "$PRISMFS_SMB_PASSWORD" "$PRISMFS_SMB_PASSWORD" | smbpasswd -a -s "$smb_user" >/dev/null
+    prismfs samba-config \
+        --mountpoint "$mountpoint_path" \
+        --share-name "$share_name" \
+        --guest-account root \
+        --user "$smb_user" > /etc/samba/smb.conf
+else
+    prismfs samba-config \
+        --mountpoint "$mountpoint_path" \
+        --share-name "$share_name" \
+        --guest-account root > /etc/samba/smb.conf
+fi
 testparm -s /etc/samba/smb.conf >/dev/null
 
 if [ -n "${PRISMFS_EXTRA_CA:-}" ] && [ -f "$PRISMFS_EXTRA_CA" ]; then

@@ -124,6 +124,19 @@ for every interface, `192.168.122.1` for a libvirt guest only. Note that
 libvirt bridge; stop one before starting the other. Guest read-only access is
 the development identity model (ADR 0004).
 
+### Authentication
+
+The share is authenticated by default (`PRISMFS_SMB_USER`, password
+`PRISMFS_SMB_PASSWORD`, defaulting to the drive token). Windows 11 requires
+SMB signing, and a guest logon cannot sign, so a guest-only share is refused
+by an up-to-date workstation. Clients store the credential once:
+
+    cmdkey /add:<host> /user:opal /pass:<drive token>
+
+after which UNC paths resolve for every process in that user's sessions.
+Leave `PRISMFS_SMB_USER` empty for a guest-only share. Note that mapped
+drive letters are per logon session; use the UNC path in the OPAL config.
+
 ## Access events
 
 When mounted from a manifest URL, PrismFS ships `read` and `open` events to

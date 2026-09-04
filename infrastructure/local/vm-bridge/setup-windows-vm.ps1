@@ -12,6 +12,8 @@ param(
   [string]$PyRevitVersion = "6.5.5.26237",
   [string]$RepoOnShare = "olsyn-asset-library\integrations\revit\pyrevit\OPAL.extension",
   [string]$CaPath = (Join-Path $env:USERPROFILE "opal-dev-root.crt"),
+  [string]$SmbUser = "opal",
+  [string]$SmbPassword = "",
   [switch]$SkipPyRevit
 )
 $ErrorActionPreference = "Stop"
@@ -36,15 +38,18 @@ if (Test-Path $CaPath) {
   $report.ca = "no $CaPath; https will show as insecure in the VM"
 }
 
-# 2. the drive: map the PrismFS share persistently.
+# 2. the drive. The share is authenticated (Windows 11 requires SMB signing,
+# which guests cannot do): store the credential once, then UNC paths just work
+# for every process in this user's sessions, Revit included.
+if ($SmbPassword) {
+  cmd /c "cmdkey /add:$HostAddress /user:$SmbUser /pass:$SmbPassword" | Out-Null
+  $report.credential = "stored for $SmbUser@$HostAddress"
+} else {
+  $report.credential = "not stored (pass -SmbPassword <drive token>); the share will refuse guests"
+}
+# Mapped drive letters are per logon session; the OPAL config uses the UNC path.
 $target = "\\$HostAddress\$Share"
-if (Get-PSDrive -Name $DriveLetter -ErrorAction SilentlyContinue) { net use "${DriveLetter}:" /delete /y | Out-Null }
-$mapped = $false
-try {
-  net use "${DriveLetter}:" $target /persistent:yes 2>&1 | Out-Null
-  $mapped = Test-Path "${DriveLetter}:\materials"
-} catch {}
-$report.drive = if ($mapped) { "${DriveLetter}: -> $target" } else { "NOT mapped ($target unreachable?)" }
+$report.drive = if (Test-Path "$target\materials") { "$target reachable" } else { "$target NOT reachable from this session" }
 
 # 3. the repo checkout via the virtiofs share (tag 'codeshare').
 $share = Get-CimInstance Win32_LogicalDisk | Where-Object { $_.VolumeName -eq "codeshare" -or $_.ProviderName -like "*codeshare*" } | Select-Object -First 1
@@ -99,7 +104,7 @@ $configPath = Join-Path $configDir "config.json"
 $config = if (Test-Path $configPath) { Get-Content $configPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
 $config | Add-Member -NotePropertyName api -NotePropertyValue "https://asset-library.test" -Force
 $config | Add-Member -NotePropertyName drive -NotePropertyValue "studio-share" -Force
-$config | Add-Member -NotePropertyName mount -NotePropertyValue "${DriveLetter}:\" -Force
+$config | Add-Member -NotePropertyName mount -NotePropertyValue $target -Force
 $config | Add-Member -NotePropertyName verify_tls -NotePropertyValue (Test-Path $CaPath) -Force
 # No BOM: IronPython 2.7 json cannot parse a UTF-8 BOM.
 [IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))

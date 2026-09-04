@@ -73,14 +73,20 @@ spec:
           args:
             - |
               until mountpoint -q "$PRISMFS_MOUNTPOINT"; do sleep 1; done
+              # Authenticated share (Windows 11 requires signing; guests cannot sign).
+              id -u "$PRISMFS_SMB_USER" >/dev/null 2>&1 || useradd -M -s /usr/sbin/nologin "$PRISMFS_SMB_USER"
+              printf '%s\n%s\n' "$PRISMFS_SMB_PASSWORD" "$PRISMFS_SMB_PASSWORD" | smbpasswd -a -s "$PRISMFS_SMB_USER" >/dev/null
               prismfs samba-config \
                 --mountpoint "$PRISMFS_MOUNTPOINT" \
                 --share-name "$PRISMFS_SMB_SHARE" \
-                --guest-account root > /etc/samba/smb.conf
+                --guest-account root \
+                --user "$PRISMFS_SMB_USER" > /etc/samba/smb.conf
               testparm -s /etc/samba/smb.conf >/dev/null
               exec smbd --foreground --no-process-group --debug-stdout
           envFrom:
             - configMapRef:
+                name: prismfs-studio-share
+            - secretRef:
                 name: prismfs-studio-share
           ports:
             - name: smb
@@ -104,5 +110,5 @@ spec:
               memory: 512Mi
           readinessProbe:
             exec:
-              command: ["sh", "-c", "smbclient //127.0.0.1/$PRISMFS_SMB_SHARE -N -c ls >/dev/null"]
+              command: ["sh", "-c", "smbclient //127.0.0.1/$PRISMFS_SMB_SHARE -U \"$PRISMFS_SMB_USER%$PRISMFS_SMB_PASSWORD\" -c ls >/dev/null"]
             periodSeconds: 10

@@ -22,6 +22,8 @@ services:
       PRISMFS_TENANT_ID: ${PRISMFS_DRIVE_SLUG:-studio-share}
       PRISMFS_MOUNTPOINT: /srv/prismfs
       PRISMFS_SMB_SHARE: ${PRISMFS_SMB_SHARE:-opal}
+      PRISMFS_SMB_USER: ${PRISMFS_SMB_USER:-opal}
+      PRISMFS_SMB_PASSWORD: ${PRISMFS_SMB_PASSWORD:-${PRISMFS_MANIFEST_TOKEN}}
       PRISMFS_S3_BUCKET: ${PRISMFS_S3_BUCKET:-prismfs-dev}
       AWS_ENDPOINT: ${AWS_ENDPOINT:-http://asset-library-rustfs:9000}
       AWS_ALLOW_HTTP: ${AWS_ALLOW_HTTP:-true}
@@ -34,7 +36,7 @@ services:
     networks:
       - dev-proxy
     healthcheck:
-      test: ["CMD", "sh", "-c", "smbclient //127.0.0.1/$${PRISMFS_SMB_SHARE} -N -c ls"]
+      test: ["CMD", "sh", "-c", "if [ -n \"$${PRISMFS_SMB_USER}\" ]; then smbclient //127.0.0.1/$${PRISMFS_SMB_SHARE} -U \"$${PRISMFS_SMB_USER}%$${PRISMFS_SMB_PASSWORD}\" -c ls; else smbclient //127.0.0.1/$${PRISMFS_SMB_SHARE} -N -c ls; fi"]
       interval: 3s
       timeout: 5s
       retries: 30

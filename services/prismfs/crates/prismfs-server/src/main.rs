@@ -122,6 +122,10 @@ enum Command {
         /// Unix account Samba uses for guest requests.
         #[arg(long, env = "PRISMFS_SMB_GUEST", default_value = "root")]
         guest_account: String,
+        /// Only this Samba user may connect (set its password with smbpasswd);
+        /// without it the share is guest-only.
+        #[arg(long)]
+        user: Option<String>,
     },
 }
 
@@ -179,7 +183,8 @@ fn main() -> Result<()> {
             mountpoint,
             share_name,
             guest_account,
-        } => samba_config(mountpoint, share_name, guest_account),
+            user,
+        } => samba_config(mountpoint, share_name, guest_account, user),
     }
 }
 
@@ -439,8 +444,17 @@ fn mount(
         .context("PrismFS FUSE adapter failed")
 }
 
-fn samba_config(mountpoint: PathBuf, share_name: String, guest_account: String) -> Result<()> {
-    let rendered = SambaConfig::read_only_guest(share_name, mountpoint, guest_account)
+fn samba_config(
+    mountpoint: PathBuf,
+    share_name: String,
+    guest_account: String,
+    user: Option<String>,
+) -> Result<()> {
+    let config = match user {
+        Some(user) => SambaConfig::read_only_user(share_name, mountpoint, guest_account, user),
+        None => SambaConfig::read_only_guest(share_name, mountpoint, guest_account),
+    };
+    let rendered = config
         .context("invalid Samba configuration")?
         .render()
         .context("failed to render Samba configuration")?;

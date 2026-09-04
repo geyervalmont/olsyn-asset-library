@@ -20,5 +20,6 @@ data:
   # Mount shared with the Samba sidecar.
   PRISMFS_MOUNTPOINT: /srv/prismfs
   PRISMFS_SMB_SHARE: opal
+  PRISMFS_SMB_USER: opal
   PRISMFS_LOG_FORMAT: json
   RUST_LOG: prismfs=info
