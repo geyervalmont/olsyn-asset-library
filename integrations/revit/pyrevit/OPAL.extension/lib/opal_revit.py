@@ -340,6 +340,7 @@ class RevitAgentRunner(object):
         config = Config().load()
         if config.get("token") and config.get("api"):
             try:
+                self.ensure_event()  # startup runs on the Revit thread
                 self.start(config, document_title=current_document_title())
             except Exception as error:
                 self.last_error = "agent did not start: %s" % error

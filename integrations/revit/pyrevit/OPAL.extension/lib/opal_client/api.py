@@ -124,9 +124,24 @@ class OpalApi(object):
             body["message"] = message
         return self._post("/api/v1/commands/%s/result" % command_id, body)
 
+    def resolve_endpoint(self, endpoint):
+        """
+        A saved absolute endpoint on the API's own host is re-based onto
+        base_url, so a scheme change (http → https) after linking still works;
+        relative paths are joined; other hosts are used as given.
+        """
+        if "://" not in endpoint:
+            return self.base_url + "/" + endpoint.lstrip("/")
+        base_host = self.base_url.split("://", 1)[1].split("/", 1)[0].lower()
+        rest = endpoint.split("://", 1)[1]
+        host, _, path = rest.partition("/")
+        if host.lower() == base_host or host.lower().split(":")[0] == base_host.split(":")[0]:
+            return self.base_url + "/" + path
+        return endpoint
+
     def channel_auth(self, auth_endpoint, socket_id, channel_name):
         """Signs a private-channel subscription; returns the `auth` string."""
-        url = auth_endpoint if "://" in auth_endpoint else self.base_url + "/" + auth_endpoint.lstrip("/")
+        url = self.resolve_endpoint(auth_endpoint)
         response = self._fetch("POST", url, {"socket_id": socket_id, "channel_name": channel_name})
         auth = response.get("auth") if isinstance(response, dict) else None
         if not auth:

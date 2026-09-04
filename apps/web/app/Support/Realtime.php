@@ -21,7 +21,9 @@ class Realtime
             'host' => (string) config('opal.realtime.host'),
             'port' => (int) config('opal.realtime.port'),
             'key' => config('opal.realtime.key'),
-            'auth_endpoint' => url('/broadcasting/auth'),
+            // The canonical URL, not the scheme this request arrived on: a client
+            // linked over plain http keeps working once it moves to https.
+            'auth_endpoint' => rtrim((string) config('app.url'), '/').'/broadcasting/auth',
         ];
     }
 

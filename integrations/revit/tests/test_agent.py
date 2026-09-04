@@ -147,3 +147,12 @@ class AgentTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EndpointResolutionTest(unittest.TestCase):
+    def test_saved_endpoint_follows_the_api_scheme(self):
+        from opal_client import OpalApi
+        api = OpalApi("https://asset-library.test", "t")
+        self.assertEqual(api.resolve_endpoint("http://asset-library.test/broadcasting/auth"), "https://asset-library.test/broadcasting/auth")
+        self.assertEqual(api.resolve_endpoint("/broadcasting/auth"), "https://asset-library.test/broadcasting/auth")
+        self.assertEqual(api.resolve_endpoint("https://other.example/auth"), "https://other.example/auth")
