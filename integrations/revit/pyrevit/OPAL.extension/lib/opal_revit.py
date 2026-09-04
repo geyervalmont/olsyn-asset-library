@@ -57,6 +57,8 @@ SLOT_PROPERTIES = {
     "bump": ("Generic", "GenericBumpMap", "generic_bump_map"),
     "glossiness": ("Generic", "GenericGlossiness", "generic_glossiness"),
 }
+GENERIC_SCHEMA = "GenericSchema"
+
 BITMAP_SOURCE = ("UnifiedBitmap", "UnifiedbitmapBitmap", "unifiedbitmap_Bitmap")
 BITMAP_SCALE_X = ("UnifiedBitmap", "TextureRealWorldScaleX", "texture_RealWorldScaleX")
 BITMAP_SCALE_Y = ("UnifiedBitmap", "TextureRealWorldScaleY", "texture_RealWorldScaleY")
@@ -112,6 +114,23 @@ def _visual_name(class_name, static_name, fallback):
     except Exception:
         pass
     return fallback
+
+
+def _schema_of_asset(asset):
+    """The asset's BaseSchema (GenericSchema, PrismOpaqueSchema, ...), or ''."""
+    try:
+        prop = asset.FindByName("BaseSchema")
+        return prop.Value if prop is not None else ""
+    except Exception:
+        return ""
+
+
+def _schema_of(appearance_element):
+    """BaseSchema of an AppearanceAssetElement's rendering asset."""
+    try:
+        return _schema_of_asset(appearance_element.GetRenderingAsset())
+    except Exception:
+        return ""
 
 
 def _find_property(asset, spec):
@@ -177,22 +196,33 @@ class RevitHost(Host):
     def apply_textures(self, material, textures, scale_mm):
         element = self._element(material.host_id)
         appearance_id = element.AppearanceAssetId
-        if appearance_id == DB.ElementId.InvalidElementId:
-            raise RuntimeError("%s has no appearance asset; assign a Generic appearance first." % material.name)
 
         with revit.Transaction("OPAL apply textures to %s" % material.name):
-            appearance_id = self._own_appearance(element, appearance_id)
+            # Stock Revit materials mostly use Advanced (physically based)
+            # schemas whose texture slots differ from Generic's. The library's
+            # Revit set is authored for Generic (diffuse, bump, glossiness), so
+            # give the material a Generic appearance asset of its own.
+            if appearance_id == DB.ElementId.InvalidElementId or _schema_of(self.doc.GetElement(appearance_id)) != GENERIC_SCHEMA:
+                appearance_id = self._generic_appearance(element)
+            else:
+                appearance_id = self._own_appearance(element, appearance_id)
+
+            applied, missing = [], []
             scope = DB.Visual.AppearanceAssetEditScope(self.doc)
             try:
                 editable = scope.Start(appearance_id)
                 for slot, path in textures.items():
                     prop = _find_property(editable, SLOT_PROPERTIES[slot])
                     if prop is None:
+                        missing.append(slot)
                         continue
                     bitmap = prop.GetSingleConnectedAsset()
                     if bitmap is None:
                         bitmap = prop.AddConnectedAsset("UnifiedBitmapSchema")
                     source = _find_property(bitmap, BITMAP_SOURCE)
+                    if source is None:
+                        missing.append(slot)
+                        continue
                     source.Value = path
                     if scale_mm:
                         for spec in (BITMAP_SCALE_X, BITMAP_SCALE_Y):
@@ -203,13 +233,23 @@ class RevitHost(Host):
                         repeat = _find_property(bitmap, spec)
                         if repeat is not None:
                             repeat.Value = True
+                    applied.append(slot)
                 scope.Commit(False)
             except Exception:
                 if scope.IsActive:
                     scope.Cancel()
                 raise
 
-        material.textures = dict(textures)
+            try:
+                element.UseRenderAppearanceForShading = True
+            except Exception:
+                pass
+
+        if not applied:
+            raise RuntimeError("no texture slot could be set on %s (schema %s; missing: %s)" % (
+                material.name, _schema_of(self.doc.GetElement(appearance_id)), ", ".join(missing) or "none"))
+        log_line("applied %s to %s%s" % (", ".join(applied), material.name, (" (no slot for %s)" % ", ".join(missing)) if missing else ""))
+        material.textures = dict((slot, textures[slot]) for slot in applied)
         material.scale_mm = scale_mm
 
     def write_parameters(self, material, parameters):
@@ -249,6 +289,34 @@ class RevitHost(Host):
             except Exception:
                 continue
         return None
+
+    def _generic_appearance(self, element):
+        """
+        A Generic appearance asset owned by this material: a duplicate of a
+        Generic-schema asset already in the document (as Matt's scripts do),
+        else one created from the library's base Generic asset.
+        """
+        name = "%s (OPAL)" % element.Name
+        suffix = 1
+        while DB.Visual.AppearanceAssetElement.GetAppearanceAssetElementByName(self.doc, name) is not None:
+            suffix += 1
+            name = "%s (OPAL %d)" % (element.Name, suffix)
+
+        created = None
+        for candidate in DB.FilteredElementCollector(self.doc).OfClass(DB.AppearanceAssetElement):
+            if _schema_of(candidate) == GENERIC_SCHEMA:
+                created = candidate.Duplicate(name)
+                break
+        if created is None:
+            for asset in self.doc.Application.GetAssets(DB.Visual.AssetType.Appearance):
+                if _schema_of_asset(asset) == GENERIC_SCHEMA:
+                    created = DB.Visual.AppearanceAssetElement.Create(self.doc, name, asset)
+                    break
+        if created is None:
+            raise RuntimeError("no Generic appearance asset in the document or the Revit library to start from")
+        element.AppearanceAssetId = created.Id
+        log_line("gave %s a Generic appearance asset %r" % (element.Name, name))
+        return created.Id
 
     def _own_appearance(self, element, appearance_id):
         """Duplicate a shared appearance asset so edits don't leak into other materials."""
