@@ -351,6 +351,20 @@ reports back. The command's state (queued, received by Revit, done, failed
 with message) updates on the page over the websocket. Sessions, linking and
 channels are described in `laravel-control-plane.md`.
 
+## Library quality
+
+`/quality` measures every material against what a usable material needs: a
+canonical set at 1k or better, the maps that carry surface detail (normal,
+roughness, ambient occlusion), a set Revit can read, a rendered preview and a
+published version. `App\Library\Quality\LibraryQuality` aggregates the
+signals in one grouped query (best canonical size, canonical map roles, and
+the targets that have files) and turns them into gaps; the page shows a count
+per gap, and each count filters the table to the queue behind it.
+
+The gaps are also the work list for a worker: preview renders can be queued
+from the page today, and AI upscaling or map generation would slot in the
+same way.
+
 ## Inspector
 
 The material record renders the picked colourway's canonical PBR maps in

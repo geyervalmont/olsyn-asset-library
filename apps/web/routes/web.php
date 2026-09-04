@@ -26,6 +26,7 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::livewire('materials', 'pages::materials.index')->name('materials.index');
     Route::livewire('materials/create', 'pages::materials.create')->name('materials.create');
     Route::livewire('materials/{material:code}', 'pages::materials.show')->name('materials.show');
+    Route::livewire('quality', 'pages::quality.index')->name('quality.index');
     Route::livewire('drives', 'pages::drives.index')->name('drives.index');
     Route::livewire('jobs', 'pages::jobs.index')->name('jobs.index');
     Route::get('files/{file}/{name?}', FileController::class)->name('files.show');

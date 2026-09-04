@@ -9,10 +9,11 @@
     $shellTenants = $shellUser?->accessibleTenants()->get() ?? collect();
     $navigation = array_values(array_filter([
         ['route' => 'materials.index', 'match' => 'materials.*', 'label' => __('Library'), 'index' => '01', 'show' => $shellUser?->can('materials.view')],
-        ['route' => 'drives.index', 'match' => 'drives.*', 'label' => __('Drives'), 'index' => '02', 'show' => $shellUser?->can('materials.publish')],
-        ['route' => 'jobs.index', 'match' => 'jobs.*', 'label' => __('Jobs'), 'index' => '03', 'show' => $shellUser?->can('materials.contribute')],
-        ['route' => 'dashboard', 'match' => 'dashboard', 'label' => __('Workspaces'), 'index' => '04', 'show' => true],
-        ['route' => 'profile.edit', 'match' => 'profile.edit|security.edit|api-tokens.edit', 'label' => __('Settings'), 'index' => '05', 'show' => true],
+        ['route' => 'quality.index', 'match' => 'quality.*', 'label' => __('Quality'), 'index' => '02', 'show' => $shellUser?->can('materials.view')],
+        ['route' => 'drives.index', 'match' => 'drives.*', 'label' => __('Drives'), 'index' => '03', 'show' => $shellUser?->can('materials.publish')],
+        ['route' => 'jobs.index', 'match' => 'jobs.*', 'label' => __('Jobs'), 'index' => '04', 'show' => $shellUser?->can('materials.contribute')],
+        ['route' => 'dashboard', 'match' => 'dashboard', 'label' => __('Workspaces'), 'index' => '05', 'show' => true],
+        ['route' => 'profile.edit', 'match' => 'profile.edit|security.edit|api-tokens.edit', 'label' => __('Settings'), 'index' => '06', 'show' => true],
     ], fn (array $item): bool => (bool) $item['show']));
 @endphp
 

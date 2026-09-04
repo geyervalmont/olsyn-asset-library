@@ -3811,3 +3811,52 @@ h1.ui-reveal.is-revealed em::after {
         padding: 6px;
     }
 }
+
+/* Library quality: one tile per gap, doubling as the filter for it. */
+
+.ui-gaps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.ui-gap {
+    display: grid;
+    gap: 2px;
+    padding: 12px 14px;
+    text-align: left;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-panel);
+    transition: border-color var(--ui-fast), background var(--ui-fast);
+}
+
+.ui-gap strong {
+    color: var(--ui-ink);
+    font-family: var(--ui-font-display);
+    font-size: 26px;
+    font-weight: 350;
+    line-height: 1.1;
+}
+
+.ui-gap span {
+    color: var(--ui-muted);
+    font-family: var(--ui-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.ui-gap:hover {
+    border-color: var(--ui-line-strong);
+}
+
+.ui-gap.is-active {
+    background: var(--ui-paper-deep);
+    border-color: var(--ui-periwinkle-deep);
+}
+
+.ui-gap.is-active span {
+    color: var(--ui-periwinkle-deep);
+}
