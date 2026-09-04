@@ -298,7 +298,7 @@ class RevitHost(Host):
         """
         name = "%s (OPAL)" % element.Name
         suffix = 1
-        while DB.Visual.AppearanceAssetElement.GetAppearanceAssetElementByName(self.doc, name) is not None:
+        while DB.AppearanceAssetElement.GetAppearanceAssetElementByName(self.doc, name) is not None:
             suffix += 1
             name = "%s (OPAL %d)" % (element.Name, suffix)
 
@@ -310,7 +310,7 @@ class RevitHost(Host):
         if created is None:
             for asset in self.doc.Application.GetAssets(DB.Visual.AssetType.Appearance):
                 if _schema_of_asset(asset) == GENERIC_SCHEMA:
-                    created = DB.Visual.AppearanceAssetElement.Create(self.doc, name, asset)
+                    created = DB.AppearanceAssetElement.Create(self.doc, name, asset)
                     break
         if created is None:
             raise RuntimeError("no Generic appearance asset in the document or the Revit library to start from")
