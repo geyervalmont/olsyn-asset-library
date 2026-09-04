@@ -34,15 +34,24 @@
     </div>
     <span class="ui-swatch-card__label" x-text="current?.name ?? ''">{{ $first['name'] }}</span>
     @if (count($card['variants']) > 1)
-        <div class="ui-swatch-card__colourways" role="group" aria-label="{{ __('Colourways') }}" data-test="colourways">
+        <div
+            class="ui-swatch-card__colourways"
+            role="group"
+            aria-label="{{ __('Colourways') }}"
+            data-test="colourways"
+            x-on:mouseenter="holdTilt(true)"
+            x-on:mouseleave="holdTilt(false); clearPreview()"
+        >
             @foreach ($card['variants'] as $index => $chip)
                 <button
                     type="button"
                     title="{{ $chip['name'] }}"
+                    aria-pressed="{{ $index === $card['active'] ? 'true' : 'false' }}"
                     style="--chip: {{ $chip['hex'] }};@if ($chip['image']) background-image: url('{{ $chip['image'] }}')@endif"
-                    x-on:mouseenter="pick({{ $index }})"
+                    x-on:mouseenter="preview({{ $index }})"
                     x-on:click.prevent.stop="pick({{ $index }})"
-                    x-bind:class="active === {{ $index }} && 'is-active'"
+                    x-bind:aria-pressed="selected === {{ $index }}"
+                    x-bind:class="{ 'is-selected': selected === {{ $index }}, 'is-previewing': hovered === {{ $index }} && selected !== {{ $index }} }"
                 ></button>
             @endforeach
             @if ($variantsCount !== null && $variantsCount > count($card['variants']))

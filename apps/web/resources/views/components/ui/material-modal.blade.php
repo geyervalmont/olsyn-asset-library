@@ -15,7 +15,7 @@
 <div
     class="ui-modal"
     wire:key="quick-{{ $material->id }}"
-    x-data="swatchCard(@js([...$card, 'sticky' => true]))"
+    x-data="swatchCard(@js($card))"
     x-on:keydown.escape.window="$wire.closeQuick()"
     data-test="material-modal"
 >
@@ -48,8 +48,8 @@
                 <div>
                     <dt>{{ __('Colourway') }}</dt>
                     <dd>
-                        <span x-text="current?.name ?? '—'">{{ $card['variants'][$card['active']]['name'] ?? '—' }}</span>
-                        <code x-text="current?.code ?? ''" data-test="quick-variant-code">{{ $card['variants'][$card['active']]['code'] ?? '' }}</code>
+                        <span x-text="chosen?.name ?? '—'">{{ $card['variants'][$card['active']]['name'] ?? '—' }}</span>
+                        <code x-text="chosen?.code ?? ''" data-test="quick-variant-code">{{ $card['variants'][$card['active']]['code'] ?? '' }}</code>
                     </dd>
                 </div>
                 <div>
@@ -102,13 +102,13 @@
                 <button
                     type="button"
                     class="ui-button ui-button--primary ui-button--md ui-modal__apply"
-                    x-on:click="$wire.applyInRevit(current.id)"
+                    x-on:click="$wire.applyInRevit(chosen.id)"
                     @disabled($blocked !== null)
                     data-test="quick-apply"
                 >
                     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>
                     <span>{{ __('Apply in Revit') }}</span>
-                    <em x-text="current?.name ?? ''">{{ $card['variants'][$card['active']]['name'] ?? '' }}</em>
+                    <em x-text="chosen?.name ?? ''">{{ $card['variants'][$card['active']]['name'] ?? '' }}</em>
                 </button>
             </div>
 

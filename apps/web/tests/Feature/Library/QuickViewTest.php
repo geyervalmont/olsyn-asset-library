@@ -119,6 +119,14 @@ test('the quick view says why it cannot apply, and refuses to', function () {
     expect(ClientCommand::count())->toBe(0);
 });
 
+test('the quick view opens on the colourway the card was showing', function () {
+    Livewire::actingAs($this->viewer)
+        ->test('pages::materials.index')
+        ->call('openQuick', $this->material->code, $this->slate->id)
+        ->assertSet('quickVariantId', $this->slate->id)
+        ->assertSeeHtml($this->slate->code);
+});
+
 test('a material out of reach never opens', function () {
     $secret = Material::factory()->create(['visibility' => Visibility::Restricted]);
 

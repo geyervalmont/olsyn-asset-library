@@ -391,7 +391,7 @@ new class extends Component {
     }
 }; ?>
 
-<section x-data="swatchCard(@js([...$this->card, 'sticky' => true]))">
+<section x-data="swatchCard(@js($this->card))">
     <div class="ui-record-head">
         <div>
             <x-ui.eyebrow>{{ $material->category->name }}</x-ui.eyebrow>
@@ -414,13 +414,13 @@ new class extends Component {
                 <button
                     type="button"
                     class="ui-button ui-button--primary ui-button--sm ui-revit__apply"
-                    x-on:click="$wire.applyInRevit(current.id)"
+                    x-on:click="$wire.applyInRevit(chosen.id)"
                     @disabled($this->applyBlockedReason() !== null)
                     data-test="apply-in-revit-button"
                 >
                     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>
                     <span>{{ __('Apply in Revit') }}</span>
-                    <em x-text="current?.name ?? ''">{{ $this->card['variants'][$this->card['active']]['name'] ?? '' }}</em>
+                    <em x-text="chosen?.name ?? ''">{{ $this->card['variants'][$this->card['active']]['name'] ?? '' }}</em>
                 </button>
                 @if ($this->applyBlockedReason())
                     <span class="ui-revit__none">{{ $this->applyBlockedReason() }}</span>
@@ -448,7 +448,7 @@ new class extends Component {
         </div>
     </div>
 
-    <div class="ui-viewer" style="margin-bottom: 12px" x-data="materialViewer(@js(['sets' => $this->viewerSets, 'objectSizeMm' => 1000]))" x-effect="show(current?.id)" data-test="material-viewer">
+    <div class="ui-viewer" style="margin-bottom: 12px" x-data="materialViewer(@js(['sets' => $this->viewerSets, 'objectSizeMm' => 1000]))" x-effect="show(chosen?.id)" data-test="material-viewer">
         <div class="ui-viewer__bar">
             <p>{{ __('Inspector') }} · {{ __('canonical maps under studio light') }} · <span x-text="status"></span></p>
             <div class="ui-segment" role="group" aria-label="{{ __('Shape') }}">
@@ -482,7 +482,7 @@ new class extends Component {
 
     <div class="ui-stack">
         @foreach ($this->variants as $variant)
-            <div class="ui-variant" wire:key="variant-{{ $variant->id }}" data-test="variant" id="variant-{{ $variant->id }}" x-bind:class="current && current.id === {{ $variant->id }} && 'is-highlighted'" x-on:mouseenter="pick({{ $loop->index }})" x-on:click="pick({{ $loop->index }})">
+            <div class="ui-variant" wire:key="variant-{{ $variant->id }}" data-test="variant" id="variant-{{ $variant->id }}" x-bind:class="current && current.id === {{ $variant->id }} && 'is-highlighted'" x-on:mouseenter="preview({{ $loop->index }})" x-on:mouseleave="clearPreview()" x-on:click="pick({{ $loop->index }})">
                 <div class="ui-variant__chip" style="--chip: {{ $variant->dominant_hex ?? \App\Library\Previews\MaterialPreviews::fallbackHex($variant->code) }}" aria-hidden="true"></div>
                 <div>
                     <div class="ui-variant__head">

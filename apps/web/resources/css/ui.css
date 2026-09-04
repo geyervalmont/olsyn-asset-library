@@ -3165,10 +3165,16 @@ h1.ui-reveal.is-revealed em::after {
     transition: transform var(--ui-fast), box-shadow var(--ui-fast);
 }
 
-.ui-swatch-card__colourways button.is-active {
+.ui-swatch-card__colourways button.is-selected {
     transform: scaleY(1.35);
     border-color: var(--ui-ink);
     box-shadow: 0 0 0 1px var(--ui-paper);
+}
+
+/* Only a look, not a choice: a lighter mark than the selected chip. */
+.ui-swatch-card__colourways button.is-previewing {
+    border-color: var(--ui-periwinkle-deep);
+    box-shadow: 0 0 0 1px rgba(107, 141, 184, 0.35);
 }
 
 .ui-swatch-card__colourways span {
@@ -3204,6 +3210,12 @@ h1.ui-reveal.is-revealed em::after {
     flex: 0 0 22px;
     width: 22px;
     height: 22px;
+}
+
+.ui-swatch-card__preview--open .ui-swatch-card__colourways button.is-selected {
+    transform: none;
+    outline: 2px solid var(--ui-ink);
+    outline-offset: 1px;
 }
 
 .ui-swatch-card__preview--open .ui-swatch-card__label {

@@ -2,13 +2,13 @@
  * A plain click opens the material quick view; a modifier or middle click is
  * left alone so the full record still opens in a new tab.
  */
-function quickOpen(component, event, code) {
+function quickOpen(component, event, code, variantId = null) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) {
         return;
     }
 
     event.preventDefault();
-    component.$wire?.openQuick(code);
+    component.$wire?.openQuick(code, variantId);
 }
 
 document.addEventListener('alpine:init', () => {
@@ -18,17 +18,29 @@ document.addEventListener('alpine:init', () => {
      */
     window.Alpine.data('swatchCard', (config) => ({
         variants: config.variants ?? [],
-        active: config.active ?? 0,
+        // The committed choice: what apply acts on, and what shows at rest.
+        selected: config.active ?? 0,
+        // A transient look at another colourway while the pointer is on its chip.
+        hovered: null,
+        overChips: false,
         tilt: '',
         hovering: false,
         reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
 
+        /** What the preview shows: the hovered colourway, else the chosen one. */
         get current() {
-            return this.variants[this.active] ?? null;
+            return this.variants[this.hovered ?? this.selected] ?? null;
+        },
+
+        /** The chosen colourway, whatever the pointer is doing. */
+        get chosen() {
+            return this.variants[this.selected] ?? null;
         },
 
         move(event) {
-            if (this.reduced) {
+            // Tilting under the chips would slide them out from under the
+            // pointer, so the card holds still while they are being used.
+            if (this.reduced || this.overChips) {
                 return;
             }
 
@@ -45,19 +57,34 @@ document.addEventListener('alpine:init', () => {
 
         leave() {
             this.hovering = false;
+            this.overChips = false;
             this.tilt = '';
+            this.hovered = null;
+        },
 
-            if (! config.sticky) {
-                this.active = config.active ?? 0;
+        holdTilt(over) {
+            this.overChips = over;
+
+            if (over) {
+                this.tilt = '';
             }
         },
 
+        preview(index) {
+            this.hovered = index;
+        },
+
+        clearPreview() {
+            this.hovered = null;
+        },
+
         pick(index) {
-            this.active = index;
+            this.selected = index;
+            this.hovered = null;
         },
 
         quickOpen(event, code) {
-            quickOpen(this, event, code);
+            quickOpen(this, event, code, this.chosen?.id);
         },
     }));
 

@@ -46,6 +46,9 @@ new #[Title('Library')] class extends Component {
 
     public ?int $revitCommandId = null;
 
+    /** The colourway the card was showing when it was opened. */
+    public ?int $quickVariantId = null;
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->can('materials.view'), 403);
@@ -54,9 +57,10 @@ new #[Title('Library')] class extends Component {
         $this->revitSessionId = $this->revitSessions->first()?->id;
     }
 
-    public function openQuick(string $code): void
+    public function openQuick(string $code, ?int $variantId = null): void
     {
         $this->quick = $code;
+        $this->quickVariantId = $variantId;
         $this->revitCommandId = null;
         unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->revitCommand);
     }
@@ -64,6 +68,7 @@ new #[Title('Library')] class extends Component {
     public function closeQuick(): void
     {
         $this->quick = '';
+        $this->quickVariantId = null;
         $this->revitCommandId = null;
         unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->revitCommand);
     }
@@ -93,8 +98,16 @@ new #[Title('Library')] class extends Component {
         $previews = app(MaterialPreviews::class);
         $collection = $material->newCollection([$material]);
         $chips = $previews->chipsFor($collection, 24)[$material->id] ?? collect();
+        $card = $previews->cardData($material, $chips, $previews->variantFilesFor($chips), $previews->filesFor($collection)[$material->id] ?? null);
 
-        return $previews->cardData($material, $chips, $previews->variantFilesFor($chips), $previews->filesFor($collection)[$material->id] ?? null);
+        // Open on the colourway the card was showing, when it is among the chips.
+        $chosen = array_search($this->quickVariantId, array_column($card['variants'], 'id'), true);
+
+        if ($chosen !== false) {
+            $card['active'] = $chosen;
+        }
+
+        return $card;
     }
 
     /**
