@@ -10,8 +10,13 @@ from .api import OpalApi, ApiError
 from .drive import Drive
 from .host import Host, UnixHost, HostMaterial
 from .workflow import Workflow, SyncReport, ApplyPlan
+from .realtime import RealtimeClient, PurePythonWebSocket, DotNetWebSocket, WebSocketClosed
+from .agent import Agent, CommandExecutor
+from .link import link, Config, LinkExpired
 
 __all__ = [
     "OpalApi", "ApiError", "Drive", "Host", "UnixHost", "HostMaterial",
     "Workflow", "SyncReport", "ApplyPlan",
+    "RealtimeClient", "PurePythonWebSocket", "DotNetWebSocket", "WebSocketClosed",
+    "Agent", "CommandExecutor", "link", "Config", "LinkExpired",
 ]

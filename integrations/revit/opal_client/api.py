@@ -21,12 +21,19 @@ class ApiError(Exception):
         self.body = body
 
 
+def _unwrap(response):
+    """Endpoints answer either `{data: {...}}` or a bare object."""
+    if isinstance(response, dict) and isinstance(response.get("data"), dict) and len(response) == 1:
+        return response["data"]
+    return response
+
+
 class OpalApi(object):
     """
     A thin, explicit client. `fetch` can be replaced for tests.
     """
 
-    def __init__(self, base_url, token, fetch=None, verify_tls=True, timeout=60):
+    def __init__(self, base_url, token=None, fetch=None, verify_tls=True, timeout=60):
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
@@ -78,6 +85,54 @@ class OpalApi(object):
             body["payload"] = payload
         return self._post("/api/v1/variants/%s/identities" % quote(code, safe=""), body)["data"]
 
+    # -- account linking ---------------------------------------------------
+
+    def start_link(self, client, machine=None, app_version=None):
+        """Begin the device-code flow; no token needed."""
+        body = {"client": client, "machine": machine or "", "app_version": app_version or ""}
+        return _unwrap(self._post("/api/v1/link", body))
+
+    def poll_link(self, code, secret):
+        """`{status: pending|claimed|delivered, ...}`; raises ApiError(410) once expired."""
+        return _unwrap(self._get("/api/v1/link/%s" % quote(code, safe=""), {"secret": secret}))
+
+    def realtime(self):
+        """Where the realtime server is and how to authenticate channels."""
+        return _unwrap(self._get("/api/v1/realtime"))
+
+    # -- sessions and commands ---------------------------------------------
+
+    def create_session(self, platform, machine=None, app_version=None, document=None):
+        body = {"platform": platform, "machine": machine or "", "app_version": app_version or "", "document": document or ""}
+        return _unwrap(self._post("/api/v1/sessions", body))
+
+    def heartbeat(self, session_id, document=None):
+        return _unwrap(self._post("/api/v1/sessions/%s/heartbeat" % session_id, {"document": document or ""}))
+
+    def end_session(self, session_id):
+        return self._fetch("DELETE", self.base_url + "/api/v1/sessions/%s" % session_id, None)
+
+    def queued_commands(self, session_id):
+        return self._get("/api/v1/sessions/%s/commands" % session_id, {"status": "queued"}).get("data", [])
+
+    def ack_command(self, command_id):
+        return self._post("/api/v1/commands/%s/ack" % command_id, {})
+
+    def command_result(self, command_id, status, result=None, message=None):
+        body = {"status": status, "result": result or {}}
+        if message:
+            body["message"] = message
+        return self._post("/api/v1/commands/%s/result" % command_id, body)
+
+    def channel_auth(self, auth_endpoint, socket_id, channel_name):
+        """Signs a private-channel subscription; returns the `auth` string."""
+        url = auth_endpoint if "://" in auth_endpoint else self.base_url + "/" + auth_endpoint.lstrip("/")
+        response = self._fetch("POST", url, {"socket_id": socket_id, "channel_name": channel_name})
+        auth = response.get("auth") if isinstance(response, dict) else None
+        if not auth:
+            raise ApiError(0, "channel auth for %s returned no signature" % channel_name, response)
+        return auth
+
     # -- transport -------------------------------------------------------
 
     def _get(self, path, params=None):
@@ -93,9 +148,10 @@ class OpalApi(object):
         data = None
         headers = {
             "Accept": "application/json",
-            "Authorization": "Bearer " + self.token,
             "User-Agent": "opal-client/1.0",
         }
+        if self.token:
+            headers["Authorization"] = "Bearer " + self.token
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"

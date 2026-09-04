@@ -13,16 +13,17 @@ Configuration lives in %APPDATA%\\OPAL\\config.json:
     }
 """
 
-import json
 import os
+import threading
 
 from Autodesk.Revit import DB  # noqa: E402
-from pyrevit import forms, revit, script  # noqa: E402
+from Autodesk.Revit import UI  # noqa: E402
+from pyrevit import HOST_APP, forms, revit, script  # noqa: E402
 
-from opal_client import Drive, OpalApi, Workflow  # noqa: E402
+from opal_client import Agent, CommandExecutor, Config, Drive, OpalApi, Workflow  # noqa: E402
 from opal_client.host import Host, HostMaterial  # noqa: E402
 
-CONFIG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "OPAL", "config.json")
+CONFIG_PATH = Config.default_path()
 
 # Identity parameters we read to recognise a material and write on apply.
 PARAMETER_NAMES = {
@@ -47,14 +48,32 @@ BITMAP_V_REPEAT = ("UnifiedBitmap", "TextureVRepeat", "texture_VRepeat")
 
 
 def load_config():
-    if not os.path.isfile(CONFIG_PATH):
-        forms.alert("OPAL is not configured.\n\nCreate %s with api, token, drive and mount." % CONFIG_PATH, exitscript=True)
-    with open(CONFIG_PATH, "r") as handle:
-        config = json.load(handle)
-    for key in ("api", "token", "drive", "mount"):
+    config = Config().load()
+    if not config.get("token"):
+        forms.alert("OPAL is not linked on this machine.\n\nRun OPAL → Connect first (config: %s)." % CONFIG_PATH, exitscript=True)
+    for key in ("api", "drive", "mount"):
         if not config.get(key):
             forms.alert("OPAL config is missing '%s' (%s)." % (key, CONFIG_PATH), exitscript=True)
     return config
+
+
+def open_url(url):
+    """Opens the default browser; on .NET 8 Process.Start needs UseShellExecute."""
+    from System.Diagnostics import Process, ProcessStartInfo
+    info = ProcessStartInfo(url)
+    info.UseShellExecute = True
+    Process.Start(info)
+
+
+def machine_name():
+    return os.environ.get("COMPUTERNAME") or "revit"
+
+
+def app_version():
+    try:
+        return "Revit %s" % HOST_APP.version
+    except Exception:
+        return "Revit"
 
 
 def build_workflow(doc=None):
@@ -100,13 +119,14 @@ def _to_property_units(mm_value, prop):
 class RevitHost(Host):
     platform = "revit"
 
-    def __init__(self, doc):
+    def __init__(self, doc, uidoc=None):
         self.doc = doc
+        self.uidoc = uidoc
 
     # -- reading -----------------------------------------------------------
 
     def document_name(self):
-        return self.doc.Title
+        return self.doc.Title if self.doc is not None else ""
 
     def materials(self):
         collector = DB.FilteredElementCollector(self.doc).OfClass(DB.Material)
@@ -118,7 +138,7 @@ class RevitHost(Host):
 
     def selected_material(self):
         """The material of a picked face, or the single selected material element."""
-        uidoc = revit.uidoc
+        uidoc = self.uidoc or revit.uidoc
         selection = [self.doc.GetElement(i) for i in uidoc.Selection.GetElementIds()]
         materials = [e for e in selection if isinstance(e, DB.Material)]
         if len(materials) == 1:
@@ -230,3 +250,162 @@ class RevitHost(Host):
 def print_plan(plan):
     output = script.get_output()
     output.print_md("```\n%s\n```" % plan.describe())
+
+
+# -- the live agent inside Revit --------------------------------------------
+#
+# Revit API calls are only legal on Revit's thread inside a valid API context.
+# The realtime client runs on a background thread and merely queues commands;
+# an ExternalEvent hands them to `OpalCommandHandler.Execute`, which runs on
+# the Revit thread with a fresh RevitHost for the active document.
+
+
+class OpalCommandHandler(UI.IExternalEventHandler):
+    def __init__(self, runner):
+        self.runner = runner
+
+    def Execute(self, uiapp):
+        try:
+            self.runner.drain(uiapp)
+        except Exception as error:  # never let an exception escape into Revit
+            self.runner.last_error = str(error)
+
+    def GetName(self):
+        return "OPAL command handler"
+
+
+class AgentHost(Host):
+    """What the agent knows about Revit off the Revit thread: cached only."""
+
+    platform = "revit"
+
+    def __init__(self, runner):
+        self.runner = runner
+
+    def document_name(self):
+        return self.runner.document_title
+
+
+class RevitAgentRunner(object):
+    def __init__(self):
+        self.agent = None
+        self.thread = None
+        self.event = None
+        self.handler = None
+        self.config = None
+        self.drive = None
+        self.document_title = ""
+        self.last_error = None
+        self._queue = []
+        self._lock = threading.Lock()
+
+    # -- lifecycle (call from the Revit thread) --------------------------------
+
+    def ensure_event(self):
+        """ExternalEvent.Create must run in a valid API context (startup or a button)."""
+        if self.event is None:
+            self.handler = OpalCommandHandler(self)
+            self.event = UI.ExternalEvent.Create(self.handler)
+        return self.event
+
+    def start_if_configured(self):
+        config = Config().load()
+        if config.get("token") and config.get("api"):
+            try:
+                self.start(config)
+            except Exception as error:
+                self.last_error = "agent did not start: %s" % error
+
+    def start(self, config):
+        if self.running():
+            return self.agent
+        self.ensure_event()
+        self.config = config
+        try:
+            self.document_title = revit.doc.Title if revit.doc else ""
+        except Exception:
+            self.document_title = ""
+        api = OpalApi(config["api"], config["token"], verify_tls=config.get("verify_tls", True))
+        self.drive = self._drive(api, config)
+        self.agent = Agent(
+            api, AgentHost(self), realtime=config.get("realtime"),
+            machine=machine_name(), app_version=app_version(), dispatch=self.enqueue,
+            log=self._log,
+        )
+        self.thread = threading.Thread(target=self._run)
+        self.thread.IsBackground = True  # IronPython exposes the .NET thread flag
+        self.thread.daemon = True
+        self.thread.start()
+        return self.agent
+
+    def stop(self):
+        if self.agent is not None:
+            self.agent.stop()
+
+    def running(self):
+        return self.thread is not None and self.thread.is_alive()
+
+    def status(self):
+        status = self.agent.status() if self.agent else {"connected": False}
+        status["running"] = self.running()
+        status["document"] = self.document_title
+        status["queued"] = len(self._queue)
+        status["last_error"] = status.get("last_error") or self.last_error
+        status["config"] = CONFIG_PATH
+        return status
+
+    # -- command flow --------------------------------------------------------
+
+    def enqueue(self, command):
+        """Background thread: queue and wake Revit."""
+        with self._lock:
+            self._queue.append(command)
+        self.event.Raise()
+
+    def drain(self, uiapp):
+        """Revit thread: execute everything queued against the active document."""
+        uidoc = uiapp.ActiveUIDocument
+        doc = uidoc.Document if uidoc is not None else None
+        self.document_title = doc.Title if doc is not None else ""
+        while True:
+            with self._lock:
+                if not self._queue:
+                    return
+                command = self._queue.pop(0)
+            if doc is None:
+                self.agent.handle(command, _FailingExecutor("no document is open in Revit"))
+                continue
+            workflow = Workflow(self.agent.api, RevitHost(doc, uidoc), self.drive)
+            self.agent.handle(command, CommandExecutor(workflow))
+
+    # -- helpers -------------------------------------------------------------
+
+    def _run(self):
+        try:
+            self.agent.run()
+        except Exception as error:
+            self.last_error = str(error)
+
+    def _drive(self, api, config):
+        drives = dict((d["slug"], d) for d in api.drives())
+        if config.get("drive") not in drives:
+            raise RuntimeError("drive %r is not known to the library" % config.get("drive"))
+        return Drive(config["drive"], config.get("mount") or "", drives[config["drive"]]["root_path"])
+
+    def _log(self, message):
+        try:
+            script.get_logger().info(message)
+        except Exception:
+            pass
+
+
+class _FailingExecutor(object):
+    def __init__(self, message):
+        self.message = message
+
+    def execute(self, command):
+        raise RuntimeError(self.message)
+
+
+# One runner per Revit session; startup.py and the buttons share it.
+runner = RevitAgentRunner()

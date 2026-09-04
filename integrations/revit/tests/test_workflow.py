@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import hashlib
 import json
 import os
 import shutil
@@ -8,45 +7,10 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from opal_client import ApiError, Drive, OpalApi, UnixHost, Workflow  # noqa: E402
-
-
-def sha(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-class FakeApi(OpalApi):
-    """OpalApi with the transport replaced by canned responses."""
-
-    def __init__(self, drive_root="/materials"):
-        OpalApi.__init__(self, "https://opal.test", "token", fetch=self._fake)
-        self.identities = []
-        self.drive_root = drive_root
-        self.files = []
-
-    def _fake(self, method, url, body):
-        path = url.split("https://opal.test", 1)[1]
-        if path.startswith("/api/v1/variants/resolve?"):
-            query = dict(part.split("=", 1) for part in path.split("?", 1)[1].split("&"))
-            reference = query["reference"].replace("+", " ").replace("%5B", "[").replace("%5D", "]").replace("%20", " ")
-            registered = [i.get("external_id") for i in self.identities] + [i.get("external_name") for i in self.identities]
-            if "CPT-TARKETT-ACADEMIX-ASHEN" in reference.upper() or reference in registered or reference == "Carpet - Academix Ashen":
-                return {"data": self._variant()}
-            raise ApiError(404, "No variant matches that reference.")
-        if path == "/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN":
-            return {"data": self._variant()}
-        if path.startswith("/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/paths"):
-            return {"data": {"variant": "CPT-TARKETT-ACADEMIX-ASHEN", "drive": "studio-share", "root_path": self.drive_root, "published": True, "files": self.files}}
-        if path == "/api/v1/drives":
-            return {"data": [{"slug": "studio-share", "name": "Studio share", "root_path": self.drive_root, "target": None}]}
-        if method == "POST" and path == "/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/identities":
-            self.identities.append(body)
-            return {"data": {"variant": "CPT-TARKETT-ACADEMIX-ASHEN", "platform": body["platform"], "external_id": body.get("external_id"), "external_name": body.get("external_name")}}
-        raise ApiError(404, "unexpected " + path)
-
-    def _variant(self):
-        return {"code": "CPT-TARKETT-ACADEMIX-ASHEN", "name": "Ashen", "material_code": "CPT-TARKETT-ACADEMIX", "tile_width_mm": 500.0}
+from opal_client import Drive, UnixHost, Workflow  # noqa: E402
+from fakes import FakeApi, sha  # noqa: E402
 
 
 class WorkflowTest(unittest.TestCase):
