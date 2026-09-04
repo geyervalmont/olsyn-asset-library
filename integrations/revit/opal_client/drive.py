@@ -59,4 +59,19 @@ class Drive(object):
         return report
 
     def mounted(self):
-        return os.path.isdir(os.path.join(self.mount_root, self.root_path.strip("/")))
+        return self.mount_error() is None
+
+    def mount_error(self):
+        """None when the drive root is readable, otherwise why not (for the plan and Status)."""
+        root = os.path.join(self.mount_root, self.root_path.strip("/"))
+        if not self.mount_root:
+            return "no mount point configured"
+        try:
+            if os.path.isdir(root):
+                os.listdir(root)
+                return None
+        except Exception as error:
+            return "%s: %s" % (root, error)
+        if os.path.isdir(self.mount_root):
+            return "%s exists but has no %s folder (is the drive empty or a different share?)" % (self.mount_root, self.root_path.strip("/"))
+        return "%s is not reachable" % root

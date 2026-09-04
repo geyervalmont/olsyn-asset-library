@@ -15,6 +15,7 @@ rows = [
     ["Linked as", (config.get("user") or {}).get("email") or "not linked"],
     ["API", config.get("api") or "-"],
     ["Drive", "%s at %s" % (config.get("drive") or "-", config.get("mount") or "-")],
+    ["Drive reachable", "yes" if opal_revit.runner.drive is not None and opal_revit.runner.drive.mounted() else (opal_revit.runner.drive.mount_error() if opal_revit.runner.drive is not None else "agent not started")],
     ["Agent running", "yes" if status.get("running") else "no"],
     ["Realtime connected", "yes" if status.get("connected") else "no"],
     ["Session", str(status.get("session_id") or "-")],

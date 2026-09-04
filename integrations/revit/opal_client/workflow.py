@@ -97,7 +97,7 @@ class Workflow(object):
         plan = ApplyPlan(material, variant, self.drive.slug)
 
         if not self.drive.mounted():
-            plan.problems.append("drive %s is not mounted at %s" % (self.drive.slug, self.drive.mount_root))
+            plan.problems.append("drive %s is not mounted: %s" % (self.drive.slug, self.drive.mount_error()))
             return plan
 
         paths = self.api.variant_paths(variant["code"], self.drive.slug)

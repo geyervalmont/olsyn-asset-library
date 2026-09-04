@@ -90,6 +90,7 @@ class WorkflowTest(unittest.TestCase):
         plan = Workflow(self.api, self.host, unmounted).plan(self.host.material("mat-1"), "CPT-TARKETT-ACADEMIX-ASHEN")
         self.assertFalse(plan.ready())
         self.assertIn("not mounted", plan.problems[0])
+        self.assertIn("not reachable", plan.problems[0])
 
     def test_apply_writes_textures_parameters_and_identity(self):
         workflow = Workflow(self.api, self.host, self.drive)
