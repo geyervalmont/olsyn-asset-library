@@ -127,6 +127,24 @@ test('the quick view opens on the colourway the card was showing', function () {
         ->assertSeeHtml($this->slate->code);
 });
 
+test('the quick view carries the maps the shared inspector needs', function () {
+    Livewire::actingAs($this->viewer)
+        ->test('pages::materials.index')
+        ->call('openQuick', $this->material->code)
+        ->assertSeeHtml('data-test="quick-stage"')
+        ->assertSeeHtml('materialViewer');
+
+    // A material without canonical maps shows the flat preview only.
+    $bare = Material::factory()->create(['category_id' => Category::query()->where('code', 'CPT')->sole(), 'supplier_id' => Supplier::factory()->create()]);
+    app(AddVariant::class)->handle($bare, ['colourway' => ['value' => 'Plain']]);
+
+    Livewire::actingAs($this->viewer)
+        ->test('pages::materials.index')
+        ->call('openQuick', $bare->code)
+        ->assertSeeHtml('data-test="material-modal"')
+        ->assertDontSeeHtml('data-test="quick-stage"');
+});
+
 test('a material out of reach never opens', function () {
     $secret = Material::factory()->create(['visibility' => Visibility::Restricted]);
 

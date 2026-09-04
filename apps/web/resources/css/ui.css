@@ -3731,3 +3731,83 @@ h1.ui-reveal.is-revealed em::after {
 .ui-revit__apply:disabled {
     opacity: 0.5;
 }
+
+/* ---------------------------------------------------------------------------
+   The shared material stage and the Revit connection pill
+   --------------------------------------------------------------------------- */
+
+.ui-stage__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+}
+
+.ui-viewer__stage {
+    min-height: 330px;
+}
+
+/* The 3D view sits over the flat preview and fades in once it has drawn. */
+.ui-swatch-card__stage {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: var(--ui-paper-deep);
+    opacity: 0;
+    transition: opacity var(--ui-medium) var(--ui-ease);
+}
+
+.ui-swatch-card__stage.is-ready {
+    opacity: 1;
+}
+
+.ui-revit-pill {
+    display: inline-flex;
+    gap: 7px;
+    align-items: center;
+    padding: 4px 10px;
+    color: var(--ui-muted);
+    font-family: var(--ui-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    text-transform: uppercase;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-button);
+    transition: color var(--ui-fast), border-color var(--ui-fast);
+}
+
+.ui-revit-pill:hover {
+    color: var(--ui-ink);
+    border-color: var(--ui-line-strong);
+}
+
+.ui-revit-pill[data-state='live'] {
+    color: var(--ui-ink);
+}
+
+.ui-revit-pill[data-state='live'] .ui-status-light {
+    background: var(--ui-pass);
+}
+
+.ui-revit-pill[data-state='stale'] .ui-status-light {
+    background: var(--ui-amber);
+    box-shadow: 0 0 0 1px rgba(240, 169, 82, 0.45);
+}
+
+.ui-revit-pill[data-state='off'] .ui-status-light {
+    background: var(--ui-faint);
+    box-shadow: none;
+}
+
+@media (max-width: 560px) {
+    /* The dot alone: the machine name is not worth the width. */
+    .ui-revit-pill__label {
+        display: none;
+    }
+
+    .ui-revit-pill {
+        padding: 6px;
+    }
+}

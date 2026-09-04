@@ -95,31 +95,7 @@ new class extends Component {
     #[Computed]
     public function viewerSets(): array
     {
-        $canonical = Target::canonical();
-        $sets = [];
-
-        foreach ($this->variants as $variant) {
-            $representation = $variant->representations
-                ->filter(fn ($representation) => $canonical !== null && $representation->target_id === $canonical->getKey() && $representation->review_state->value !== 'rejected')
-                ->sortBy([['review_state', 'asc'], ['quality.pixels', 'desc']])
-                ->first();
-
-            if ($representation === null) {
-                continue;
-            }
-
-            $set = ['key' => (string) $representation->getKey(), 'tile_mm' => (float) ($variant->effectiveTileWidthMm() ?? 1000), 'hex' => $variant->dominant_hex];
-
-            foreach ($representation->representationFiles as $representationFile) {
-                if ($representationFile->file->isImage()) {
-                    $set[$representationFile->role->slug] = $representationFile->file->url();
-                }
-            }
-
-            $sets[$variant->id] = $set;
-        }
-
-        return $sets;
+        return app(MaterialPreviews::class)->viewerSets($this->variants);
     }
 
     /**
@@ -448,11 +424,17 @@ new class extends Component {
         </div>
     </div>
 
-    <div class="ui-viewer" style="margin-bottom: 12px" x-data="materialViewer(@js(['sets' => $this->viewerSets, 'objectSizeMm' => 1000]))" x-effect="show(chosen?.id)" data-test="material-viewer">
+    <div
+        class="ui-viewer"
+        style="margin-bottom: 12px"
+        x-data="materialViewer(@js(['sets' => $this->viewerSets, 'objectSizeMm' => 1000]))"
+        x-effect="show(chosen?.id)"
+        data-test="material-viewer"
+    >
         <div class="ui-viewer__bar">
             <p>{{ __('Inspector') }} · {{ __('canonical maps under studio light') }} · <span x-text="status"></span></p>
             <div class="ui-segment" role="group" aria-label="{{ __('Shape') }}">
-                <button type="button" x-on:click="shape = 'sphere'" x-bind:class="shape === 'sphere' && 'is-active'">{{ __('Sphere') }}</button>
+                <button type="button" x-on:click="shape = 'ball'" x-bind:class="shape === 'ball' && 'is-active'">{{ __('Ball') }}</button>
                 <button type="button" x-on:click="shape = 'plane'" x-bind:class="shape === 'plane' && 'is-active'">{{ __('Plane') }}</button>
                 <button type="button" x-on:click="shape = 'cube'" x-bind:class="shape === 'cube' && 'is-active'">{{ __('Cube') }}</button>
             </div>
@@ -460,7 +442,7 @@ new class extends Component {
         @if ($this->viewerSets === [])
             <div class="ui-viewer__empty">{{ __('No canonical maps to inspect yet') }}</div>
         @else
-            <canvas x-ref="canvas"></canvas>
+            <div class="ui-viewer__stage" x-ref="stage" wire:ignore></div>
         @endif
     </div>
 

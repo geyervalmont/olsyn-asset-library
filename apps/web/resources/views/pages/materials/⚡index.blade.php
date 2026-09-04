@@ -62,7 +62,7 @@ new #[Title('Library')] class extends Component {
         $this->quick = $code;
         $this->quickVariantId = $variantId;
         $this->revitCommandId = null;
-        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->revitCommand);
+        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->quickViewerSets, $this->revitCommand);
     }
 
     public function closeQuick(): void
@@ -70,7 +70,7 @@ new #[Title('Library')] class extends Component {
         $this->quick = '';
         $this->quickVariantId = null;
         $this->revitCommandId = null;
-        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->revitCommand);
+        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->quickViewerSets, $this->revitCommand);
     }
 
     /** The material behind the quick view, or null when it is closed or out of reach. */
@@ -108,6 +108,22 @@ new #[Title('Library')] class extends Component {
         }
 
         return $card;
+    }
+
+    /**
+     * Canonical maps for the open material, for the shared inspector.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    #[Computed]
+    public function quickViewerSets(): array
+    {
+        $variants = $this->quickMaterial
+            ->variants()
+            ->with(['representations.target', 'representations.quality', 'representations.representationFiles.role', 'representations.representationFiles.file'])
+            ->get();
+
+        return app(MaterialPreviews::class)->viewerSets($variants);
     }
 
     /**
@@ -443,6 +459,7 @@ new #[Title('Library')] class extends Component {
             :sessions="$this->revitSessions"
             :command="$this->revitCommand"
             :blocked="$this->applyBlockedReason()"
+            :sets="$this->quickViewerSets"
         />
     @endif
 </section>

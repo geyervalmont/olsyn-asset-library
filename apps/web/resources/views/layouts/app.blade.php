@@ -105,6 +105,7 @@
                         <span>{{ $shellTenant?->name ?? 'OPAL' }}</span><i>/</i><strong>{{ $title ?? config('app.name') }}</strong>
                     </div>
                     <div class="ui-topbar__actions">
+                        <x-ui.revit-status />
                         @if ($shellUser?->isSuperAdmin())
                             <x-ui.badge tone="warning" dot data-test="super-admin-badge">{{ __('Super-admin') }}</x-ui.badge>
                         @endif

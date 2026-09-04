@@ -5,6 +5,8 @@ namespace App\Library\Previews;
 use App\Enums\ReviewState;
 use App\Models\File;
 use App\Models\Material;
+use App\Models\Representation;
+use App\Models\Target;
 use App\Models\Variant;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
@@ -166,6 +168,49 @@ class MaterialPreviews
         }
 
         return $result;
+    }
+
+    /**
+     * Canonical maps per variant for the inspector, keyed by variant id.
+     *
+     * Variants must arrive with representations, targets and files loaded.
+     *
+     * @param  Collection<int, Variant>  $variants
+     * @return array<int, array<string, mixed>>
+     */
+    public function viewerSets(Collection $variants): array
+    {
+        $canonical = Target::canonical();
+        $sets = [];
+
+        foreach ($variants as $variant) {
+            $representation = $variant->representations
+                ->filter(fn (Representation $representation): bool => $canonical !== null
+                    && $representation->target_id === $canonical->getKey()
+                    && $representation->review_state !== ReviewState::Rejected)
+                ->sortBy([['review_state', 'asc'], ['quality.pixels', 'desc']])
+                ->first();
+
+            if ($representation === null) {
+                continue;
+            }
+
+            $set = [
+                'key' => (string) $representation->getKey(),
+                'tile_mm' => (float) ($variant->effectiveTileWidthMm() ?? 1000),
+                'hex' => $variant->dominant_hex,
+            ];
+
+            foreach ($representation->representationFiles as $representationFile) {
+                if ($representationFile->file->isImage()) {
+                    $set[$representationFile->role->slug] = $representationFile->file->url();
+                }
+            }
+
+            $sets[(int) $variant->id] = $set;
+        }
+
+        return $sets;
     }
 
     /**

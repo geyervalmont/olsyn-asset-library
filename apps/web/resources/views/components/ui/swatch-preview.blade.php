@@ -22,6 +22,7 @@
         x-bind:src="current?.image ?? ''"
         x-bind:hidden="! current?.image"
     />
+    {{ $stage ?? '' }}
     @if ($tag)
         <span class="ui-swatch-card__tag">{{ $tag }}</span>
     @endif
