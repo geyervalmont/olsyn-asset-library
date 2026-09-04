@@ -156,3 +156,19 @@ class EndpointResolutionTest(unittest.TestCase):
         self.assertEqual(api.resolve_endpoint("http://asset-library.test/broadcasting/auth"), "https://asset-library.test/broadcasting/auth")
         self.assertEqual(api.resolve_endpoint("/broadcasting/auth"), "https://asset-library.test/broadcasting/auth")
         self.assertEqual(api.resolve_endpoint("https://other.example/auth"), "https://other.example/auth")
+
+
+class BatchSyncTest(unittest.TestCase):
+    def test_sync_resolves_everything_in_one_request(self):
+        import os, tempfile
+        from opal_client import Drive, UnixHost, Workflow
+        from tests.fakes import FakeApi
+        api = FakeApi()
+        project = os.path.join(tempfile.mkdtemp(), "p.json")
+        host = UnixHost(project)
+        for n in range(30):
+            host.add_material("m%d" % n, "Concrete %d" % n)
+        host.add_material("carpet", "Carpet - Academix Ashen")
+        report = Workflow(api, host, Drive("studio-share", tempfile.mkdtemp())).sync()
+        self.assertEqual(report.summary(), "1 matched, 30 unmatched")
+        self.assertEqual(getattr(api, "batch_resolves", 0), 1)

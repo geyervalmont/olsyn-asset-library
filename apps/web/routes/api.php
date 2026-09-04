@@ -35,6 +35,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('materials', [MaterialsController::class, 'index'])->name('api.materials.index');
     Route::get('materials/{code}', [MaterialsController::class, 'show'])->name('api.materials.show');
     Route::get('variants/resolve', [VariantsController::class, 'resolve'])->name('api.variants.resolve');
+    Route::post('variants/resolve', [VariantsController::class, 'resolveMany'])->name('api.variants.resolve-many');
     Route::get('variants/{code}', [VariantsController::class, 'show'])->name('api.variants.show');
     Route::get('variants/{code}/paths', [DrivesController::class, 'variantPaths'])->name('api.variants.paths');
     Route::post('variants/{code}/identities', [IdentitiesController::class, 'store'])->name('api.variants.identities.store');

@@ -21,7 +21,7 @@ from Autodesk.Revit import UI  # noqa: E402
 from pyrevit import HOST_APP, forms, revit, script  # noqa: E402
 
 from opal_client import Agent, CommandExecutor, Config, Drive, OpalApi, Workflow  # noqa: E402
-from opal_client.host import Host, HostMaterial  # noqa: E402
+from opal_client.host import Host, HostMaterial, SnapshotHost  # noqa: E402
 
 
 LOG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "OPAL", "agent.log")
@@ -419,6 +419,16 @@ class RevitAgentRunner(object):
                 command = self._queue.pop(0)
             if doc is None:
                 self.agent.handle(command, _FailingExecutor("no document is open in Revit"))
+                continue
+            if command.get("type") == "sync":
+                # Reading materials needs the Revit thread; resolving them is
+                # HTTP, which would freeze Revit for minutes. Snapshot, then
+                # finish on a worker.
+                snapshot = SnapshotHost("revit", doc.Title, RevitHost(doc, uidoc).materials())
+                workflow = Workflow(self.agent.api, snapshot, self.drive)
+                worker = threading.Thread(target=self.agent.handle, args=(command, CommandExecutor(workflow)))
+                worker.daemon = True
+                worker.start()
                 continue
             workflow = Workflow(self.agent.api, RevitHost(doc, uidoc), self.drive)
             self.agent.handle(command, CommandExecutor(workflow))

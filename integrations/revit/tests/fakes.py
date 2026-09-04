@@ -40,6 +40,10 @@ class FakeApi(OpalApi):
         self.auth_calls = []
         self.realtime_block = {"scheme": "http", "host": "127.0.0.1", "port": 6001, "key": "testkey", "auth_endpoint": "/broadcasting/auth"}
 
+    def _matches(self, reference):
+        registered = [i.get("external_id") for i in self.identities] + [i.get("external_name") for i in self.identities]
+        return "CPT-TARKETT-ACADEMIX-ASHEN" in reference.upper() or reference in registered or reference == "Carpet - Academix Ashen"
+
     def _fake(self, method, url, body):
         self.requests.append((method, url, body))
         path = url.split("https://opal.test", 1)[1] if url.startswith("https://opal.test") else url
@@ -48,10 +52,12 @@ class FakeApi(OpalApi):
             path, raw = path.split("?", 1)
             query = dict(part.split("=", 1) for part in raw.split("&"))
 
+        if path == "/api/v1/variants/resolve" and method == "POST":
+            self.batch_resolves = getattr(self, "batch_resolves", 0) + 1
+            return {"data": dict((reference, VARIANT if self._matches(reference) else None) for reference in body["references"])}
         if path == "/api/v1/variants/resolve":
             reference = unquote_plus(query["reference"])
-            registered = [i.get("external_id") for i in self.identities] + [i.get("external_name") for i in self.identities]
-            if "CPT-TARKETT-ACADEMIX-ASHEN" in reference.upper() or reference in registered or reference == "Carpet - Academix Ashen":
+            if self._matches(reference):
                 return {"data": VARIANT}
             raise ApiError(404, "No variant matches that reference.")
         if path == "/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN":

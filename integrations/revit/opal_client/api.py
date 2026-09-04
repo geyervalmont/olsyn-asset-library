@@ -69,6 +69,25 @@ class OpalApi(object):
                 return None
             raise
 
+    def resolve_many(self, platform, references):
+        """reference → variant dict or None, in one request (chunks of 200)."""
+        resolved = {}
+        unique = []
+        for reference in references:
+            if reference and reference not in unique:
+                unique.append(reference)
+        for start in range(0, len(unique), 200):
+            chunk = unique[start:start + 200]
+            try:
+                data = self._post("/api/v1/variants/resolve", {"platform": platform, "references": chunk})["data"]
+            except ApiError as error:
+                if error.status in (404, 405):  # older control plane: one at a time
+                    data = dict((reference, self.resolve(platform, reference)) for reference in chunk)
+                else:
+                    raise
+            resolved.update(data or {})
+        return resolved
+
     def drives(self):
         return self._get("/api/v1/drives")["data"]
 

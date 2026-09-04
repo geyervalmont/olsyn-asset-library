@@ -80,10 +80,20 @@ class Workflow(object):
                 return variant, reference
         return None, None
 
-    def sync(self):
+    def sync(self, materials=None):
+        """One batched lookup for every material's references, then first match wins."""
         report = SyncReport()
-        for material in self.host.materials():
-            variant, reference = self.resolve_material(material)
+        materials = list(self.host.materials() if materials is None else materials)
+        references = []
+        for material in materials:
+            references.extend(material.references())
+        resolved = self.api.resolve_many(self.host.platform, references) if references else {}
+        for material in materials:
+            variant, reference = None, None
+            for candidate in material.references():
+                if resolved.get(candidate):
+                    variant, reference = resolved[candidate], candidate
+                    break
             if variant is None:
                 report.unmatched.append(material)
             else:

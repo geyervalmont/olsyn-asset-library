@@ -130,3 +130,30 @@ class UnixHost(Host):
             if record["id"] == host_id:
                 return record
         raise KeyError(host_id)
+
+
+class SnapshotHost(Host):
+    """
+    Plain data captured on the host's own thread (Revit's), so lookups can run
+    elsewhere. Read-only: apply must go through the real host.
+    """
+
+    def __init__(self, platform, document_name, materials):
+        self.platform = platform
+        self._document_name = document_name
+        self._materials = list(materials)
+
+    def document_name(self):
+        return self._document_name
+
+    def materials(self):
+        return list(self._materials)
+
+    def selected_material(self):
+        return None
+
+    def apply_textures(self, material, textures, scale_mm):
+        raise RuntimeError("a snapshot cannot apply textures")
+
+    def write_parameters(self, material, parameters):
+        raise RuntimeError("a snapshot cannot write parameters")

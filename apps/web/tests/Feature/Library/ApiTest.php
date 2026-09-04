@@ -132,3 +132,14 @@ test('clients can list drives, find a variant on a drive, and write platform ide
     Sanctum::actingAs(User::factory()->create());
     $this->postJson('/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/identities', ['platform' => 'revit', 'external_id' => 'x'])->assertForbidden();
 });
+
+test('clients can resolve many references in one request', function () {
+    Sanctum::actingAs($this->viewer);
+
+    $this->postJson('/api/v1/variants/resolve', ['platform' => 'revit', 'references' => ['Carpet [CPT-TARKETT-ACADEMIX-ASHEN]', 'nothing like it', 'Carpet [CPT-TARKETT-ACADEMIX-ASHEN]']])
+        ->assertOk()
+        ->assertJsonPath('data.Carpet [CPT-TARKETT-ACADEMIX-ASHEN].code', 'CPT-TARKETT-ACADEMIX-ASHEN')
+        ->assertJsonPath('data.nothing like it', null);
+
+    $this->postJson('/api/v1/variants/resolve', ['platform' => 'revit', 'references' => []])->assertUnprocessable();
+});
