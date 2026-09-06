@@ -16,7 +16,9 @@ legacy prototype, current state, and delivery sequence. The
 ```text
 apps/web/                       Laravel 13 + Livewire control plane
 services/prismfs/               Rust workspace for the filesystem data plane
-infrastructure/local/           Local RustFS object storage
+integrations/revit/             pyRevit extension, its Revit-independent client, Unix harness
+infrastructure/local/           Local RustFS object storage and the VM bridge
+deploy/                         Kubernetes manifests and systemd units for PrismFS
 docs/architecture/              System design
 docs/adr/                       Architectural decisions
 docs/project-overview.md        Canonical product and project narrative
@@ -94,3 +96,20 @@ clean monorepo, `make prism-publish` pushes `services/prismfs` to the public
 
 The local RustFS credentials and bucket are development-only defaults in the
 example environment. Production credentials must never reuse them.
+
+## Reading order for someone new
+
+1. [`docs/project-overview.md`](docs/project-overview.md) for what this is and why.
+2. [`docs/architecture/material-domain.md`](docs/architecture/material-domain.md)
+   for the domain: codes, variants, representations, versions, provenance,
+   visibility and drives, the workers, the JSON API, the inspector, the quality
+   view, and the legacy import.
+3. [`integrations/revit/README.md`](integrations/revit/README.md) for how a
+   material reaches Revit, and how to exercise the whole loop on Linux without
+   Revit installed.
+4. [`services/prismfs/README.md`](services/prismfs/README.md) for the data
+   plane, the SMB drive server and the container images.
+
+Not in the repository: the legacy corpus (`apps/web/storage/app/legacy/`, kept
+out because it is 75 GB of supplier files), real `.env` files, and drive
+tokens. Every one of those has a committed `.example` alongside it.
