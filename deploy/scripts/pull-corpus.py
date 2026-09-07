@@ -13,7 +13,7 @@ stream straight to S3 without ever touching local disk.
 
     # once
     python3 -m venv ~/.local/share/opal-corpus/venv
-    ~/.local/share/opal-corpus/venv/bin/pip install boto3 requests
+    ~/.local/share/opal-corpus/venv/bin/pip install boto3 requests tqdm
 
     # every run
     ~/.local/share/opal-corpus/venv/bin/python deploy/scripts/pull-corpus.py \
@@ -41,11 +41,12 @@ try:
     import boto3
     import requests
     from botocore.config import Config
+    from tqdm import tqdm
 except ImportError:
     sys.exit(
-        "boto3 and requests are required. Create the environment once:\n"
+        "boto3, requests and tqdm are required. Create the environment once:\n"
         "  python3 -m venv ~/.local/share/opal-corpus/venv\n"
-        "  ~/.local/share/opal-corpus/venv/bin/pip install boto3 requests\n"
+        "  ~/.local/share/opal-corpus/venv/bin/pip install boto3 requests tqdm\n"
         "then run this with ~/.local/share/opal-corpus/venv/bin/python"
     )
 
@@ -186,7 +187,11 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cookies", required=True, help="file holding the Cookie header or a Copy-as-cURL paste")
     parser.add_argument("--site", default="https://valmontinteriors-my.sharepoint.com/personal/mcrossley_geyervalmont_com")
-    parser.add_argument("--root", default="/personal/mcrossley_geyervalmont_com/Documents/Material Library")
+    # The server-relative path repeats "Documents": the first is the document
+    # library, the second a folder inside it. It is exactly the `id` parameter
+    # in the OneDrive web URL, and the shorter form silently resolves to an
+    # empty folder rather than a 404.
+    parser.add_argument("--root", default="/personal/mcrossley_geyervalmont_com/Documents/Documents/Material Library")
     parser.add_argument("--folder", action="append", help="only this top-level folder; repeatable")
     parser.add_argument("--bucket", default="olsyn-prod-material-corpus")
     parser.add_argument("--prefix", default="corpus")
@@ -214,16 +219,34 @@ def main() -> int:
 
     # Which top-level folders to work through.
     _, top_level = sharepoint.children(root)
+
+    # SharePoint answers a path that does not exist with an empty collection
+    # rather than a 404, so a wrong --root looks like an empty library. Say so
+    # plainly instead of reporting that nothing matched.
+    if not top_level:
+        print(f"{root}\n  contains no folders. That path probably does not exist —")
+        print("  SharePoint returns an empty result for a missing folder rather than an error.")
+        print("  Check it against the `id=` parameter in the folder's web URL.")
+        return 2
+
+    available = sorted((f.rsplit("/", 1)[-1] for f in top_level), key=str.lower)
     wanted = sorted(top_level, key=str.lower)
+
     if args.folder:
         selected = {name.lower() for name in args.folder}
         wanted = [f for f in wanted if f.rsplit("/", 1)[-1].lower() in selected]
         if not wanted:
-            print(f"no top-level folder matched {args.folder}")
+            print(f"no top-level folder matched {args.folder}. Available:")
+            for name in available:
+                print(f"  {name}")
             return 2
 
     transferred = failed = skipped = 0
     moved_bytes = 0
+    # tqdm owns stderr while a bar is live, so anything printed alongside it has
+    # to go through tqdm.write or it will tear the bar apart.
+    quiet = not sys.stderr.isatty()
+    say = print if quiet else tqdm.write
 
     for top in wanted:
         name = top.rsplit("/", 1)[-1]
@@ -232,67 +255,81 @@ def main() -> int:
         if done_walk and not args.rediscover:
             files = [{"path": p, "size": s} for p, s in ledger.execute(
                 "SELECT path, size FROM discovered WHERE root = ?", (name,))]
-            print(f"{name}: {len(files):,} files (from ledger)")
         else:
-            print(f"{name}: walking...", flush=True)
-            files, pending = [], [top]
-            while pending:
-                here = pending.pop()
+            say(f"{name}: walking...")
+            files, folders_left = [], [top]
+            while folders_left:
+                here = folders_left.pop()
                 found, subfolders = sharepoint.children(here)
                 files.extend(found)
-                pending.extend(subfolders)
+                folders_left.extend(subfolders)
             ledger.executemany(
                 "INSERT OR REPLACE INTO discovered (path, size, root) VALUES (?, ?, ?)",
                 [(f["path"], f["size"], name) for f in files])
             ledger.execute("INSERT OR REPLACE INTO walked (root, files, finished_at) VALUES (?, ?, ?)",
                            (name, len(files), now()))
             ledger.commit()
-            print(f"{name}: {len(files):,} files, {human(sum(f['size'] for f in files))}")
 
+        # The ledger decides what is left, so the bar measures the work actually
+        # remaining rather than restarting at zero on every resume.
+        banked = {path: size for path, size in ledger.execute(
+            "SELECT path, size FROM transferred WHERE status = 'done'")}
+        pending = []
         for entry in sorted(files, key=lambda f: f["path"]):
-            if args.limit is not None and transferred >= args.limit:
-                print(f"\nstopping at --limit {args.limit}")
-                ledger.commit()
-                return 0
-
             relative = entry["path"][len(root) + 1:]
-            record = ledger.execute(
-                "SELECT size, status FROM transferred WHERE path = ?", (relative,)).fetchone()
-            if record and record[1] == "done" and record[0] == entry["size"]:
+            if banked.get(relative) == entry["size"]:
                 skipped += 1
-                continue
+            else:
+                pending.append((relative, entry))
 
-            key = f"{args.prefix.rstrip('/')}/{relative}"
-            try:
-                with sharepoint.open_file(entry["path"]) as body:
-                    s3.upload_fileobj(body.raw, args.bucket, key)
-            except SessionExpired as expired:
-                ledger.commit()
-                print(f"\nThe cookie expired mid-run ({expired}).")
-                print(f"Copy a fresh one and rerun; {transferred:,} files are already banked.")
-                return 75
-            except Exception as failure:  # noqa: BLE001 - one bad file must not end the run
+        if args.limit is not None:
+            pending = pending[: max(0, args.limit - transferred)]
+
+        if not pending:
+            say(f"{name}: complete ({len(files):,} files already staged)")
+            continue
+
+        say(f"{name}: {len(pending):,} of {len(files):,} files to move")
+
+        with tqdm(total=sum(e["size"] for _, e in pending), unit="B", unit_scale=True,
+                  unit_divisor=1024, desc=f"{name[:22]:22}", dynamic_ncols=True,
+                  smoothing=0.05, disable=quiet, leave=True) as bar:
+            for relative, entry in pending:
+                bar.set_postfix_str(relative.rsplit("/", 1)[-1][:38], refresh=False)
+                key = f"{args.prefix.rstrip('/')}/{relative}"
+                try:
+                    with sharepoint.open_file(entry["path"]) as body:
+                        # Callback fires per chunk as the upload drains the
+                        # download, so the bar follows real bytes on the wire.
+                        s3.upload_fileobj(body.raw, args.bucket, key, Callback=bar.update)
+                except SessionExpired as expired:
+                    ledger.commit()
+                    bar.close()
+                    print(f"\nThe cookie expired mid-run ({expired}).")
+                    print(f"Copy a fresh one and rerun; {transferred:,} files are already banked.")
+                    return 75
+                except Exception as failure:  # noqa: BLE001 - one bad file must not end the run
+                    ledger.execute(
+                        "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
+                        " VALUES (?, ?, 'failed', ?, ?)", (relative, entry["size"], str(failure)[:500], now()))
+                    ledger.commit()
+                    failed += 1
+                    say(f"  FAILED {relative}: {str(failure)[:110]}")
+                    continue
+
                 ledger.execute(
                     "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
-                    " VALUES (?, ?, 'failed', ?, ?)", (relative, entry["size"], str(failure)[:500], now()))
-                ledger.commit()
-                failed += 1
-                print(f"  FAILED {relative}: {str(failure)[:120]}")
-                continue
-
-            ledger.execute(
-                "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
-                " VALUES (?, ?, 'done', NULL, ?)", (relative, entry["size"], now()))
-            transferred += 1
-            moved_bytes += entry["size"]
-
-            if transferred % 100 == 0:
-                ledger.commit()
-                print(f"    {transferred:,} moved ({human(moved_bytes)}), "
-                      f"{skipped:,} already there, {failed:,} failed", flush=True)
+                    " VALUES (?, ?, 'done', NULL, ?)", (relative, entry["size"], now()))
+                transferred += 1
+                moved_bytes += entry["size"]
+                if transferred % 50 == 0:
+                    ledger.commit()
 
         ledger.commit()
-        print(f"{name}: done\n", flush=True)
+
+        if args.limit is not None and transferred >= args.limit:
+            say(f"stopping at --limit {args.limit}")
+            break
 
     print(f"transferred {transferred:,} files ({human(moved_bytes)})")
     print(f"already present {skipped:,}")
