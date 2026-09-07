@@ -1,0 +1,141 @@
+# Pull the supplier corpus from OneDrive into the staging bucket.
+#
+# 40,330 files, 173 GB, sourced from the "Material Library" folder in
+# mcrossley's OneDrive. It runs here rather than on a laptop because the bytes
+# would otherwise cross a domestic connection twice — down from Microsoft and
+# back up to AWS. There is no server-to-server transfer between the two: rclone
+# always proxies the bytes, so the only thing that matters is whose pipe it
+# proxies them through. In-cluster that is a datacentre link into a bucket in
+# the same region, and ingress to S3 is free.
+#
+# Destination layout matters. The legacy database stores paths relative to the
+# "Material Library" folder itself:
+#
+#   asset_file.relative_path       Acoustic Panelling/Autex/.../file.png
+#   absolute_path_snapshot         C:\...\OneDrive - Valmont\Documents\Material Library\<that>
+#
+# and the ingest job resolves them under its --prefix. So the *contents* of the
+# folder go directly under corpus/, with no extra directory level. Getting this
+# wrong makes every one of the 40,330 lookups miss.
+#
+#   kubectl -n opal apply -f deploy/k8s/jobs/fetch-corpus.yaml
+#   kubectl -n opal logs -f job/opal-fetch-corpus
+#
+# Requires the onedrive-rclone secret; see deploy/README.md for how to mint it.
+# Resumable: rclone compares the destination first and copies only what is
+# missing, so a killed or throttled run can simply be reapplied.
+#
+# `copy`, never `sync`. copy only adds, which is why the node role is granted no
+# delete on this bucket at all: a mistyped source path can waste a transfer but
+# cannot remove anything already staged.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opal-fetch-corpus
+  namespace: opal
+  labels:
+    app.kubernetes.io/name: opal
+    app.kubernetes.io/component: corpus-fetch
+spec:
+  backoffLimit: 6
+  # Two days, so the transfer log survives long enough to read after a weekend.
+  ttlSecondsAfterFinished: 172800
+  # A full first pass is hours, not minutes. This is a ceiling against a job
+  # wedged on throttling, not an estimate.
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: opal
+        app.kubernetes.io/component: corpus-fetch
+    spec:
+      restartPolicy: OnFailure
+      # The bucket credentials come from this node's instance profile, and the
+      # node is not shared with anything latency-sensitive.
+      nodeSelector:
+        node-role: opal
+
+      # rclone rewrites its config whenever it refreshes the OAuth token, which
+      # happens roughly hourly and cannot be done against a read-only secret
+      # mount. The config is copied to a writable volume so refreshes persist
+      # for the life of the pod.
+      #
+      # A pod restart falls back to the token as originally minted. Microsoft
+      # rotates refresh tokens, so that may no longer be accepted — if the job
+      # restarts and fails to authenticate, mint the secret again and reapply.
+      # Nothing is lost: the copy resumes where it stopped.
+      initContainers:
+        - name: stage-config
+          image: rclone/rclone:1.75
+          command: [sh, -c, 'cp /secret/rclone.conf /config/rclone.conf && chmod 600 /config/rclone.conf']
+          volumeMounts:
+            - name: rclone-secret
+              mountPath: /secret
+              readOnly: true
+            - name: rclone-config
+              mountPath: /config
+
+      containers:
+        - name: rclone
+          image: rclone/rclone:1.75
+          args:
+            - copy
+            - onedrive:Documents/Material Library
+            - s3:olsyn-prod-material-corpus/corpus
+            # Microsoft throttles Graph aggressively and answers a burst with
+            # 429s that cost more time than they save. Modest parallelism with
+            # a request ceiling finishes sooner than an aggressive setting.
+            - --transfers=8
+            - --checkers=16
+            - --tpslimit=10
+            - --tpslimit-burst=20
+            - --onedrive-chunk-size=40M
+            - --s3-chunk-size=16M
+            - --s3-upload-concurrency=4
+            - --retries=3
+            - --low-level-retries=20
+            # OneDrive's own sync droppings. They are not in the database and
+            # would only be dead weight in the bucket.
+            - --exclude=desktop.ini
+            - --exclude=Thumbs.db
+            - --exclude=.DS_Store
+            - --exclude=~$*
+            - --stats=2m
+            - --stats-one-line
+            - --log-level=INFO
+          env:
+            - name: RCLONE_CONFIG
+              value: /config/rclone.conf
+            # The S3 side is defined here rather than in the secret: none of it
+            # is sensitive, and the credentials come from the instance profile.
+            - name: RCLONE_CONFIG_S3_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_S3_PROVIDER
+              value: AWS
+            - name: RCLONE_CONFIG_S3_ENV_AUTH
+              value: "true"
+            - name: RCLONE_CONFIG_S3_REGION
+              value: ap-southeast-2
+            # The role can write objects but is not granted bucket-level
+            # creation, so skip the existence probe rclone would otherwise run.
+            - name: RCLONE_CONFIG_S3_NO_CHECK_BUCKET
+              value: "true"
+          volumeMounts:
+            - name: rclone-config
+              mountPath: /config
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              # Capped below the node so a long transfer cannot starve the
+              # application sharing it.
+              cpu: 1500m
+              memory: 2Gi
+
+      volumes:
+        - name: rclone-secret
+          secret:
+            secretName: onedrive-rclone
+        - name: rclone-config
+          emptyDir: {}

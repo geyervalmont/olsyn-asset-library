@@ -125,14 +125,69 @@ The legacy corpus is far larger than any laptop, so it is staged in
 `olsyn-prod-material-corpus` and read from there. Both the files and the source
 database are fetched from the bucket, so nothing has to sit on local disk.
 
-1. **Stage it**, from a machine that has the files and the bandwidth. This is
-   the platform's rclone pattern, tuned the same way as the nucleus backup job:
+The source is the `Material Library` folder in mcrossley's OneDrive: 40,330
+files, 173 GB. The legacy database (`material_assets.sqlite`) is already in the
+bucket.
+
+### Authorising OneDrive
+
+There is no server-to-server transfer between Microsoft and S3 — rclone always
+proxies the bytes — so the point of running it in the cluster is whose
+connection it proxies them through, not avoiding the copy. What cannot be moved
+into the cluster is the OAuth consent, which needs a browser signed in as
+someone who can read that folder. Do this once, on your own machine:
+
+```sh
+rclone config
+# n) new remote
+# name> onedrive                        <- must be exactly this; the job refers to it
+# Storage> onedrive
+# For "config type", choose the SharePoint site URL option and paste:
+#   https://valmontinteriors-my.sharepoint.com/personal/mcrossley_geyervalmont_com
+# Accept the browser prompt as yourself, then pick the "Documents" drive.
+```
+
+Confirm it resolves to the right folder before going near the cluster — the
+first level should be the category folders (`Fabric`, `Carpet`, `Ceramic`, …):
+
+```sh
+rclone lsd "onedrive:Documents/Material Library"
+```
+
+If consent is refused, the tenant blocks rclone's default application. That
+needs an Entra app registration with delegated `Files.Read.All` and
+`offline_access`, whose client ID and secret `rclone config` will accept.
+
+Then hand the token to the cluster. Keep it out of your shell history and out
+of the repository — the config holds a live refresh token:
+
+```sh
+umask 077
+rclone config show onedrive > /tmp/onedrive.conf
+kubectl -n opal create secret generic onedrive-rclone \
+  --from-file=rclone.conf=/tmp/onedrive.conf \
+  --dry-run=client -o yaml | kubectl apply -f -
+shred -u /tmp/onedrive.conf
+```
+
+### Staging it
+
+1. **Fetch the files into the bucket.** This runs on the opal node, writes with
+   the node's instance profile, and never touches a local disk:
 
    ```sh
-   rclone copy onedrive:"Material Library" s3-olsyn:olsyn-prod-material-corpus/corpus \
-     --transfers=8 --checkers=16 --s3-chunk-size=16M --s3-upload-concurrency=4 --progress
-   rclone copy ./material_assets.sqlite s3-olsyn:olsyn-prod-material-corpus/
+   kubectl -n opal apply -f deploy/k8s/jobs/fetch-corpus.yaml
+   kubectl -n opal logs -f job/opal-fetch-corpus
    ```
+
+   Expect hours rather than minutes, most of it spent being throttled by
+   Microsoft rather than moving bytes. It compares the destination first, so a
+   killed, throttled or restarted run can simply be reapplied and will copy only
+   what is still missing.
+
+   The contents of `Material Library` land directly under `corpus/`, with no
+   extra directory level, because that is what the paths in the database are
+   relative to.
 
 2. **Run the ingest**:
 

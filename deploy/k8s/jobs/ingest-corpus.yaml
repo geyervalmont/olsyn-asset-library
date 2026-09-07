@@ -11,12 +11,14 @@
 # it stopped, retrying only what failed. That is also why backoffLimit is not
 # zero, unlike the migration job.
 #
-# Before running, the corpus must be in the staging bucket. From a machine with
-# the files and the bandwidth, following the platform's rclone pattern:
+# Before running, the corpus must be in the staging bucket. That is what
+# fetch-corpus.yaml does — it pulls the files straight from OneDrive into the
+# bucket without going through anyone's laptop:
 #
-#   rclone copy onedrive:"Material Library" s3-olsyn:olsyn-prod-material-corpus/corpus \
-#     --transfers=8 --checkers=16 --s3-chunk-size=16M --s3-upload-concurrency=4 --progress
-#   rclone copy ./material_assets.sqlite s3-olsyn:olsyn-prod-material-corpus/
+#   kubectl -n opal apply -f deploy/k8s/jobs/fetch-corpus.yaml
+#
+# The legacy database is already there (material_assets.sqlite, uploaded
+# 2026-09-07). Replace it with `aws s3 cp` if a newer export supersedes it.
 apiVersion: batch/v1
 kind: Job
 metadata:
