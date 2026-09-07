@@ -24,6 +24,9 @@ new #[Title('Quality')] class extends Component {
     #[Url]
     public string $sort = 'worst';
 
+    #[Url]
+    public string $band = '';
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->can('materials.view'), 403);
@@ -41,6 +44,13 @@ new #[Title('Quality')] class extends Component {
     public function clearGaps(): void
     {
         $this->gaps = [];
+        $this->band = '';
+        $this->resetPage();
+    }
+
+    public function setBand(string $band): void
+    {
+        $this->band = $this->band === $band ? '' : $band;
         $this->resetPage();
     }
 
@@ -66,7 +76,25 @@ new #[Title('Quality')] class extends Component {
     #[Computed]
     public function materials(): LengthAwarePaginator
     {
-        return app(LibraryQuality::class)->materials(auth()->user(), $this->gaps, $this->search, $this->sort);
+        return app(LibraryQuality::class)->materials(auth()->user(), $this->gaps, $this->search, $this->sort, 25, $this->band);
+    }
+
+    /**
+     * @return array{with_canonical: int, roles: array<string, int>}
+     */
+    #[Computed]
+    public function coverage(): array
+    {
+        return app(LibraryQuality::class)->coverage(auth()->user());
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    #[Computed]
+    public function distribution(): array
+    {
+        return app(LibraryQuality::class)->distribution(auth()->user());
     }
 
     /** Queue a preview render for every variant of a material that lacks one. */
@@ -89,6 +117,34 @@ new #[Title('Quality')] class extends Component {
         $queued === 0
             ? Flux::toast(variant: 'warning', text: __('Nothing to render: approve a canonical set with a base colour first.'))
             : Flux::toast(variant: 'success', text: trans_choice('Queued :count preview render|Queued :count preview renders', $queued, ['count' => $queued]));
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function roleLabels(): array
+    {
+        return [
+            'base_color' => __('Base colour'),
+            'normal' => __('Normal'),
+            'roughness' => __('Roughness'),
+            'ao' => __('Ambient occlusion'),
+            'metallic' => __('Metallic'),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function bandLabels(): array
+    {
+        return [
+            'none' => __('No maps'),
+            'under-1k' => __('Under 1k'),
+            '1k' => __('1k'),
+            '2k' => __('2k'),
+            '4k' => __('4k and over'),
+        ];
     }
 
     /**
@@ -118,6 +174,44 @@ new #[Title('Quality')] class extends Component {
         </div>
     </div>
 
+    <div class="ui-grid-2" style="margin-bottom: 16px">
+        <x-ui.panel class="ui-coverage" data-test="pbr-coverage">
+            <h2>{{ __('PBR coverage') }}</h2>
+            <p>{{ __('Of the :count materials with a canonical set, how many carry each map.', ['count' => number_format($this->coverage['with_canonical'])]) }}</p>
+            @foreach ($this->roleLabels() as $role => $label)
+                @php
+                    $held = $this->coverage['roles'][$role] ?? 0;
+                    $share = $this->coverage['with_canonical'] > 0 ? round($held / $this->coverage['with_canonical'] * 100) : 0;
+                @endphp
+                <div class="ui-coverage__row" data-test="coverage-{{ $role }}">
+                    <span>{{ $label }}</span>
+                    <span class="ui-coverage__bar" aria-hidden="true"><i style="width: {{ $share }}%"></i></span>
+                    <strong>{{ number_format($held) }} <small>{{ $share }}%</small></strong>
+                </div>
+            @endforeach
+        </x-ui.panel>
+
+        <x-ui.panel class="ui-coverage" data-test="resolution-distribution">
+            <h2>{{ __('Canonical resolution') }}</h2>
+            <p>{{ __('The largest canonical set each material holds. Pick a band to see them.') }}</p>
+            @php $peak = max(1, max($this->distribution)); @endphp
+            @foreach ($this->bandLabels() as $key => $label)
+                @php $count = $this->distribution[$key] ?? 0; @endphp
+                <button
+                    type="button"
+                    class="ui-coverage__row ui-coverage__row--action"
+                    wire:click="setBand('{{ $key }}')"
+                    @class(['is-active' => $band === $key])
+                    data-test="band-{{ $key }}"
+                >
+                    <span>{{ $label }}</span>
+                    <span class="ui-coverage__bar" aria-hidden="true"><i style="width: {{ round($count / $peak * 100) }}%"></i></span>
+                    <strong>{{ number_format($count) }}</strong>
+                </button>
+            @endforeach
+        </x-ui.panel>
+    </div>
+
     <div class="ui-gaps" data-test="gap-tiles">
         @foreach ($this->labels() as $gap => $label)
             <button
@@ -142,8 +236,8 @@ new #[Title('Quality')] class extends Component {
             <button type="button" wire:click="setSort('worst')" @class(['is-active' => $sort === 'worst'])>{{ __('Worst first') }}</button>
             <button type="button" wire:click="setSort('name')" @class(['is-active' => $sort === 'name'])>{{ __('By name') }}</button>
         </div>
-        @if ($gaps !== [])
-            <x-ui.button wire:click="clearGaps" variant="quiet" size="sm" data-test="clear-gaps">{{ trans_choice('Clear :count filter|Clear :count filters', count($gaps), ['count' => count($gaps)]) }}</x-ui.button>
+        @if ($gaps !== [] || $band !== '')
+            <x-ui.button wire:click="clearGaps" variant="quiet" size="sm" data-test="clear-gaps">{{ __('Clear filters') }}</x-ui.button>
         @endif
     </div>
 
@@ -181,6 +275,13 @@ new #[Title('Quality')] class extends Component {
                                         <div>
                                             <strong>{{ $material->name }}</strong>
                                             <small>{{ $material->code }}</small>
+                                            @if ($material->getAttribute('reason') === 'no-files')
+                                                <small class="ui-reason">{{ $material->legacy_files_expected
+                                                    ? __('No files staged · :count in the legacy library', ['count' => number_format($material->legacy_files_expected)])
+                                                    : __('No files') }}</small>
+                                            @elseif ($material->getAttribute('reason') === 'non-canonical')
+                                                <small class="ui-reason">{{ __('Files, none canonical') }}</small>
+                                            @endif
                                         </div>
                                     </a>
                                 </td>

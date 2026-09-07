@@ -3860,3 +3860,91 @@ h1.ui-reveal.is-revealed em::after {
 .ui-gap.is-active span {
     color: var(--ui-periwinkle-deep);
 }
+
+/* Coverage and resolution: a label, a bar, a number. */
+
+.ui-coverage {
+    padding: 16px 18px;
+}
+
+.ui-coverage h2 {
+    margin: 0;
+    color: var(--ui-ink);
+    font-family: var(--ui-font-display);
+    font-size: 18px;
+    font-weight: 350;
+}
+
+.ui-coverage > p {
+    margin: 4px 0 14px;
+    color: var(--ui-muted);
+    font-size: 12px;
+}
+
+.ui-coverage__row {
+    display: grid;
+    grid-template-columns: minmax(96px, 132px) 1fr auto;
+    gap: 12px;
+    align-items: center;
+    width: 100%;
+    padding: 5px 0;
+    color: var(--ui-slate);
+    font-size: 12px;
+    text-align: left;
+    background: none;
+    border: 0;
+}
+
+.ui-coverage__row--action {
+    cursor: pointer;
+    border-radius: var(--ui-radius-button);
+    transition: color var(--ui-fast);
+}
+
+.ui-coverage__row--action:hover {
+    color: var(--ui-ink);
+}
+
+.ui-coverage__row--action.is-active {
+    color: var(--ui-periwinkle-deep);
+}
+
+.ui-coverage__bar {
+    display: block;
+    height: 6px;
+    overflow: hidden;
+    background: rgba(74, 77, 92, 0.09);
+    border-radius: 3px;
+}
+
+.ui-coverage__bar i {
+    display: block;
+    height: 100%;
+    background: var(--ui-periwinkle);
+    border-radius: 3px;
+    transition: width var(--ui-medium) var(--ui-ease);
+}
+
+.ui-coverage__row--action.is-active .ui-coverage__bar i {
+    background: var(--ui-periwinkle-deep);
+}
+
+.ui-coverage__row strong {
+    color: var(--ui-ink);
+    font-family: var(--ui-font-mono);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.ui-coverage__row strong small {
+    color: var(--ui-muted);
+    font-size: 10px;
+}
+
+.ui-reason {
+    display: block;
+    color: var(--ui-amber-ink, var(--ui-muted));
+    font-family: var(--ui-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+}

@@ -33,6 +33,7 @@ use LogicException;
  * @property int $category_id
  * @property int|null $supplier_id
  * @property int|null $source_id
+ * @property int|null $legacy_files_expected
  * @property string|null $collection
  * @property string|null $supplier_product_code
  * @property string|null $description
@@ -60,7 +61,7 @@ use LogicException;
     'name', 'slug', 'category_id', 'supplier_id', 'source_id', 'collection', 'supplier_product_code',
     'description', 'material_type', 'form', 'tile_width_mm', 'tile_height_mm', 'thickness_mm',
     'repeat_type', 'install_pattern', 'sqm_cost', 'currency', 'lead_time', 'specifications', 'status', 'visibility',
-    'contributed_by_tenant_id', 'contributed_by_user_id',
+    'contributed_by_tenant_id', 'contributed_by_user_id', 'legacy_files_expected',
 ])]
 class Material extends Model
 {

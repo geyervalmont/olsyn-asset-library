@@ -361,6 +361,18 @@ signals in one grouped query (best canonical size, canonical map roles, and
 the targets that have files) and turns them into gaps; the page shows a count
 per gap, and each count filters the table to the queue behind it.
 
+Alongside the gap counts the page shows PBR coverage (of the materials with a
+canonical set, how many carry base colour, normal, roughness, ambient
+occlusion and metallic) and the distribution of canonical resolutions, each
+band clickable as a filter.
+
+Where a material has nothing to show, the row says why. `no-files` means
+nothing has been staged, and the legacy import records how many files that
+material has in the legacy library (`materials.legacy_files_expected`), so a
+row reads "No files staged · 452 in the legacy library" rather than leaving
+the reader to guess. `non-canonical` means its only files sit on other
+targets, so neither a preview nor a Revit set can be derived from them.
+
 The gaps are also the work list for a worker: preview renders can be queued
 from the page today, and AI upscaling or map generation would slot in the
 same way.

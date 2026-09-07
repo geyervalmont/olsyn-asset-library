@@ -118,3 +118,48 @@ test('a viewer cannot queue work from the quality page', function () {
         ->call('renderPreviews', $material->id)
         ->assertForbidden();
 });
+
+test('coverage counts each map across materials that have a canonical set', function () {
+    ($this->material)('Full', ['base_color', 'normal', 'roughness', 'ao'], '4k');
+    ($this->material)('Flat', ['base_color'], '4k');
+    ($this->material)('Bare');
+
+    $coverage = app(LibraryQuality::class)->coverage($this->editor);
+
+    expect($coverage['with_canonical'])->toBe(2)
+        ->and($coverage['roles']['base_color'])->toBe(2)
+        ->and($coverage['roles']['normal'])->toBe(1)
+        ->and($coverage['roles']['ao'])->toBe(1)
+        ->and($coverage['roles']['metallic'])->toBe(0);
+});
+
+test('the resolution distribution bands each material, and the page filters by band', function () {
+    ($this->material)('Big', ['base_color'], '4k');
+    ($this->material)('Middle', ['base_color'], '2k');
+    ($this->material)('Small', ['base_color'], QualityTier::forPixels(960)->slug);
+    ($this->material)('Bare');
+
+    expect(app(LibraryQuality::class)->distribution($this->editor))
+        ->toBe(['none' => 1, 'under-1k' => 1, '1k' => 0, '2k' => 1, '4k' => 1]);
+
+    Livewire::actingAs($this->editor)
+        ->test('pages::quality.index')
+        ->call('setBand', '4k')
+        ->assertSee('Big')
+        ->assertDontSee('Middle')
+        ->call('setBand', '4k')
+        ->assertSet('band', '')
+        ->assertSee('Middle');
+});
+
+test('a material with no files says so, and names what the legacy library holds', function () {
+    $waiting = ($this->material)('Waiting');
+    $waiting->forceFill(['legacy_files_expected' => 589])->save();
+    // Its only files sit on the Revit target, so nothing can be derived.
+    ($this->material)('Referenced', ['base_color'], '4k', ['revit']);
+
+    Livewire::actingAs($this->editor)
+        ->test('pages::quality.index')
+        ->assertSee('589 in the legacy library')
+        ->assertSee('Files, none canonical');
+});

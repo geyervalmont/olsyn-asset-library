@@ -366,6 +366,9 @@ class LegacyImporter
 
         /** @var array<string, array{variant: Variant, channel: string, files: array<string, File>, states: list<string>, ids: list<mixed>, paths: list<string>}> $groups */
         $groups = [];
+        // Every row the legacy library holds for this material that could
+        // become a file here, so the gap between held and staged is visible.
+        $expected = 0;
 
         foreach ($rows as $row) {
             $variant = $variants[$row->material_variant_id] ?? null;
@@ -376,6 +379,8 @@ class LegacyImporter
 
                 continue;
             }
+
+            $expected++;
 
             $path = $filesRoot.'/'.str_replace('\\', '/', (string) $row->relative_path);
 
@@ -405,6 +410,10 @@ class LegacyImporter
             $groups[$groupKey]['ids'][] = $row->id;
             $groups[$groupKey]['paths'][] = (string) $row->relative_path;
             $this->stats['files']++;
+        }
+
+        if ($material->legacy_files_expected !== $expected) {
+            $material->forceFill(['legacy_files_expected' => $expected])->save();
         }
 
         foreach ($groups as $group) {

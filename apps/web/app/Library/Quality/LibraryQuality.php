@@ -26,6 +26,12 @@ class LibraryQuality
     /** The maps a canonical set should carry beyond its base colour. */
     public const DETAIL_ROLES = ['normal', 'roughness', 'ao'];
 
+    /** The maps a full PBR set carries, in the order they matter. */
+    public const PBR_ROLES = ['base_color', 'normal', 'roughness', 'ao', 'metallic'];
+
+    /** Canonical resolution bands, coarsest signal of how usable a set is. */
+    public const BANDS = ['none', 'under-1k', '1k', '2k', '4k'];
+
     /** Gaps, in the order they are worth fixing. */
     public const GAPS = ['no-canonical', 'low-resolution', 'no-normal', 'no-roughness', 'no-ao', 'no-revit', 'no-preview', 'unpublished'];
 
@@ -35,9 +41,13 @@ class LibraryQuality
      * @param  list<string>  $gaps  Only materials with all of these gaps.
      * @return LengthAwarePaginator<int, Material>
      */
-    public function materials(?User $viewer, array $gaps = [], string $search = '', string $sort = 'worst', int $perPage = 25): LengthAwarePaginator
+    public function materials(?User $viewer, array $gaps = [], string $search = '', string $sort = 'worst', int $perPage = 25, string $band = ''): LengthAwarePaginator
     {
         $query = $this->query($viewer, $gaps, $search);
+
+        if (in_array($band, self::BANDS, true)) {
+            $query->whereRaw($this->bandCondition($band));
+        }
 
         $query = $sort === 'name'
             ? $query->orderBy('materials.name')
@@ -48,6 +58,7 @@ class LibraryQuality
 
         return $query->paginate($perPage)->through(function (Material $material): Material {
             $material->setAttribute('gaps', $this->gapsFor($material));
+            $material->setAttribute('reason', $this->reasonFor($material));
 
             return $material;
         });
@@ -91,6 +102,86 @@ class LibraryQuality
                 'unpublished' => (int) ($row->unpublished ?? 0),
             ],
         ];
+    }
+
+    /**
+     * PBR coverage: of the materials that have a canonical set, how many carry
+     * each map. This is the shape of the work an upscaler or map generator
+     * would pick up.
+     *
+     * @return array{with_canonical: int, roles: array<string, int>}
+     */
+    public function coverage(?User $viewer): array
+    {
+        $row = Material::query()
+            ->visibleTo($viewer)
+            ->leftJoinSub($this->signals(), 'signals', 'signals.material_id', '=', 'materials.id')
+            ->selectRaw("
+                count(*) filter (where ','||coalesce(signals.targets, '')||',' like '%,pbr,%') as with_canonical,
+                count(*) filter (where ','||coalesce(signals.canonical_roles, '')||',' like '%,base_color,%') as base_color,
+                count(*) filter (where ','||coalesce(signals.canonical_roles, '')||',' like '%,normal,%') as normal,
+                count(*) filter (where ','||coalesce(signals.canonical_roles, '')||',' like '%,roughness,%') as roughness,
+                count(*) filter (where ','||coalesce(signals.canonical_roles, '')||',' like '%,ao,%') as ao,
+                count(*) filter (where ','||coalesce(signals.canonical_roles, '')||',' like '%,metallic,%') as metallic
+            ")
+            ->first();
+
+        return [
+            'with_canonical' => (int) ($row->with_canonical ?? 0),
+            'roles' => [
+                'base_color' => (int) ($row->base_color ?? 0),
+                'normal' => (int) ($row->normal ?? 0),
+                'roughness' => (int) ($row->roughness ?? 0),
+                'ao' => (int) ($row->ao ?? 0),
+                'metallic' => (int) ($row->metallic ?? 0),
+            ],
+        ];
+    }
+
+    /**
+     * How many materials sit in each canonical resolution band.
+     *
+     * @return array<string, int>
+     */
+    public function distribution(?User $viewer): array
+    {
+        $row = Material::query()
+            ->visibleTo($viewer)
+            ->leftJoinSub($this->signals(), 'signals', 'signals.material_id', '=', 'materials.id')
+            ->selectRaw("
+                count(*) filter (where not (','||coalesce(signals.targets, '')||',' like '%,pbr,%')) as none,
+                count(*) filter (where ','||coalesce(signals.targets, '')||',' like '%,pbr,%' and signals.canonical_pixels < 1024) as under_1k,
+                count(*) filter (where signals.canonical_pixels >= 1024 and signals.canonical_pixels < 2048) as k1,
+                count(*) filter (where signals.canonical_pixels >= 2048 and signals.canonical_pixels < 4096) as k2,
+                count(*) filter (where signals.canonical_pixels >= 4096) as k4
+            ")
+            ->first();
+
+        return [
+            'none' => (int) ($row->none ?? 0),
+            'under-1k' => (int) ($row->under_1k ?? 0),
+            '1k' => (int) ($row->k1 ?? 0),
+            '2k' => (int) ($row->k2 ?? 0),
+            '4k' => (int) ($row->k4 ?? 0),
+        ];
+    }
+
+    /**
+     * Why a material has nothing to show, when that is the case.
+     *
+     * A material with no files at all is waiting on its files; one whose only
+     * files sit on other targets has nothing to derive a preview or a Revit
+     * set from, because both come from the canonical set.
+     */
+    public function reasonFor(Material $material): ?string
+    {
+        $targets = $this->list($material->getAttribute('targets'));
+
+        if ($targets === []) {
+            return 'no-files';
+        }
+
+        return in_array('pbr', $targets, true) ? null : 'non-canonical';
     }
 
     /**
@@ -198,6 +289,23 @@ class LibraryQuality
             'no-revit' => "not (','||coalesce(signals.targets, '')||',' like '%,revit,%')",
             'no-preview' => "not (','||coalesce(signals.targets, '')||',' like '%,preview,%')",
             'unpublished' => 'materials.current_version_id is null',
+            default => 'true',
+        };
+    }
+
+    /**
+     * SQL for one resolution band.
+     *
+     * @return literal-string
+     */
+    private function bandCondition(string $band): string
+    {
+        return match ($band) {
+            'none' => "not (','||coalesce(signals.targets, '')||',' like '%,pbr,%')",
+            'under-1k' => "','||coalesce(signals.targets, '')||',' like '%,pbr,%' and signals.canonical_pixels < 1024",
+            '1k' => 'signals.canonical_pixels >= 1024 and signals.canonical_pixels < 2048',
+            '2k' => 'signals.canonical_pixels >= 2048 and signals.canonical_pixels < 4096',
+            '4k' => 'signals.canonical_pixels >= 4096',
             default => 'true',
         };
     }
