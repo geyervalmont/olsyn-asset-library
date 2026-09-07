@@ -13,7 +13,7 @@ class EnsureOlsynAccess
     {
         if (config('olsyn_access.enabled') && $user = $request->user()) {
             // Logout and the login/recovery screens must remain reachable after revocation.
-            if ($request->is('logout', 'login', 'auth/*', 'forgot-password', 'reset-password*', 'two-factor-challenge')) {
+            if ($request->is('logout', 'login', 'auth/*', 'forgot-password', 'reset-password*', 'two-factor-challenge', 'email/verify', 'email/verify/*', 'email/verification-notification')) {
                 return $next($request);
             }
             if ($request->hasSession() && $expires = $request->session()->get('olsyn.login_expires_at')) {

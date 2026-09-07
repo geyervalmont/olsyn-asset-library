@@ -130,3 +130,11 @@ it('validates signed ID token issuer audience expiry and nonce', function () {
         }
     }
 });
+
+it('never treats an unverified local email as an authenticated central identity', function () {
+    $user = User::factory()->unverified()->create();
+    Http::fake(['policy.example.test/*' => Http::response(policyResponse())]);
+    $token = $user->createToken('unverified')->plainTextToken;
+    $this->withToken($token)->getJson('/api/v1/me')->assertForbidden();
+    Http::assertNothingSent();
+});

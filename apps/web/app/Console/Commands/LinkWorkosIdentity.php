@@ -17,7 +17,7 @@ class LinkWorkosIdentity extends Command
         $user = User::whereRaw('lower(email) = ?', [strtolower($this->argument('email'))])->firstOrFail();
         $identity = $this->argument('workos_id');
         $decision = $access->decision(['workos_id' => $identity]);
-        if (! $decision['allowed'] || strtolower($decision['email'] ?? '') !== strtolower($user->email)
+        if (! $user->hasVerifiedEmail() || ! $decision['allowed'] || strtolower($decision['email'] ?? '') !== strtolower($user->email)
             || ($user->workos_id && $user->workos_id !== $identity)) {
             $this->error('The identity must have an active central grant and match this account. Existing identity links cannot be replaced.');
 

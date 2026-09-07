@@ -36,6 +36,9 @@ class OlsynAccess
     /** @return list<string> */
     public function permissions(User $user): array
     {
+        if (! $user->hasVerifiedEmail()) {
+            return [];
+        }
         $request = request();
         $key = 'olsyn.permissions.'.$user->id;
         if (! $request->attributes->has($key)) {
