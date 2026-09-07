@@ -34,14 +34,14 @@ will quietly serve its self-signed default instead.
 
 ## First deploy: what to create by hand
 
-1. **The buckets**, in `olsyn-infra`, following `terraform/envs/prod/nucleus-library.tf`:
-   `olsyn-prod-materials` for the library's own files, and
-   `olsyn-prod-material-corpus` for the legacy corpus staged for ingest. Staying
-   inside the `olsyn-prod-*` prefix means the edge instance profile already
-   grants access with no IAM change. Give both a lifecycle rule with
-   `abort_incomplete_multipart_upload` and `noncurrent_version_expiration`; the
-   platform's existing asset buckets have neither, and for a corpus this size
-   that is unbounded growth.
+1. **The buckets** already exist: `olsyn-prod-materials` for the library's own
+   files and `olsyn-prod-material-corpus` for the legacy corpus staged for
+   ingest, both in `ap-southeast-2`. They are defined in
+   `olsyn-infra/terraform/envs/prod/asset-library.tf` and are in Terraform
+   state. Being under the `olsyn-prod-*` prefix, the edge instance profile
+   already grants access, so no AWS keys appear anywhere in this directory.
+   PrismFS reads through the `olsyn-prismfs-ops` user when it runs off that
+   node; mint its access key by hand and put it in the SOPS file.
 
 2. **The namespace and the image pull secret**:
 
