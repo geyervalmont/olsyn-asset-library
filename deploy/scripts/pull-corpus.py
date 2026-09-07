@@ -141,7 +141,7 @@ class SharePoint:
                    f"('{api_path(folder)}')/{kind}")
             params = {"$top": "5000"}
             if kind == "Files":
-                params["$select"] = "Name,ServerRelativeUrl,Length"
+                params["$select"] = "Name,ServerRelativeUrl,Length,UniqueId"
             else:
                 params["$select"] = "Name,ServerRelativeUrl"
 
@@ -150,7 +150,8 @@ class SharePoint:
                 for item in payload.get("value", []):
                     if kind == "Files":
                         files.append({"path": item["ServerRelativeUrl"],
-                                      "size": int(item["Length"])})
+                                      "size": int(item["Length"]),
+                                      "uid": item.get("UniqueId")})
                     else:
                         # Forms holds list templates, never content.
                         if item["Name"] != "Forms":
@@ -160,9 +161,18 @@ class SharePoint:
 
         return files, folders
 
-    def open_file(self, server_relative: str):
-        url = (f"{self.site}/_api/web/GetFileByServerRelativeUrl"
-               f"('{api_path(server_relative)}')/$value")
+    def open_file(self, server_relative: str, uid: str | None = None):
+        """Fetch by GUID where possible; the path form has a URL length limit.
+
+        Deeply nested generated names push the encoded path past what
+        SharePoint accepts and it answers 400. GetFileById is a fixed-length
+        URL, so it does not care how long the name is.
+        """
+        if uid:
+            url = f"{self.site}/_api/web/GetFileById('{uid}')/$value"
+        else:
+            url = (f"{self.site}/_api/web/GetFileByServerRelativeUrl"
+                   f"('{api_path(server_relative)}')/$value")
         response = self.get(url, stream=True)
         response.raw.decode_content = True
         return response
@@ -201,6 +211,10 @@ def open_ledger(path: str) -> sqlite3.Connection:
             path TEXT PRIMARY KEY, size INTEGER, status TEXT NOT NULL,
             error TEXT, updated_at TEXT);
     """)
+    # Added after the first corpus run: files are addressed by GUID now, and
+    # existing ledgers predate the column.
+    if "uid" not in {row[1] for row in ledger.execute("PRAGMA table_info(discovered)")}:
+        ledger.execute("ALTER TABLE discovered ADD COLUMN uid TEXT")
     return ledger
 
 
@@ -339,8 +353,8 @@ def main() -> int:
 
         done_walk = ledger.execute("SELECT files FROM walked WHERE root = ?", (name,)).fetchone()
         if done_walk and not args.rediscover:
-            files = [{"path": p, "size": s} for p, s in ledger.execute(
-                "SELECT path, size FROM discovered WHERE root = ?", (name,))]
+            files = [{"path": p, "size": s, "uid": u} for p, s, u in ledger.execute(
+                "SELECT path, size, uid FROM discovered WHERE root = ?", (name,))]
         elif at_root:
             files, _ = sharepoint.children(top)
         else:
@@ -352,8 +366,8 @@ def main() -> int:
                 files.extend(found)
                 folders_left.extend(subfolders)
             ledger.executemany(
-                "INSERT OR REPLACE INTO discovered (path, size, root) VALUES (?, ?, ?)",
-                [(f["path"], f["size"], name) for f in files])
+                "INSERT OR REPLACE INTO discovered (path, size, root, uid) VALUES (?, ?, ?, ?)",
+                [(f["path"], f["size"], name, f.get("uid")) for f in files])
             ledger.execute("INSERT OR REPLACE INTO walked (root, files, finished_at) VALUES (?, ?, ?)",
                            (name, len(files), now()))
             ledger.commit()
@@ -396,7 +410,7 @@ def main() -> int:
             def move(relative: str, entry: dict) -> tuple[str, dict]:
                 """Stream one file through this process without buffering it."""
                 key = f"{args.prefix.rstrip('/')}/{relative}"
-                with sharepoint.open_file(entry["path"]) as body:
+                with sharepoint.open_file(entry["path"], entry.get("uid")) as body:
                     s3.upload_fileobj(body.raw, args.bucket, key, Callback=bar.update)
                 return relative, entry
 
