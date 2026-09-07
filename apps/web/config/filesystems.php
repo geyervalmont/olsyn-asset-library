@@ -47,6 +47,22 @@ return [
             'report' => false,
         ],
 
+        /*
+         * The legacy corpus as staged for ingest: a bucket the import reads
+         * from, never written to by the application.
+         */
+        'legacy' => [
+            'driver' => 's3',
+            'key' => env('LEGACY_AWS_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID')),
+            'secret' => env('LEGACY_AWS_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY')),
+            'region' => env('LEGACY_AWS_DEFAULT_REGION', env('AWS_DEFAULT_REGION')),
+            'bucket' => env('LEGACY_AWS_BUCKET'),
+            'endpoint' => env('LEGACY_AWS_ENDPOINT', env('AWS_ENDPOINT')),
+            'use_path_style_endpoint' => (bool) env('LEGACY_AWS_USE_PATH_STYLE_ENDPOINT', env('AWS_USE_PATH_STYLE_ENDPOINT', false)),
+            'throw' => true,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

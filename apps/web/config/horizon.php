@@ -218,6 +218,11 @@ return [
                 'maxProcesses' => 10,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
+                // Rendering a preview and downscaling an 8k set both hold whole
+                // images in memory and take far longer than a mailer, so the
+                // stock 128 MB and 60 s would kill this library's own workers.
+                'memory' => 512,
+                'timeout' => 300,
             ],
         ],
 

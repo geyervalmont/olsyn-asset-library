@@ -100,3 +100,48 @@ test('a file that cannot be stored is recorded as failed and retried on the next
         ->and($row->error)->toBeNull()
         ->and(LegacyFileIngest::query()->where('status', LegacyFileIngest::INGESTED)->count())->toBe(4);
 });
+
+test('the ingest reads a corpus staged on a disk', function () {
+    Storage::fake('legacy');
+    // The same tree the fixture wrote locally, staged on a bucket instead.
+    foreach (['Enscape_Revit/ashen_albedo.png', 'Enscape_Revit/ashen_ref.png', 'SS/ashen_ss.png'] as $path) {
+        $relative = 'Carpet/Tarkett/Academix/'.$path;
+        Storage::disk('legacy')->put('corpus/'.$relative, (string) file_get_contents($this->dir.'/files/'.$relative));
+    }
+
+    $this->artisan('opal:import:legacy-files', ['--database' => $this->db, '--disk' => 'legacy', '--prefix' => 'corpus'])
+        ->expectsOutputToContain('legacy://corpus')
+        ->assertSuccessful();
+
+    $ledger = LegacyFileIngest::query()->where('status', LegacyFileIngest::INGESTED)->orderBy('source_path')->get();
+
+    expect($ledger)->not->toBeEmpty()
+        // Keyed by disk, so a staged ingest and a local one never collide.
+        ->and($ledger->first()->source_path)->toStartWith('legacy://corpus/')
+        ->and($ledger->first()->file)->not->toBeNull()
+        ->and(File::query()->count())->toBeGreaterThan(0);
+});
+
+test('the legacy database can be fetched from a disk as well as the corpus', function () {
+    // Staged databases outlive a test run, so start from nothing.
+    Illuminate\Support\Facades\File::deleteDirectory(storage_path('app/legacy-staged'));
+    Storage::fake('legacy');
+    Storage::disk('legacy')->put('material_assets.sqlite', (string) file_get_contents($this->db));
+    foreach (['Enscape_Revit/ashen_albedo.png'] as $path) {
+        $relative = 'Carpet/Tarkett/Academix/'.$path;
+        Storage::disk('legacy')->put('corpus/'.$relative, (string) file_get_contents($this->dir.'/files/'.$relative));
+    }
+
+    $this->artisan('opal:import:legacy-files', [
+        '--database' => 'material_assets.sqlite', '--database-disk' => 'legacy',
+        '--disk' => 'legacy', '--prefix' => 'corpus',
+    ])->expectsOutputToContain('Fetching legacy://material_assets.sqlite')->assertSuccessful();
+
+    expect(LegacyFileIngest::query()->where('status', LegacyFileIngest::INGESTED)->count())->toBeGreaterThan(0);
+
+    // A rerun reuses what was already fetched.
+    $this->artisan('opal:import:legacy-files', [
+        '--database' => 'material_assets.sqlite', '--database-disk' => 'legacy',
+        '--disk' => 'legacy', '--prefix' => 'corpus',
+    ])->expectsOutputToContain('Reusing the staged database')->assertSuccessful();
+});

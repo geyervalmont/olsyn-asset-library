@@ -150,8 +150,10 @@ class LegacyImporter
         return $materials->count();
     }
 
-    public function run(string $databasePath, ?string $filesRoot = null, ?int $limit = null, ?string $onlySlug = null, ?Closure $log = null): void
+    public function run(string $databasePath, CorpusSource|string|null $filesRoot = null, ?int $limit = null, ?string $onlySlug = null, ?Closure $log = null): void
     {
+        $corpus = is_string($filesRoot) ? new LocalCorpus(rtrim($filesRoot, '/')) : $filesRoot;
+
         $this->legacy = $this->connect($databasePath);
         $log ??= fn (string $line): null => null;
 
@@ -171,12 +173,12 @@ class LegacyImporter
             $this->stats['products']++;
 
             try {
-                Material::withDeferredSearchRefresh(fn () => DB::transaction(function () use ($product, $filesRoot, $log): void {
+                Material::withDeferredSearchRefresh(fn () => DB::transaction(function () use ($product, $corpus, $log): void {
                     $material = $this->importProduct($product);
                     $variants = $this->importVariants($material, $product);
 
-                    if ($filesRoot !== null) {
-                        $this->importFiles($material, $variants, $product, rtrim($filesRoot, '/'));
+                    if ($corpus !== null) {
+                        $this->importFiles($material, $variants, $product, $corpus);
                     }
 
                     $material->refreshSearchText();
@@ -355,7 +357,7 @@ class LegacyImporter
     /**
      * @param  array<string, Variant>  $variants
      */
-    private function importFiles(Material $material, array $variants, \stdClass $product, string $filesRoot): void
+    private function importFiles(Material $material, array $variants, \stdClass $product, CorpusSource $corpus): void
     {
         $rows = $this->legacy->table('asset_file')
             ->where('product_id', $product->id)
@@ -382,9 +384,9 @@ class LegacyImporter
 
             $expected++;
 
-            $path = $filesRoot.'/'.str_replace('\\', '/', (string) $row->relative_path);
+            $relative = (string) $row->relative_path;
 
-            if (! is_file($path)) {
+            if (! $corpus->has($relative)) {
                 $this->stats['files_missing']++;
 
                 continue;
@@ -399,7 +401,7 @@ class LegacyImporter
                 continue;
             }
 
-            $file = $this->storeCorpusFile($path);
+            $file = $this->storeCorpusFile($corpus, $relative);
 
             if ($file === null) {
                 continue;
@@ -408,7 +410,7 @@ class LegacyImporter
             $groups[$groupKey]['files'][$role] = $file;
             $groups[$groupKey]['states'][] = (string) $row->asset_state;
             $groups[$groupKey]['ids'][] = $row->id;
-            $groups[$groupKey]['paths'][] = (string) $row->relative_path;
+            $groups[$groupKey]['paths'][] = $relative;
             $this->stats['files']++;
         }
 
@@ -483,19 +485,21 @@ class LegacyImporter
      * Store one corpus file, through the ledger when enabled: unchanged files
      * are not re-read, failures are recorded and skipped, dry runs only count.
      */
-    private function storeCorpusFile(string $path): ?File
+    private function storeCorpusFile(CorpusSource $corpus, string $relative): ?File
     {
+        $key = $corpus->key($relative);
+
         if ($this->progress !== null) {
-            ($this->progress)($path);
+            ($this->progress)($key);
         }
 
         if (! $this->useLedger) {
-            return $this->files->store(new SplFileInfo($path), basename($path));
+            return $corpus->withLocalFile($relative, fn (string $path): File => $this->files->store(new SplFileInfo($path), basename($relative)));
         }
 
-        $bytes = (int) filesize($path);
-        $mtime = (int) filemtime($path);
-        $ledger = LegacyFileIngest::query()->where('source_path', $path)->first();
+        $bytes = $corpus->size($relative);
+        $mtime = $corpus->mtime($relative);
+        $ledger = LegacyFileIngest::query()->where('source_path', $key)->first();
 
         if ($ledger !== null && $ledger->matches($bytes, $mtime)) {
             $this->stats['files_unchanged']++;
@@ -511,19 +515,19 @@ class LegacyImporter
         }
 
         try {
-            $file = $this->files->store(new SplFileInfo($path), basename($path));
+            $file = $corpus->withLocalFile($relative, fn (string $path): File => $this->files->store(new SplFileInfo($path), basename($relative)));
         } catch (Throwable $exception) {
-            LegacyFileIngest::query()->updateOrCreate(['source_path' => $path], [
+            LegacyFileIngest::query()->updateOrCreate(['source_path' => $key], [
                 'bytes' => $bytes, 'mtime' => Carbon::createFromTimestamp($mtime), 'status' => LegacyFileIngest::FAILED,
                 'error' => Str::limit($exception->getMessage(), 1000), 'processed_at' => now(),
             ]);
             $this->stats['files_failed']++;
-            $this->errors[] = sprintf('%s: %s', $path, $exception->getMessage());
+            $this->errors[] = sprintf('%s: %s', $key, $exception->getMessage());
 
             return null;
         }
 
-        LegacyFileIngest::query()->updateOrCreate(['source_path' => $path], [
+        LegacyFileIngest::query()->updateOrCreate(['source_path' => $key], [
             'bytes' => $bytes, 'mtime' => Carbon::createFromTimestamp($mtime), 'sha256' => $file->sha256, 'file_id' => $file->getKey(),
             'status' => LegacyFileIngest::INGESTED, 'error' => null, 'processed_at' => now(),
         ]);
