@@ -19,7 +19,10 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: geyervalmont/opal
+  # Must match the image name the manifests pin, because the overlay only
+  # rewrites the tag: a different name here builds one image and deploys
+  # the reference to another, which fails as ImagePullBackOff.
+  IMAGE_NAME: geyervalmont/olsyn-asset-library
   NAMESPACE: opal
   APP_HOST: opal.olsyn.com
 
