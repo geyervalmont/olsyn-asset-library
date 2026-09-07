@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\Permission;
 use App\Enums\Role;
+use App\Services\OlsynAccess;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -22,6 +24,7 @@ use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
+ * @property string|null $workos_id
  * @property int $id
  * @property string $name
  * @property string $email
@@ -41,7 +44,20 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, HasRoles, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+
+    use HasRoles { hasPermissionTo as private workspaceHasPermissionTo; }
+
+    public function hasPermissionTo(mixed $permission, ?string $guardName = null): bool
+    {
+        $name = $permission instanceof \BackedEnum ? $permission->value : $permission;
+        if (is_string($name) && Permission::tryFrom($name)
+            && ! app(OlsynAccess::class)->allows($this, $name)) {
+            return false;
+        }
+
+        return $this->workspaceHasPermissionTo($permission, $guardName);
+    }
 
     /**
      * @return BelongsTo<Tenant, $this>

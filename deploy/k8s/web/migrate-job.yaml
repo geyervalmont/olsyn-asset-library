@@ -35,5 +35,7 @@ spec:
                 name: opal-config
             - secretRef:
                 name: opal-secrets
+            - secretRef:
+                name: olsyn-access
       imagePullSecrets:
         - name: ghcr-secret

@@ -5,6 +5,11 @@
         <!-- Session Status -->
         <x-auth-session-status class="text-center" :status="session('status')" />
 
+        @if (config('olsyn_access.enabled'))
+            <flux:button :href="route('olsyn.login')" variant="primary" class="w-full">Continue with Olsyn</flux:button>
+            <p class="text-sm text-center text-zinc-500">Your existing password or passkey also remains available.</p>
+        @endif
+
         <x-passkey-verify />
 
         <form method="POST" action="{{ route('login.store') }}" class="flex flex-col gap-6">

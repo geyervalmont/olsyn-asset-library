@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Drives\DriveManifestController;
 use App\Http\Controllers\Files\FileController;
+use App\Http\Controllers\OlsynLoginController;
 use App\Http\Controllers\Prismfs\PrismfsAccessController;
 use App\Http\Controllers\Prismfs\PrismfsManifestController;
 use App\Http\Controllers\Tenants\SwitchTenantController;
@@ -34,3 +35,6 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
 });
 
 require __DIR__.'/settings.php';
+
+Route::get('auth/login', [OlsynLoginController::class, 'login'])->middleware('throttle:20,1')->name('olsyn.login');
+Route::get('auth/callback', [OlsynLoginController::class, 'callback'])->middleware('throttle:20,1')->name('olsyn.callback');

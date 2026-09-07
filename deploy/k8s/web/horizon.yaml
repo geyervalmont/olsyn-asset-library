@@ -36,6 +36,8 @@ spec:
                 name: opal-config
             - secretRef:
                 name: opal-secrets
+            - secretRef:
+                name: olsyn-access
           lifecycle:
             preStop:
               exec:
