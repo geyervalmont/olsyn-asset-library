@@ -28,12 +28,13 @@ Network → click any request to the site → Copy → Copy as cURL, and save it
 file. The Cookie header is parsed out of it; the rest is ignored.
 """
 import argparse
-import json
 import os
 import re
 import sqlite3
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -85,6 +86,9 @@ class SharePoint:
         self.site = site.rstrip("/")
         self.interval = 1.0 / tps if tps > 0 else 0.0
         self.last_call = 0.0
+        # Workers share the pacer, so the gap between calls has to be claimed
+        # under a lock or the ceiling means nothing.
+        self.pacer = threading.Lock()
         self.http = requests.Session()
         self.http.headers.update({
             "Cookie": cookie,
@@ -97,14 +101,22 @@ class SharePoint:
     def get(self, url: str, **kwargs):
         for attempt in range(6):
             if self.interval:
-                wait = self.interval - (time.monotonic() - self.last_call)
-                if wait > 0:
-                    time.sleep(wait)
-            self.last_call = time.monotonic()
+                with self.pacer:
+                    wait = self.interval - (time.monotonic() - self.last_call)
+                    if wait > 0:
+                        time.sleep(wait)
+                    self.last_call = time.monotonic()
 
             response = self.http.get(url, **kwargs)
 
+            # SharePoint also answers 403 transiently under load, so a single
+            # one must not be read as an expired cookie: doing that would end
+            # an unattended overnight run over a blip. A genuinely dead cookie
+            # fails all of these in a few seconds.
             if response.status_code in (401, 403):
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
                 raise SessionExpired(f"HTTP {response.status_code} from SharePoint")
 
             # Microsoft answers a burst with 429 and tells you how long to wait.
@@ -156,6 +168,28 @@ class SharePoint:
         return response
 
 
+def wait_for_new_cookie(path: str, minutes: int, bar) -> bool:
+    """Block until the cookie file is rewritten, so a refresh resumes the run.
+
+    Worth having for an unattended run: without it an expiry at 2am wastes the
+    rest of the night, and with it the run picks up whenever the file changes.
+    """
+    original = os.path.getmtime(path)
+    deadline = time.monotonic() + minutes * 60
+    bar.write(f"  cookie expired; waiting up to {minutes} min for {path} to be refreshed")
+
+    while time.monotonic() < deadline:
+        time.sleep(15)
+        try:
+            if os.path.getmtime(path) != original:
+                time.sleep(1)  # let the write finish
+                bar.write("  cookie refreshed, resuming")
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def open_ledger(path: str) -> sqlite3.Connection:
     ledger = sqlite3.connect(path)
     ledger.executescript("""
@@ -197,9 +231,19 @@ def main() -> int:
     parser.add_argument("--prefix", default="corpus")
     parser.add_argument("--region", default="ap-southeast-2")
     parser.add_argument("--ledger", default=os.path.expanduser("~/.local/share/opal-corpus/ledger.sqlite"))
-    parser.add_argument("--tps", type=float, default=8.0, help="requests per second ceiling")
+    parser.add_argument("--tps", type=float, default=16.0, help="requests per second ceiling")
+    parser.add_argument("--workers", type=int, default=8,
+                        help="files in flight at once; one at a time pays a full round trip per file")
     parser.add_argument("--limit", type=int, help="stop after this many files (for a trial run)")
     parser.add_argument("--rediscover", action="store_true", help="re-walk folders instead of using the ledger")
+    parser.add_argument("--wait-for-cookie", type=int, metavar="MINUTES",
+                        help="on expiry, wait this long for the cookie file to be refreshed instead of exiting")
+    parser.add_argument("--manifest", metavar="SQLITE",
+                        help="legacy database; transfer only the files it references")
+    parser.add_argument("--include-root-files", action="store_true",
+                        help="also take files sitting loose at the top of the library")
+    parser.add_argument("--reconcile", action="store_true",
+                        help="seed the ledger from what is already in the bucket before starting")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.ledger), exist_ok=True)
@@ -215,7 +259,26 @@ def main() -> int:
     except SessionExpired as expired:
         print(f"The cookie is not being accepted ({expired}). Copy a fresh one and rerun.")
         return 75
-    print(f"session ok, ledger {args.ledger}\n")
+    print(f"session ok, ledger {args.ledger}")
+
+    # The bucket is the real record of what landed. Seeding from it means a run
+    # started anywhere - this laptop, another machine, a pod - continues from
+    # what exists rather than from one machine's private ledger.
+    if args.reconcile:
+        found = 0
+        pages = s3.get_paginator("list_objects_v2")
+        head = f"{args.prefix.rstrip('/')}/"
+        rows = []
+        for page in pages.paginate(Bucket=args.bucket, Prefix=head):
+            for item in page.get("Contents", []):
+                rows.append((item["Key"][len(head):], item["Size"], "done", None, now()))
+                found += 1
+        ledger.executemany(
+            "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)", rows)
+        ledger.commit()
+        print(f"reconciled {found:,} objects already in the bucket")
+    print()
 
     # Which top-level folders to work through.
     _, top_level = sharepoint.children(root)
@@ -231,6 +294,21 @@ def main() -> int:
 
     available = sorted((f.rsplit("/", 1)[-1] for f in top_level), key=str.lower)
     wanted = sorted(top_level, key=str.lower)
+
+    # With the manifest in hand the run can be exactly what the ingest will ask
+    # for. That is not a micro-optimisation here: the library holds seven
+    # top-level folders the ingest never reads, so without this a full run
+    # spends hours on files nothing will look at.
+    expected: set[str] | None = None
+    if args.manifest:
+        with sqlite3.connect(f"file:{args.manifest}?mode=ro", uri=True) as manifest:
+            expected = {path.replace("\\", "/") for (path,) in manifest.execute(
+                "SELECT DISTINCT relative_path FROM asset_file WHERE relative_path IS NOT NULL")}
+        tops = {path.split("/", 1)[0] for path in expected}
+        before = len(wanted)
+        wanted = [f for f in wanted if f.rsplit("/", 1)[-1] in tops]
+        print(f"manifest: {len(expected):,} files wanted, "
+              f"{before - len(wanted)} of {before} top-level folders skipped entirely")
 
     if args.folder:
         selected = {name.lower() for name in args.folder}
@@ -248,13 +326,23 @@ def main() -> int:
     quiet = not sys.stderr.isatty()
     say = print if quiet else tqdm.write
 
-    for top in wanted:
-        name = top.rsplit("/", 1)[-1]
+    # Loose files at the top of the library belong to no folder and would
+    # otherwise be the one thing a full run misses. They are their own unit
+    # rather than a walk from the root, which would re-enumerate everything.
+    units = list(wanted)
+    if args.include_root_files and not args.folder:
+        units.insert(0, root)
+
+    for top in units:
+        at_root = top == root
+        name = "(root files)" if at_root else top.rsplit("/", 1)[-1]
 
         done_walk = ledger.execute("SELECT files FROM walked WHERE root = ?", (name,)).fetchone()
         if done_walk and not args.rediscover:
             files = [{"path": p, "size": s} for p, s in ledger.execute(
                 "SELECT path, size FROM discovered WHERE root = ?", (name,))]
+        elif at_root:
+            files, _ = sharepoint.children(top)
         else:
             say(f"{name}: walking...")
             files, folders_left = [], [top]
@@ -277,16 +365,26 @@ def main() -> int:
         pending = []
         for entry in sorted(files, key=lambda f: f["path"]):
             relative = entry["path"][len(root) + 1:]
+            if expected is not None and relative not in expected:
+                continue
             if banked.get(relative) == entry["size"]:
                 skipped += 1
             else:
                 pending.append((relative, entry))
 
+        outstanding = len(pending)
         if args.limit is not None:
             pending = pending[: max(0, args.limit - transferred)]
 
         if not pending:
-            say(f"{name}: complete ({len(files):,} files already staged)")
+            # Distinguish "nothing left to do" from "--limit cut it off", which
+            # otherwise both look like the folder is finished.
+            if outstanding:
+                say(f"{name}: {outstanding:,} outstanding, held back by --limit")
+            else:
+                say(f"{name}: complete ({len(files):,} files already staged)")
+            if args.limit is not None and transferred >= args.limit:
+                break
             continue
 
         say(f"{name}: {len(pending):,} of {len(files):,} files to move")
@@ -294,36 +392,63 @@ def main() -> int:
         with tqdm(total=sum(e["size"] for _, e in pending), unit="B", unit_scale=True,
                   unit_divisor=1024, desc=f"{name[:22]:22}", dynamic_ncols=True,
                   smoothing=0.05, disable=quiet, leave=True) as bar:
-            for relative, entry in pending:
-                bar.set_postfix_str(relative.rsplit("/", 1)[-1][:38], refresh=False)
-                key = f"{args.prefix.rstrip('/')}/{relative}"
-                try:
-                    with sharepoint.open_file(entry["path"]) as body:
-                        # Callback fires per chunk as the upload drains the
-                        # download, so the bar follows real bytes on the wire.
-                        s3.upload_fileobj(body.raw, args.bucket, key, Callback=bar.update)
-                except SessionExpired as expired:
-                    ledger.commit()
-                    bar.close()
-                    print(f"\nThe cookie expired mid-run ({expired}).")
-                    print(f"Copy a fresh one and rerun; {transferred:,} files are already banked.")
-                    return 75
-                except Exception as failure:  # noqa: BLE001 - one bad file must not end the run
-                    ledger.execute(
-                        "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
-                        " VALUES (?, ?, 'failed', ?, ?)", (relative, entry["size"], str(failure)[:500], now()))
-                    ledger.commit()
-                    failed += 1
-                    say(f"  FAILED {relative}: {str(failure)[:110]}")
-                    continue
 
-                ledger.execute(
-                    "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
-                    " VALUES (?, ?, 'done', NULL, ?)", (relative, entry["size"], now()))
-                transferred += 1
-                moved_bytes += entry["size"]
-                if transferred % 50 == 0:
+            def move(relative: str, entry: dict) -> tuple[str, dict]:
+                """Stream one file through this process without buffering it."""
+                key = f"{args.prefix.rstrip('/')}/{relative}"
+                with sharepoint.open_file(entry["path"]) as body:
+                    s3.upload_fileobj(body.raw, args.bucket, key, Callback=bar.update)
+                return relative, entry
+
+            # Serial transfers spend most of their time waiting: each file pays
+            # a SharePoint round trip before the next one starts, which measured
+            # at 2.2 MB/s against a 173 GB corpus. Overlapping them keeps the
+            # link busy. The ledger stays on this thread, so SQLite still sees a
+            # single writer.
+            expired = None
+            with ThreadPoolExecutor(max_workers=args.workers) as pool:
+                queued = {pool.submit(move, relative, entry): (relative, entry)
+                          for relative, entry in pending}
+                try:
+                    for finished in as_completed(queued):
+                        relative, entry = queued[finished]
+                        try:
+                            finished.result()
+                        except SessionExpired as dead:
+                            expired = dead
+                            for other in queued:
+                                other.cancel()
+                            break
+                        except Exception as failure:  # noqa: BLE001 - one bad file must not end the run
+                            ledger.execute(
+                                "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
+                                " VALUES (?, ?, 'failed', ?, ?)",
+                                (relative, entry["size"], str(failure)[:500], now()))
+                            failed += 1
+                            say(f"  FAILED {relative}: {str(failure)[:110]}")
+                            continue
+
+                        ledger.execute(
+                            "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
+                            " VALUES (?, ?, 'done', NULL, ?)", (relative, entry["size"], now()))
+                        transferred += 1
+                        moved_bytes += entry["size"]
+                        if transferred % 50 == 0:
+                            ledger.commit()
+                            if quiet:
+                                say(f"  {name}: {transferred:,} moved, {human(moved_bytes)}, "
+                                    f"{failed:,} failed")
+                finally:
                     ledger.commit()
+
+            if expired is not None:
+                if args.wait_for_cookie and wait_for_new_cookie(args.cookies, args.wait_for_cookie, bar):
+                    sharepoint.http.headers["Cookie"] = read_cookie(args.cookies)
+                    say(f"{name}: cookie refreshed, rerun continues from the ledger")
+                bar.close()
+                print(f"\nThe cookie expired mid-run ({expired}).")
+                print(f"{transferred:,} files are banked; rerun to continue.")
+                return 75
 
         ledger.commit()
 
