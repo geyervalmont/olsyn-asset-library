@@ -7,16 +7,16 @@ data:
   PRISMFS_DRIVE_SLUG: studio-share
   PRISMFS_TENANT_ID: studio-share
   # Manifest and access-event endpoints are derived from this base URL.
-  PRISMFS_MANIFEST_URL: https://opal.example.com/prismfs/drives/studio-share/manifest.yaml
+  PRISMFS_MANIFEST_URL: https://library.olsyn.com/prismfs/drives/studio-share/manifest.yaml
   PRISMFS_REFRESH_INTERVAL: "30"
   PRISMFS_AUDIT_FLUSH_INTERVAL: "5"
   PRISMFS_AUDIT_BATCH: "500"
   PRISMFS_AUDIT_OPERATIONS: read,open
   # Object store the manifest's objects live in.
-  AWS_ENDPOINT: https://s3.example.com
-  AWS_DEFAULT_REGION: us-east-1
+  # Real S3: no endpoint override, the SDK resolves the AWS endpoint.
+  AWS_DEFAULT_REGION: ap-southeast-2
   AWS_ALLOW_HTTP: "false"
-  PRISMFS_S3_BUCKET: opal
+  PRISMFS_S3_BUCKET: olsyn-prod-materials
   # Mount shared with the Samba sidecar.
   PRISMFS_MOUNTPOINT: /srv/prismfs
   PRISMFS_SMB_SHARE: opal

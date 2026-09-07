@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opal-web
+  labels:
+    app: opal
+    component: web
+spec:
+  replicas: 1          # the production overlay raises this
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never drop below the current capacity during a rollout.
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: opal
+      component: web
+  template:
+    metadata:
+      labels:
+        app: opal
+        component: web
+    spec:
+      # Postgres is VPC-private and only the AWS edge node reaches it. The same
+      # node's instance profile supplies the S3 credentials, so pods here need
+      # no AWS keys at all.
+      nodeSelector:
+        node-role: edge
+      # Long enough for in-flight requests to finish after the endpoint is
+      # withdrawn.
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: web
+          image: ghcr.io/geyervalmont/olsyn-asset-library:latest  # overridden by CI
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: opal-config
+            - secretRef:
+                name: opal-secrets
+          lifecycle:
+            preStop:
+              exec:
+                # Traefik needs a moment to drop this pod from its endpoints
+                # before the server stops, or the last requests land on a
+                # closing worker.
+                command: ["sh", "-c", "sleep 5"]
+          # Boot covers config:cache and view:cache, so the first response can
+          # take a few seconds. The startup probe absorbs that without a
+          # generous liveness delay masking a genuinely wedged pod later.
+          startupProbe:
+            httpGet:
+              path: /up
+              port: 8000
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /up
+              port: 8000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /up
+              port: 8000
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1536Mi
+      imagePullSecrets:
+        - name: ghcr-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opal-web
+  labels:
+    app: opal
+    component: web
+spec:
+  selector:
+    app: opal
+    component: web
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http

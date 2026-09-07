@@ -1,0 +1,234 @@
+name: Deploy to production
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch:
+    inputs:
+      force_restart:
+        description: 'Restart every workload even when the image is unchanged (use after a secrets-only change)'
+        type: boolean
+        default: false
+
+# One deploy at a time. Two overlapping runs would race on the migration job
+# and could roll the cluster back and forth between images.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: geyervalmont/olsyn-asset-library
+  NAMESPACE: olsyn-asset-library
+  APP_HOST: library.olsyn.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # GHCR rejects uppercase paths, and `github.repository` keeps the
+      # organisation's casing, so the reference is lowercased once and reused.
+      - name: Compute the image reference
+        id: image
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          IMAGE=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ref=${IMAGE}:sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      # The websocket client is compiled into the JavaScript bundle, so the
+      # host the browser dials is decided here rather than in the pod. Changing
+      # it means rebuilding, which is what these arguments are for.
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/web
+          file: ./apps/web/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.ref }}
+            ${{ steps.image.outputs.image }}:latest
+          build-args: |
+            VITE_REVERB_APP_KEY=${{ secrets.VITE_REVERB_APP_KEY }}
+            VITE_REVERB_HOST=library-ws.olsyn.com
+            VITE_REVERB_PORT=443
+            VITE_REVERB_SCHEME=https
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.31.0'
+
+      - name: Configure cluster access
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl -n "${{ env.NAMESPACE }}" get deploy
+
+      - name: Install SOPS
+        run: |
+          curl -sLo /tmp/sops https://github.com/getsops/sops/releases/download/v3.9.0/sops-v3.9.0.linux.amd64
+          sudo install -m 0755 /tmp/sops /usr/local/bin/sops
+
+      # The encrypted file is a flat map of KEY: value, so dotenv output feeds
+      # straight into a secret. Only the sensitive keys live here; the rest of
+      # the configuration ships with the manifests as the opal-config
+      # ConfigMap, which every workload reads alongside this secret.
+      - name: Apply application secrets
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_PRODUCTION }}
+        run: |
+          mkdir -p ~/.config/sops/age
+          echo "$SOPS_AGE_KEY" > ~/.config/sops/age/keys.txt
+          export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
+
+          sops -d --output-type dotenv deploy/secrets/production.sops.yaml > /tmp/opal.env
+
+          kubectl create secret generic opal-secrets \
+            --namespace "${{ env.NAMESPACE }}" \
+            --from-env-file=/tmp/opal.env \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          rm -f /tmp/opal.env ~/.config/sops/age/keys.txt
+
+      # Migrations run to completion before any Deployment is touched, so there
+      # is one migrating process and the previous pods keep serving throughout.
+      # The job carries envFrom the secret: without it Laravel boots with no
+      # database configuration and the migration silently does nothing.
+      - name: Run migrations
+        run: |
+          JOB="opal-migrate-${{ github.sha }}"
+          IMAGE_REF="${{ steps.image.outputs.ref }}"
+
+          sed -e "s|^  name: opal-migrate$|  name: ${JOB}|" \
+              -e "s|image: ghcr.io/geyervalmont/olsyn-asset-library:.*$|image: ${IMAGE_REF}|" \
+              deploy/k8s/web/migrate-job.yaml > /tmp/migrate-job.yaml
+
+          # A rename or retag that the substitutions missed would silently
+          # migrate with the previous image, so check before applying.
+          grep -q "name: ${JOB}" /tmp/migrate-job.yaml || { echo "::error::migrate job name was not templated"; exit 1; }
+          grep -q "image: ${IMAGE_REF}" /tmp/migrate-job.yaml || { echo "::error::migrate job image was not templated"; exit 1; }
+
+          echo "--- rendered job ---"
+          cat /tmp/migrate-job.yaml
+
+          kubectl -n "${{ env.NAMESPACE }}" apply -f /tmp/migrate-job.yaml
+
+          if ! kubectl -n "${{ env.NAMESPACE }}" wait --for=condition=complete --timeout=900s "job/${JOB}"; then
+            echo "::error::migrations failed"
+            kubectl -n "${{ env.NAMESPACE }}" describe "job/${JOB}" || true
+            kubectl -n "${{ env.NAMESPACE }}" get pods -l "job-name=${JOB}" -o wide || true
+            kubectl -n "${{ env.NAMESPACE }}" describe pods -l "job-name=${JOB}" || true
+            kubectl -n "${{ env.NAMESPACE }}" logs "job/${JOB}" --tail=300 || true
+            exit 1
+          fi
+
+          echo "--- migration output ---"
+          kubectl -n "${{ env.NAMESPACE }}" logs "job/${JOB}" --tail=300
+
+          # Keep the last ten for forensics; the job's own TTL clears the rest.
+          kubectl -n "${{ env.NAMESPACE }}" get jobs -o json \
+            | jq -r '.items[] | select(.metadata.name | startswith("opal-migrate-")) | .metadata.name' \
+            | sort | head -n -10 | xargs -r kubectl -n "${{ env.NAMESPACE }}" delete job
+
+      # The whole overlay is applied, not just the image: setting the image
+      # alone would leave replicas, services and routes drifting from what the
+      # repository declares.
+      - name: Apply the production overlay
+        working-directory: deploy/k8s/overlays/production
+        run: |
+          sed -i "s|newTag: .*|newTag: ${{ steps.image.outputs.tag }}|" kustomization.yaml
+          grep -A 3 'images:' kustomization.yaml
+
+          kubectl apply -k .
+
+      - name: Restart every workload
+        if: ${{ inputs.force_restart }}
+        run: |
+          for workload in opal-web opal-horizon opal-scheduler opal-reverb; do
+            kubectl -n "${{ env.NAMESPACE }}" rollout restart "deployment/${workload}"
+          done
+
+      # Every workload is checked, not just the web one. A Horizon or Reverb
+      # pod that crash-loops while the web pods are healthy would otherwise
+      # leave a green deploy with no jobs running and no live updates.
+      - name: Wait for the rollouts
+        id: rollout
+        run: |
+          for workload in opal-web opal-horizon opal-scheduler opal-reverb; do
+            echo "--- ${workload}"
+            if ! kubectl -n "${{ env.NAMESPACE }}" rollout status "deployment/${workload}" --timeout=10m; then
+              echo "::error::${workload} did not roll out"
+              kubectl -n "${{ env.NAMESPACE }}" describe "deployment/${workload}" || true
+              kubectl -n "${{ env.NAMESPACE }}" logs "deployment/${workload}" --tail=200 --all-containers || true
+              echo "failed=${workload}" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+          done
+
+      # A half-deployed cluster is worse than the previous release. Every
+      # workload moves back together, because the overlay updated them together.
+      - name: Roll back
+        if: failure() && steps.rollout.outcome == 'failure'
+        run: |
+          for workload in opal-web opal-horizon opal-scheduler opal-reverb; do
+            kubectl -n "${{ env.NAMESPACE }}" rollout undo "deployment/${workload}" || true
+          done
+
+          for workload in opal-web opal-horizon opal-scheduler opal-reverb; do
+            kubectl -n "${{ env.NAMESPACE }}" rollout status "deployment/${workload}" --timeout=5m || true
+          done
+
+          echo "::error::rolled back to the previous revision; the database migration was NOT reverted"
+
+      - name: Smoke check
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 10 "https://${{ env.APP_HOST }}/up" > /dev/null; then
+              echo "health check passed on attempt ${attempt}"
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "::error::${{ env.APP_HOST }}/up did not answer"
+          exit 1
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deploy"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image | \`${{ steps.image.outputs.ref }}\` |"
+            echo "| Namespace | \`${{ env.NAMESPACE }}\` |"
+            echo "| Host | https://${{ env.APP_HOST }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          kubectl -n "${{ env.NAMESPACE }}" get pods -o wide || true

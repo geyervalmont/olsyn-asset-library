@@ -1,0 +1,40 @@
+# Ingress allow-list for the pods that listen on HTTP. Horizon and the
+# scheduler are not selected: they expose no port.
+#
+# K3s quirk worth remembering when testing this: the embedded kube-router
+# installs a new pod's iptables a few seconds after it reaches Running, so a
+# throwaway `kubectl run --rm curl` that connects immediately gets HTTP 000 and
+# looks like a policy failure. Test from a stable pod, or sleep first.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opal-http-allow
+  labels:
+    app: opal
+spec:
+  podSelector:
+    matchExpressions:
+      - key: component
+        operator: In
+        values: [web, reverb]
+  policyTypes: [Ingress]
+  ingress:
+    # Traefik, which is where every external request arrives from.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8080
+    # Same namespace: Horizon and the scheduler reach the app, and the web
+    # pods authorise websocket channels against themselves.
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8080

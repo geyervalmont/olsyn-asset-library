@@ -1,0 +1,16 @@
+# Keeps a web pod serving through a node drain. Only the web deployment has
+# one: Horizon, the scheduler and Reverb are single-replica by design, and a
+# PDB on a single replica blocks drains rather than protecting anything.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: opal-web
+  labels:
+    app: opal
+    component: web
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: opal
+      component: web

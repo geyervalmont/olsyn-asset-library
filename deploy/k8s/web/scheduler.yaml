@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opal-scheduler
+  labels:
+    app: opal
+    component: scheduler
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  # Recreate, not RollingUpdate: a rolling update would briefly run two
+  # schedulers and fire every due task twice.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: opal
+      component: scheduler
+  template:
+    metadata:
+      labels:
+        app: opal
+        component: scheduler
+    spec:
+      nodeSelector:
+        node-role: edge
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: scheduler
+          image: ghcr.io/geyervalmont/olsyn-asset-library:latest
+          command: [php, artisan, schedule:work]
+          envFrom:
+            - configMapRef:
+                name: opal-config
+            - secretRef:
+                name: opal-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      imagePullSecrets:
+        - name: ghcr-secret

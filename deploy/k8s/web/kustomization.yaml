@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml     # opal-web + Service
+  - horizon.yaml
+  - scheduler.yaml
+  - reverb.yaml         # opal-reverb + Service
+  - ingress.yaml        # IngressRoutes + redirect Middleware
+  - pdb.yaml
+  - networkpolicy.yaml
+
+# migrate-job.yaml is deliberately absent: CI renders it per deploy with a
+# unique name, applies it, and waits for it before rolling the Deployments.
+#
+# The opal-secrets Secret is deliberately absent too: it is decrypted from
+# deploy/secrets/production.yaml with SOPS at deploy time and applied
+# separately. Nothing encrypted or secret belongs in a base.

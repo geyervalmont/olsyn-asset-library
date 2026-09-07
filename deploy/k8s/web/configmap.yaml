@@ -1,0 +1,95 @@
+# Configuration that is not secret, kept apart from the Secret so a change to
+# a log level is reviewable in a diff and does not mean re-encrypting the
+# database password. Both are mounted with envFrom; the Secret is listed
+# second in every workload, so it wins on any key that appears in both.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opal-config
+  labels:
+    app: opal
+data:
+  APP_NAME: Olsyn Asset Library
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_URL: https://library.olsyn.com
+  APP_LOCALE: en
+  APP_FALLBACK_LOCALE: en
+  APP_MAINTENANCE_DRIVER: file
+  BCRYPT_ROUNDS: "12"
+
+  LOG_CHANNEL: stack
+  LOG_STACK: single
+  LOG_LEVEL: warning
+  LOG_DEPRECATIONS_CHANNEL: "null"
+
+  # Octane behind a TLS-terminating proxy. Without OCTANE_HTTPS the app
+  # generates http:// URLs, which breaks assets, redirects and Livewire's
+  # update endpoint.
+  OCTANE_SERVER: frankenphp
+  OCTANE_HTTPS: "true"
+
+  DB_CONNECTION: pgsql
+  DB_HOST: REPLACE_ME.ap-southeast-2.rds.amazonaws.com
+  DB_PORT: "5432"
+  DB_DATABASE: asset_library
+  DB_USERNAME: opal
+
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+  SESSION_DRIVER: database
+  SESSION_LIFETIME: "120"
+  SESSION_ENCRYPT: "false"
+  SESSION_PATH: /
+  SESSION_DOMAIN: library.olsyn.com
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  BROADCAST_CONNECTION: reverb
+
+  MAIL_MAILER: smtp
+  MAIL_HOST: email-smtp.ap-southeast-2.amazonaws.com
+  MAIL_PORT: "587"
+  MAIL_SCHEME: tls
+  MAIL_FROM_ADDRESS: asset-library@olsyn.com
+  MAIL_FROM_NAME: Olsyn Asset Library
+
+  # The library's own bucket. No access keys: pods run on the edge node, whose
+  # instance profile already grants S3 on olsyn-prod-* (infra/terraform/
+  # modules/edge/main.tf). AWS_URL is deliberately unset — files are served
+  # through the authenticated controller, which is what records the access
+  # trail, so nothing needs a public object URL.
+  FILESYSTEM_DISK: s3
+  MEDIA_DISK: s3
+  MEDIA_MAX_FILE_SIZE: "1073741824"
+  AWS_BUCKET: olsyn-prod-materials
+  AWS_DEFAULT_REGION: ap-southeast-2
+  AWS_USE_PATH_STYLE_ENDPOINT: "false"
+
+  # The legacy corpus as staged for ingest: read-only, never written to by the
+  # app. `opal:import:legacy-files --disk=legacy` reads from here.
+  LEGACY_AWS_BUCKET: olsyn-prod-material-corpus
+  LEGACY_AWS_DEFAULT_REGION: ap-southeast-2
+
+  OPAL_FILES_DISK: s3
+  OPAL_FILES_PREFIX: opal/files
+  OPAL_BUCKET: olsyn-prod-materials
+  OPAL_AUTO_RENDER_PREVIEWS: "true"
+  OPAL_SESSION_LIVE_SECONDS: "90"
+  OPAL_LINK_TTL_MINUTES: "10"
+
+  # What the Reverb server binds, and what clients are told to connect to.
+  REVERB_SERVER_HOST: 0.0.0.0
+  REVERB_SERVER_PORT: "8080"
+  REVERB_HOST: library-ws.olsyn.com
+  REVERB_PORT: "443"
+  REVERB_SCHEME: https
+  # One Reverb replica holds all connections in memory. Running more than one
+  # requires REVERB_SCALING_ENABLED=true so they share state over Redis.
+  REVERB_SCALING_ENABLED: "false"
+
+  # What the Revit extension is handed when it links (config/opal.php).
+  OPAL_REALTIME_SCHEME: https
+  OPAL_REALTIME_HOST: library-ws.olsyn.com
+  OPAL_REALTIME_PORT: "443"

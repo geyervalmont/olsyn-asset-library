@@ -28,3 +28,11 @@ apps/web/.phpunit.result.cache
 
 # Local infrastructure
 infrastructure/local/data/
+
+# Secrets: only the SOPS-encrypted *.sops.yaml and the *.example.yaml
+# templates are committed. A plaintext working copy is never committed, which
+# is why the default here is to ignore everything else in the directory.
+deploy/secrets/*.yaml
+!deploy/secrets/*.example.yaml
+!deploy/secrets/*.sops.yaml
+.env.secrets

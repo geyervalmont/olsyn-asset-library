@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: olsyn-asset-library
+
+resources:
+  - ../../web
+
+patches:
+  # Two web pods so a rollout or a node drain never takes the site down.
+  # Horizon, the scheduler and Reverb stay at one for the reasons written on
+  # each of them.
+  - target:
+      kind: Deployment
+      name: opal-web
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+
+# CI rewrites the tag to the image it just built.
+images:
+  - name: ghcr.io/geyervalmont/olsyn-asset-library
+    newTag: latest

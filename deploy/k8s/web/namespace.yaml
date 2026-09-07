@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: olsyn-asset-library
+  labels:
+    app.kubernetes.io/part-of: opal
+# The name matters: cert-manager's wildcard certificate is copied into
+# namespaces matching `olsyn-.*` by the emberstack reflector
+# (infra/k8s/base/cert-manager/certificates.yaml). A namespace outside that
+# pattern gets no `olsyn-wildcard-tls` Secret and Traefik quietly serves its
+# self-signed default.

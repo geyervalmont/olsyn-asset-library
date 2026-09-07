@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opal-reverb
+  labels:
+    app: opal
+    component: reverb
+spec:
+  # One replica only. Reverb holds connections and channel state in memory, so
+  # a second replica would split subscribers: a command broadcast by the pod
+  # holding the web request never reaches a Revit client connected to the
+  # other. Running more than one requires REVERB_SCALING_ENABLED=true, which
+  # puts that state on Redis.
+  replicas: 1
+  revisionHistoryLimit: 3
+  # Every connection drops on a restart anyway; the clients reconnect with
+  # backoff and catch up over HTTP, so there is no point overlapping pods.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: opal
+      component: reverb
+  template:
+    metadata:
+      labels:
+        app: opal
+        component: reverb
+    spec:
+      nodeSelector:
+        node-role: edge
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: reverb
+          image: ghcr.io/geyervalmont/olsyn-asset-library:latest
+          command: [php, artisan, reverb:start, --host=0.0.0.0, --port=8080]
+          ports:
+            - containerPort: 8080
+              name: ws
+          envFrom:
+            - configMapRef:
+                name: opal-config
+            - secretRef:
+                name: opal-secrets
+          # Reverb answers the Pusher handshake on any path; a TCP check is
+          # enough to know the listener is up without opening a websocket.
+          startupProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      imagePullSecrets:
+        - name: ghcr-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opal-reverb
+  labels:
+    app: opal
+    component: reverb
+spec:
+  selector:
+    app: opal
+    component: reverb
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: ws

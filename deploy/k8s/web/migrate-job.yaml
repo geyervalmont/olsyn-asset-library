@@ -1,0 +1,39 @@
+# Migrations as a pre-deploy Job, applied and waited on before the Deployments
+# are touched, so exactly one process migrates while the old pods keep serving.
+#
+# Not in kustomization.yaml: CI renders this per deploy with a unique name and
+# the image tag of the build being released.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opal-migrate
+  labels:
+    app: opal
+    component: migrate
+spec:
+  # A retried migration is worse than a failed one — fail loudly instead.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: opal
+        component: migrate
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        node-role: edge
+      containers:
+        - name: migrate
+          image: ghcr.io/geyervalmont/olsyn-asset-library:latest  # overridden by CI
+          command: [php, artisan, migrate, --force]
+          # Both env sources are required. Without them the Job boots with the
+          # image's baked config, points at no database, and `migrate` reports
+          # success having applied nothing — a green deploy with no migrations.
+          envFrom:
+            - configMapRef:
+                name: opal-config
+            - secretRef:
+                name: opal-secrets
+      imagePullSecrets:
+        - name: ghcr-secret

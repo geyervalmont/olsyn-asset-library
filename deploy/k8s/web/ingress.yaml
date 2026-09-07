@@ -1,0 +1,77 @@
+# Traefik CRDs, not networking.k8s.io/Ingress: that is what this cluster runs.
+# Both hosts are single-label under olsyn.com, so the existing *.olsyn.com
+# wildcard certificate covers them and the wildcard A record already resolves
+# them — no DNS or cert-manager work is needed for either.
+#
+# Websockets need no annotation. Traefik proxies the Upgrade handshake as it
+# comes; the nginx-ingress `proxy-read-timeout` dance does not apply here.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: opal-web
+  labels:
+    app: opal
+    component: web
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`library.olsyn.com`)
+      kind: Rule
+      services:
+        - name: opal-web
+          port: 80
+  tls:
+    secretName: olsyn-wildcard-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: opal-reverb
+  labels:
+    app: opal
+    component: reverb
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`library-ws.olsyn.com`)
+      kind: Rule
+      services:
+        - name: opal-reverb
+          port: 80
+  tls:
+    secretName: olsyn-wildcard-tls
+---
+# Plain HTTP for both hosts, redirected. Without a router on the `web`
+# entrypoint, an http:// request matches nothing and Traefik answers with a
+# bare "404 page not found", which reads as a broken domain.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: opal-redirect
+  labels:
+    app: opal
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`library.olsyn.com`) || Host(`library-ws.olsyn.com`)
+      kind: Rule
+      services:
+        - name: opal-web
+          port: 80
+      middlewares:
+        - name: redirect-https
+---
+# Referenced by the redirect route above; must live in the same namespace.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  labels:
+    app: opal
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

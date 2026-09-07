@@ -15,6 +15,7 @@ narrative:
   material model: readable codes, variants, provenance, search;
 - [`../services/prismfs/README.md`](../services/prismfs/README.md) — standalone
 - [`../integrations/revit/README.md`](../integrations/revit/README.md) — the pyRevit extension, its Revit-independent client, and the Unix proxy harness
+- [`../deploy/README.md`](../deploy/README.md) — running the control plane, PrismFS and the corpus ingest on the Olsyn cluster
   PrismFS usage, configuration, and development;
 - [`adr/`](adr/) — architectural decision records; and
 - [`api/README.md`](api/README.md) — API documentation placeholder.

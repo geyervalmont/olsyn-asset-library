@@ -3,7 +3,12 @@ kind: Kustomization
 
 # One drive per instance. Copy this directory (or use an overlay) per drive
 # and change the slug, share name and Secret.
-namespace: opal
+#
+# Applied on its own, not from the production overlay: the pod is privileged
+# (FUSE plus bidirectional mount propagation), its Service wants a real load
+# balancer on TCP 445, and it cannot start until a drive token has been issued
+# from the running control plane. See deploy/README.md.
+namespace: olsyn-asset-library
 
 resources:
   - configmap.yaml
@@ -20,8 +25,8 @@ labels:
 
 images:
   - name: prismfs
-    newName: ghcr.io/olsyn/prismfs
+    newName: ghcr.io/geyervalmont/prismfs
     newTag: latest
   - name: prismfs-samba
-    newName: ghcr.io/olsyn/prismfs-samba
+    newName: ghcr.io/geyervalmont/prismfs-samba
     newTag: latest

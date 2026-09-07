@@ -1,0 +1,15 @@
+# SOPS rules for this repository.
+#
+# The age recipient is the same production key the rest of the Olsyn platform
+# uses, so the deploy pipeline decrypts with the SOPS_AGE_KEY_PRODUCTION secret
+# it already holds.
+#
+# encrypted_regex is deliberately absent: these files are flat KEY: value maps
+# consumed with `sops -d --output-type dotenv`, so every value is a secret and
+# every value gets encrypted. (The platform's Kubernetes Secret manifests use
+# `encrypted_regex: '^(data|stringData)$'` because there the keys sit under a
+# manifest wrapper; that does not apply here.)
+creation_rules:
+  - path_regex: deploy/secrets/production\.sops\.yaml$
+    age: >-
+      age17dww9waaflpy9c65xge8tq0tqjurdymypc8rxky258yx80sfj4ssjh7vq5

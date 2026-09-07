@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opal-horizon
+  labels:
+    app: opal
+    component: horizon
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  # Horizon supervises its own workers; two instances would both claim work
+  # and double the configured process counts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: opal
+      component: horizon
+  template:
+    metadata:
+      labels:
+        app: opal
+        component: horizon
+    spec:
+      nodeSelector:
+        node-role: edge
+      # A preview render or a downscale can run for a couple of minutes;
+      # horizon:terminate lets the current job finish before the process goes.
+      terminationGracePeriodSeconds: 300
+      containers:
+        - name: horizon
+          image: ghcr.io/geyervalmont/olsyn-asset-library:latest
+          command: [php, artisan, horizon]
+          envFrom:
+            - configMapRef:
+                name: opal-config
+            - secretRef:
+                name: opal-secrets
+          lifecycle:
+            preStop:
+              exec:
+                command: [php, artisan, horizon:terminate]
+          # Horizon serves no HTTP, so /up cannot be used. `horizon:status`
+          # exits non-zero when the master process is not running, which is
+          # exactly the wedged state worth restarting for. The thresholds are
+          # deliberately slack: a Redis blip should not restart the pod.
+          livenessProbe:
+            exec:
+              command: [php, artisan, horizon:status]
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              # Preview renders hold a few decoded images at once.
+              memory: 2Gi
+      imagePullSecrets:
+        - name: ghcr-secret

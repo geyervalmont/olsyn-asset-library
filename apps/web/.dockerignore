@@ -1,0 +1,50 @@
+# Build context for the production image. Keep it small: the legacy corpus
+# alone is over a gigabyte and has no business in a container.
+
+.git
+.gitignore
+.gitattributes
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Rebuilt inside the image
+/node_modules
+/vendor
+/public/build
+/public/hot
+/public/storage
+
+# The staged legacy corpus and its database: read from a bucket in production,
+# never baked into the image.
+/storage/app/legacy
+
+# Runtime state that must not travel with the image
+/storage/logs/*.log
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*.php
+/storage/framework/testing
+/storage/*.key
+
+# Development tooling
+/tests
+/.phpunit.cache
+.phpunit.result.cache
+/compose.yaml
+/docker
+/.github
+phpstan.neon
+pint.json
+
+# Editors and operating systems
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
