@@ -1,0 +1,35 @@
+name: Build review image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./apps/web
+          file: ./apps/web/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/geyervalmont/opal:review-${{ github.sha }}
+          build-args: |
+            VITE_REVERB_APP_KEY=${{ secrets.VITE_REVERB_APP_KEY }}
+            VITE_REVERB_HOST=opal-ws.olsyn.com
+            VITE_REVERB_PORT=443
+            VITE_REVERB_SCHEME=https
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureOlsynAccess;
 use App\Http\Middleware\UseCurrentTenant;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -17,9 +18,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     // Sessions and bearer tokens both authorise channels; the client
     // extension posts to /broadcasting/auth without a CSRF token.
-    ->withBroadcasting(__DIR__.'/../routes/channels.php', ['middleware' => ['web', 'auth:sanctum']])
+    ->withBroadcasting(__DIR__.'/../routes/channels.php', ['middleware' => ['web', 'auth:sanctum', EnsureOlsynAccess::class]])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
+        $middleware->web(append: [EnsureOlsynAccess::class]);
         $middleware->validateCsrfTokens(except: ['prismfs/*', 'broadcasting/auth']);
 
         $middleware->group('tenant', [

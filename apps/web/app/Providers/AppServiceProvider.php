@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Enums\Permission;
+use App\Http\Middleware\EnsureOlsynAccess;
 use App\Http\Middleware\UseCurrentTenant;
 use App\Library\Conversion\ConverterRegistry;
 use App\Library\Conversion\OmniverseMdlConverter;
@@ -14,6 +16,7 @@ use App\Models\Representation;
 use App\Models\User;
 use App\Models\Variant;
 use App\Models\WorkerRun;
+use App\Services\OlsynAccess;
 use Carbon\CarbonImmutable;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
@@ -56,6 +59,7 @@ class AppServiceProvider extends ServiceProvider
 
         Livewire::addPersistentMiddleware([
             UseCurrentTenant::class,
+            EnsureOlsynAccess::class,
             NeedsTenant::class,
             EnsureValidTenantSession::class,
         ]);
@@ -93,7 +97,15 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function configureAuthorization(): void
     {
-        Gate::before(fn (User $user): ?bool => $user->isSuperAdmin() ? true : null);
+        Gate::before(function (User $user, string $ability): ?bool {
+            // A central permission is a ceiling: it never bypasses local workspace policy.
+            $permission = Permission::tryFrom($ability);
+            if ($permission && ! app(OlsynAccess::class)->allows($user, $ability)) {
+                return false;
+            }
+
+            return $user->isSuperAdmin() ? true : null;
+        });
     }
 
     /**

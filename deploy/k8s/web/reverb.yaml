@@ -42,6 +42,8 @@ spec:
                 name: opal-config
             - secretRef:
                 name: opal-secrets
+            - secretRef:
+                name: olsyn-access
           # Reverb answers the Pusher handshake on any path; a TCP check is
           # enough to know the listener is up without opening a websocket.
           startupProbe:

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\MaterialsController;
 use App\Http\Controllers\Api\RealtimeController;
 use App\Http\Controllers\Api\SessionsController;
 use App\Http\Controllers\Api\VariantsController;
+use App\Http\Middleware\EnsureOlsynAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -26,7 +27,7 @@ Route::prefix('v1')->group(function () {
     Route::get('link/{code}', [LinkController::class, 'show'])->middleware('throttle:60,1')->name('api.link.show');
 });
 
-Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class])->group(function () {
     Route::get('me', fn (Request $request) => [
         'name' => $request->user()->name,
         'email' => $request->user()->email,
