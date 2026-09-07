@@ -12,7 +12,8 @@ answer rather than a guess. Run it after staging and before the ingest.
 Reports four things, in the order they matter:
 
   missing       the ingest will skip these outright
-  size mismatch truncated or half-written uploads
+  truncated     staged bytes disagree with what the source served
+  stale         staged matches the source, but the manifest disagrees
   case only     present, but under a different case
 
 The last one is the trap. The corpus was authored on Windows, which does not
@@ -20,6 +21,7 @@ distinguish Foo.png from foo.png; S3 does. A file whose case drifted at any
 point copies fine, looks fine in a listing, and then misses every lookup.
 """
 import argparse
+import os
 import sqlite3
 import subprocess
 import sys
@@ -70,6 +72,9 @@ def main() -> int:
     parser.add_argument("--bucket", default="olsyn-prod-material-corpus")
     parser.add_argument("--prefix", default="corpus")
     parser.add_argument("--region", default="ap-southeast-2")
+    parser.add_argument("--ledger", default=os.path.expanduser(
+        "~/.local/share/opal-corpus/ledger.sqlite"),
+        help="transfer ledger, used to tell a stale manifest from a damaged upload")
     parser.add_argument("--show", type=int, default=15, help="examples per category")
     args = parser.parse_args()
 
@@ -77,11 +82,27 @@ def main() -> int:
     staged = staged_objects(args.bucket, args.prefix, args.region)
     folded = {path.lower(): path for path in staged}
 
-    missing, mismatched, case_only = [], [], []
+    # What the source actually served, recorded during discovery. Without it a
+    # file the supplier revised after the database snapshot is indistinguishable
+    # from one we truncated, and the difference decides whether anyone needs to
+    # act.
+    source: dict[str, int] = {}
+    if os.path.exists(args.ledger):
+        ledger = sqlite3.connect(f"file:{args.ledger}?mode=ro", uri=True, timeout=10)
+        marker = "/Material Library/"
+        for path, size in ledger.execute("SELECT path, size FROM discovered"):
+            if marker in path:
+                source[path.split(marker, 1)[1]] = size
+        ledger.close()
+
+    missing, mismatched, stale, case_only = [], [], [], []
     for path, size in sorted(expected.items()):
         if path in staged:
             if staged[path] != size:
-                mismatched.append((path, size, staged[path]))
+                if source.get(path) == staged[path]:
+                    stale.append((path, size, staged[path]))
+                else:
+                    mismatched.append((path, size, staged[path]))
         elif path.lower() in folded:
             case_only.append((path, folded[path.lower()]))
         else:
@@ -90,12 +111,14 @@ def main() -> int:
     print(f"expected   {len(expected):>7,} files from the manifest")
     print(f"staged     {len(staged):>7,} objects under {args.prefix}/")
     print(f"missing    {len(missing):>7,}")
-    print(f"size differ{len(mismatched):>7,}")
+    print(f"truncated  {len(mismatched):>7,}")
+    print(f"stale      {len(stale):>7,}  (staged matches the source; the manifest is out of date)")
     print(f"case only  {len(case_only):>7,}")
 
     for title, rows in (
         ("MISSING", [f"  {p}" for p in missing]),
-        ("SIZE MISMATCH", [f"  {p}  manifest {a:,} vs staged {b:,}" for p, a, b in mismatched]),
+        ("TRUNCATED", [f"  {p}  manifest {a:,} vs staged {b:,}" for p, a, b in mismatched]),
+        ("STALE MANIFEST", [f"  {p}  manifest {a:,} vs source and staged {b:,}" for p, a, b in stale]),
         ("CASE ONLY", [f"  manifest {p}\n    staged {s}" for p, s in case_only]),
     ):
         if rows:
@@ -106,8 +129,15 @@ def main() -> int:
 
     # Extra objects are fine: previews and compressed variants live alongside
     # the files the database names, and the ingest simply ignores them.
+    # Stale entries are not a defect: the bytes on hand are the bytes the
+    # supplier has. Only damage and absence block an ingest.
     ok = not missing and not mismatched and not case_only
-    print("\nComplete." if ok else "\nNot ready to ingest.")
+    if ok:
+        print("\nComplete.")
+    elif not mismatched and not case_only:
+        print("\nEverything the source still holds is staged; the rest is absent upstream.")
+    else:
+        print("\nNot ready to ingest.")
     return 0 if ok else 1
 
 
