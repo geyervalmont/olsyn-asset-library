@@ -108,6 +108,12 @@ RUN bun run build
 # ---------------------------------------------------------------------------
 FROM php_base AS app
 
+# Links the package to this repository in the registry, which is what lets the
+# repository's own Actions token push to it. Without the link the package
+# belongs to whoever first pushed it by hand, and CI is denied.
+LABEL org.opencontainers.image.source="https://github.com/geyervalmont/olsyn-asset-library"
+LABEL org.opencontainers.image.description="Olsyn Parametric Asset Library"
+
 WORKDIR /app
 
 COPY . .
