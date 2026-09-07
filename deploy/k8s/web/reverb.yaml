@@ -32,7 +32,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: reverb
-          image: ghcr.io/geyervalmont/olsyn-asset-library:latest
+          image: ghcr.io/geyervalmont/opal:latest
           command: [php, artisan, reverb:start, --host=0.0.0.0, --port=8080]
           ports:
             - containerPort: 8080

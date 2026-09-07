@@ -22,7 +22,12 @@ env:
   # Must match the image name the manifests pin, because the overlay only
   # rewrites the tag: a different name here builds one image and deploys
   # the reference to another, which fails as ImagePullBackOff.
-  IMAGE_NAME: geyervalmont/olsyn-asset-library
+  #
+  # This package is created by the workflow itself. An image first pushed by
+  # hand belongs to that account, and the repository's Actions token is then
+  # denied on it with 'permission_denied: read_package' — which is exactly
+  # what happened to the olsyn-asset-library package this replaces.
+  IMAGE_NAME: geyervalmont/opal
   NAMESPACE: opal
   APP_HOST: opal.olsyn.com
 
@@ -128,7 +133,7 @@ jobs:
           IMAGE_REF="${{ steps.image.outputs.ref }}"
 
           sed -e "s|^  name: opal-migrate$|  name: ${JOB}|" \
-              -e "s|image: ghcr.io/geyervalmont/olsyn-asset-library:.*$|image: ${IMAGE_REF}|" \
+              -e "s|image: ghcr.io/geyervalmont/opal:.*$|image: ${IMAGE_REF}|" \
               deploy/k8s/web/migrate-job.yaml > /tmp/migrate-job.yaml
 
           # A rename or retag that the substitutions missed would silently

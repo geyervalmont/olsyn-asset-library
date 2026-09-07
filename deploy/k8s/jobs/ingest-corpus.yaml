@@ -45,7 +45,7 @@ spec:
         - name: ghcr-secret
       containers:
         - name: ingest
-          image: ghcr.io/geyervalmont/olsyn-asset-library:latest
+          image: ghcr.io/geyervalmont/opal:latest
           command:
             - php
             - artisan

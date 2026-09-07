@@ -27,7 +27,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: scheduler
-          image: ghcr.io/geyervalmont/olsyn-asset-library:latest
+          image: ghcr.io/geyervalmont/opal:latest
           command: [php, artisan, schedule:work]
           envFrom:
             - configMapRef:

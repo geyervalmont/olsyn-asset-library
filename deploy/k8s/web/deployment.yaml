@@ -34,7 +34,7 @@ spec:
       terminationGracePeriodSeconds: 45
       containers:
         - name: web
-          image: ghcr.io/geyervalmont/olsyn-asset-library:latest  # overridden by CI
+          image: ghcr.io/geyervalmont/opal:latest  # overridden by CI
           ports:
             - containerPort: 8000
               name: http

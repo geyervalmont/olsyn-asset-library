@@ -81,7 +81,7 @@ kubectl -n opal wait --for=condition=complete \
 
 # 3. the workloads
 cd deploy/k8s/overlays/production
-kustomize edit set image ghcr.io/geyervalmont/olsyn-asset-library:${TAG}
+kustomize edit set image ghcr.io/geyervalmont/opal:${TAG}
 kubectl apply -k .
 kubectl -n opal rollout status deploy/opal-web --timeout=10m
 kubectl -n opal rollout status deploy/opal-horizon --timeout=5m

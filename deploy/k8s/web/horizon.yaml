@@ -29,7 +29,7 @@ spec:
       terminationGracePeriodSeconds: 300
       containers:
         - name: horizon
-          image: ghcr.io/geyervalmont/olsyn-asset-library:latest
+          image: ghcr.io/geyervalmont/opal:latest
           command: [php, artisan, horizon]
           envFrom:
             - configMapRef:

@@ -20,5 +20,5 @@ patches:
 
 # CI rewrites the tag to the image it just built.
 images:
-  - name: ghcr.io/geyervalmont/olsyn-asset-library
+  - name: ghcr.io/geyervalmont/opal
     newTag: sha-40a7284

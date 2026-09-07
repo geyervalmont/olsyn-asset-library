@@ -25,7 +25,7 @@ spec:
         node-role: opal
       containers:
         - name: migrate
-          image: ghcr.io/geyervalmont/olsyn-asset-library:latest  # overridden by CI
+          image: ghcr.io/geyervalmont/opal:latest  # overridden by CI
           command: [php, artisan, migrate, --force]
           # Both env sources are required. Without them the Job boots with the
           # image's baked config, points at no database, and `migrate` reports
