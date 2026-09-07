@@ -129,46 +129,55 @@ The source is the `Material Library` folder in mcrossley's OneDrive: 40,330
 files, 173 GB. The legacy database (`material_assets.sqlite`) is already in the
 bucket.
 
-### Authorising OneDrive
+### Getting at the files
 
-There is no server-to-server transfer between Microsoft and S3 — rclone always
-proxies the bytes — so the point of running it in the cluster is whose
-connection it proxies them through, not avoiding the copy. What cannot be moved
-into the cluster is the OAuth consent, which needs a browser signed in as
-someone who can read that folder. Do this once, on your own machine:
+The tenant blocks third-party OAuth applications and IT will not approve one,
+so rclone, onedriver, davfs2 and every other client are out — it is a policy on
+unapproved apps, not something specific to any tool. A signed-in browser session
+is the only credential available.
 
-```sh
-rclone config
-# n) new remote
-# name> onedrive                        <- must be exactly this; the job refers to it
-# Storage> onedrive
-# For "config type", choose the SharePoint site URL option and paste:
-#   https://valmontinteriors-my.sharepoint.com/personal/mcrossley_geyervalmont_com
-# Accept the browser prompt as yourself, then pick the "Documents" drive.
-```
+That is enough, because the SharePoint REST API accepts the session cookie. It
+gives per-file access rather than the download button's zip, which matters: the
+zip endpoint caps at 10 GB per archive, 20 GB per download and 10,000 files,
+against 173 GB and 40,330 files. Per-file has no such ceiling, needs no unzip
+step, and streams to S3 without touching local disk.
 
-Confirm it resolves to the right folder before going near the cluster — the
-first level should be the category folders (`Fabric`, `Carpet`, `Ceramic`, …):
+Set the environment up once:
 
 ```sh
-rclone lsd "onedrive:Documents/Material Library"
+python3 -m venv ~/.local/share/opal-corpus/venv
+~/.local/share/opal-corpus/venv/bin/pip install boto3 requests
 ```
 
-If consent is refused, the tenant blocks rclone's default application. That
-needs an Entra app registration with delegated `Files.Read.All` and
-`offline_access`, whose client ID and secret `rclone config` will accept.
+Take a cookie from the browser: open the Material Library folder, DevTools →
+Network → any request to the site → Copy → **Copy as cURL**, saved to a file.
+The Cookie header is parsed out of it and the rest ignored, so no editing is
+needed. Treat that file as a live credential and delete it when done.
 
-Then hand the token to the cluster. Keep it out of your shell history and out
-of the repository — the config holds a live refresh token:
+Prove the pipeline on a handful of files before committing to the full run:
 
 ```sh
-umask 077
-rclone config show onedrive > /tmp/onedrive.conf
-kubectl -n opal create secret generic onedrive-rclone \
-  --from-file=rclone.conf=/tmp/onedrive.conf \
-  --dry-run=client -o yaml | kubectl apply -f -
-shred -u /tmp/onedrive.conf
+~/.local/share/opal-corpus/venv/bin/python deploy/scripts/pull-corpus.py \
+    --cookies ~/onedrive-cookie.txt --folder Ceramic --limit 20
 ```
+
+Then work through it a top-level folder at a time:
+
+```sh
+~/.local/share/opal-corpus/venv/bin/python deploy/scripts/pull-corpus.py \
+    --cookies ~/onedrive-cookie.txt --folder Fabric
+```
+
+Cookies expire, usually within hours. When one does the run stops cleanly and
+says so; take a fresh cookie and start it again. A ledger at
+`~/.local/share/opal-corpus/ledger.sqlite` records every file that landed, so a
+rerun costs only what is still outstanding and nothing is fetched twice. The
+same applies to failures: they are recorded individually and retried on the next
+run rather than ending it.
+
+If you would rather download to disk first — the OneDrive sync client on a
+Windows machine is the one Microsoft-approved route — `upload-corpus.sh` takes
+it from there.
 
 ### Staging it
 

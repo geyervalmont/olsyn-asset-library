@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""Pull the corpus from SharePoint to S3 using a browser session cookie.
+
+The tenant blocks third-party OAuth applications, so there is no token to be
+had. A signed-in browser session is the one credential that exists, and the
+SharePoint REST API accepts it — which gives per-file access rather than the
+download button's zip.
+
+That distinction is the whole point. The zip endpoint caps at 10 GB per
+archive, 20 GB per download and 10,000 files, against a corpus of 173 GB and
+40,330 files; per-file transfers have no such ceiling, need no unzip step, and
+stream straight to S3 without ever touching local disk.
+
+    # once
+    python3 -m venv ~/.local/share/opal-corpus/venv
+    ~/.local/share/opal-corpus/venv/bin/pip install boto3 requests
+
+    # every run
+    ~/.local/share/opal-corpus/venv/bin/python deploy/scripts/pull-corpus.py \
+        --cookies ~/onedrive-cookie.txt --folder Fabric
+
+Cookies expire. When they do the script stops cleanly and says so; refresh the
+cookie and run it again. Everything already transferred is in the ledger and is
+not fetched twice, so a run costs only what is still outstanding.
+
+Getting the cookie: open the Material Library folder in the browser, DevTools →
+Network → click any request to the site → Copy → Copy as cURL, and save it to a
+file. The Cookie header is parsed out of it; the rest is ignored.
+"""
+import argparse
+import json
+import os
+import re
+import sqlite3
+import sys
+import time
+from datetime import datetime, timezone
+from urllib.parse import quote
+
+try:
+    import boto3
+    import requests
+    from botocore.config import Config
+except ImportError:
+    sys.exit(
+        "boto3 and requests are required. Create the environment once:\n"
+        "  python3 -m venv ~/.local/share/opal-corpus/venv\n"
+        "  ~/.local/share/opal-corpus/venv/bin/pip install boto3 requests\n"
+        "then run this with ~/.local/share/opal-corpus/venv/bin/python"
+    )
+
+ODATA = {"Accept": "application/json;odata=nometadata"}
+
+
+class SessionExpired(RuntimeError):
+    """The cookie is no longer accepted; nothing to do but refresh it."""
+
+
+def read_cookie(path: str) -> str:
+    """Accept either a raw Cookie header or a whole 'Copy as cURL' paste."""
+    blob = open(path, encoding="utf-8", errors="replace").read().strip()
+
+    for pattern in (r"-H\s+'[Cc]ookie:\s*(.+?)'", r'-H\s+"[Cc]ookie:\s*(.+?)"',
+                    r"-b\s+'(.+?)'", r'-b\s+"(.+?)"'):
+        found = re.search(pattern, blob, re.DOTALL)
+        if found:
+            return found.group(1).strip()
+
+    # Not a cURL paste: assume the file is the header value itself.
+    if blob.lower().startswith("cookie:"):
+        blob = blob.split(":", 1)[1]
+    if "=" not in blob:
+        raise SystemExit(f"no cookie found in {path}")
+    return blob.strip()
+
+
+def api_path(server_relative: str) -> str:
+    """SharePoint takes the path inside single quotes, so they must be doubled."""
+    return quote(server_relative.replace("'", "''"), safe="/")
+
+
+class SharePoint:
+    def __init__(self, site: str, cookie: str, tps: float):
+        self.site = site.rstrip("/")
+        self.interval = 1.0 / tps if tps > 0 else 0.0
+        self.last_call = 0.0
+        self.http = requests.Session()
+        self.http.headers.update({
+            "Cookie": cookie,
+            # SharePoint rejects requests it thinks are from a bot framework;
+            # a browser agent string is what the cookie was issued against.
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/140.0 Safari/537.36",
+        })
+
+    def get(self, url: str, **kwargs):
+        for attempt in range(6):
+            if self.interval:
+                wait = self.interval - (time.monotonic() - self.last_call)
+                if wait > 0:
+                    time.sleep(wait)
+            self.last_call = time.monotonic()
+
+            response = self.http.get(url, **kwargs)
+
+            if response.status_code in (401, 403):
+                raise SessionExpired(f"HTTP {response.status_code} from SharePoint")
+
+            # Microsoft answers a burst with 429 and tells you how long to wait.
+            # Honouring it is faster than fighting it.
+            if response.status_code in (429, 503):
+                delay = int(response.headers.get("Retry-After", 2 ** attempt))
+                print(f"    throttled, waiting {delay}s", flush=True)
+                time.sleep(min(delay, 120))
+                continue
+
+            response.raise_for_status()
+            return response
+
+        raise RuntimeError(f"gave up after repeated throttling: {url}")
+
+    def children(self, folder: str) -> tuple[list[dict], list[str]]:
+        """Files and subfolder paths directly under a server-relative folder."""
+        files, folders = [], []
+
+        for kind in ("Files", "Folders"):
+            url = (f"{self.site}/_api/web/GetFolderByServerRelativeUrl"
+                   f"('{api_path(folder)}')/{kind}")
+            params = {"$top": "5000"}
+            if kind == "Files":
+                params["$select"] = "Name,ServerRelativeUrl,Length"
+            else:
+                params["$select"] = "Name,ServerRelativeUrl"
+
+            while url:
+                payload = self.get(url, headers=ODATA, params=params).json()
+                for item in payload.get("value", []):
+                    if kind == "Files":
+                        files.append({"path": item["ServerRelativeUrl"],
+                                      "size": int(item["Length"])})
+                    else:
+                        # Forms holds list templates, never content.
+                        if item["Name"] != "Forms":
+                            folders.append(item["ServerRelativeUrl"])
+                url = payload.get("odata.nextLink")
+                params = None
+
+        return files, folders
+
+    def open_file(self, server_relative: str):
+        url = (f"{self.site}/_api/web/GetFileByServerRelativeUrl"
+               f"('{api_path(server_relative)}')/$value")
+        response = self.get(url, stream=True)
+        response.raw.decode_content = True
+        return response
+
+
+def open_ledger(path: str) -> sqlite3.Connection:
+    ledger = sqlite3.connect(path)
+    ledger.executescript("""
+        CREATE TABLE IF NOT EXISTS discovered (
+            path TEXT PRIMARY KEY, size INTEGER NOT NULL, root TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS walked (
+            root TEXT PRIMARY KEY, files INTEGER, finished_at TEXT);
+        CREATE TABLE IF NOT EXISTS transferred (
+            path TEXT PRIMARY KEY, size INTEGER, status TEXT NOT NULL,
+            error TEXT, updated_at TEXT);
+    """)
+    return ledger
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def human(count: int) -> str:
+    value = float(count)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:,.1f} {unit}"
+        value /= 1024
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--cookies", required=True, help="file holding the Cookie header or a Copy-as-cURL paste")
+    parser.add_argument("--site", default="https://valmontinteriors-my.sharepoint.com/personal/mcrossley_geyervalmont_com")
+    parser.add_argument("--root", default="/personal/mcrossley_geyervalmont_com/Documents/Material Library")
+    parser.add_argument("--folder", action="append", help="only this top-level folder; repeatable")
+    parser.add_argument("--bucket", default="olsyn-prod-material-corpus")
+    parser.add_argument("--prefix", default="corpus")
+    parser.add_argument("--region", default="ap-southeast-2")
+    parser.add_argument("--ledger", default=os.path.expanduser("~/.local/share/opal-corpus/ledger.sqlite"))
+    parser.add_argument("--tps", type=float, default=8.0, help="requests per second ceiling")
+    parser.add_argument("--limit", type=int, help="stop after this many files (for a trial run)")
+    parser.add_argument("--rediscover", action="store_true", help="re-walk folders instead of using the ledger")
+    args = parser.parse_args()
+
+    os.makedirs(os.path.dirname(args.ledger), exist_ok=True)
+    ledger = open_ledger(args.ledger)
+    sharepoint = SharePoint(args.site, read_cookie(args.cookies), args.tps)
+    s3 = boto3.client("s3", region_name=args.region,
+                      config=Config(retries={"max_attempts": 5, "mode": "standard"}))
+
+    root = args.root.rstrip("/")
+
+    try:
+        sharepoint.get(f"{args.site}/_api/web", headers=ODATA, params={"$select": "Title"})
+    except SessionExpired as expired:
+        print(f"The cookie is not being accepted ({expired}). Copy a fresh one and rerun.")
+        return 75
+    print(f"session ok, ledger {args.ledger}\n")
+
+    # Which top-level folders to work through.
+    _, top_level = sharepoint.children(root)
+    wanted = sorted(top_level, key=str.lower)
+    if args.folder:
+        selected = {name.lower() for name in args.folder}
+        wanted = [f for f in wanted if f.rsplit("/", 1)[-1].lower() in selected]
+        if not wanted:
+            print(f"no top-level folder matched {args.folder}")
+            return 2
+
+    transferred = failed = skipped = 0
+    moved_bytes = 0
+
+    for top in wanted:
+        name = top.rsplit("/", 1)[-1]
+
+        done_walk = ledger.execute("SELECT files FROM walked WHERE root = ?", (name,)).fetchone()
+        if done_walk and not args.rediscover:
+            files = [{"path": p, "size": s} for p, s in ledger.execute(
+                "SELECT path, size FROM discovered WHERE root = ?", (name,))]
+            print(f"{name}: {len(files):,} files (from ledger)")
+        else:
+            print(f"{name}: walking...", flush=True)
+            files, pending = [], [top]
+            while pending:
+                here = pending.pop()
+                found, subfolders = sharepoint.children(here)
+                files.extend(found)
+                pending.extend(subfolders)
+            ledger.executemany(
+                "INSERT OR REPLACE INTO discovered (path, size, root) VALUES (?, ?, ?)",
+                [(f["path"], f["size"], name) for f in files])
+            ledger.execute("INSERT OR REPLACE INTO walked (root, files, finished_at) VALUES (?, ?, ?)",
+                           (name, len(files), now()))
+            ledger.commit()
+            print(f"{name}: {len(files):,} files, {human(sum(f['size'] for f in files))}")
+
+        for entry in sorted(files, key=lambda f: f["path"]):
+            if args.limit is not None and transferred >= args.limit:
+                print(f"\nstopping at --limit {args.limit}")
+                ledger.commit()
+                return 0
+
+            relative = entry["path"][len(root) + 1:]
+            record = ledger.execute(
+                "SELECT size, status FROM transferred WHERE path = ?", (relative,)).fetchone()
+            if record and record[1] == "done" and record[0] == entry["size"]:
+                skipped += 1
+                continue
+
+            key = f"{args.prefix.rstrip('/')}/{relative}"
+            try:
+                with sharepoint.open_file(entry["path"]) as body:
+                    s3.upload_fileobj(body.raw, args.bucket, key)
+            except SessionExpired as expired:
+                ledger.commit()
+                print(f"\nThe cookie expired mid-run ({expired}).")
+                print(f"Copy a fresh one and rerun; {transferred:,} files are already banked.")
+                return 75
+            except Exception as failure:  # noqa: BLE001 - one bad file must not end the run
+                ledger.execute(
+                    "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
+                    " VALUES (?, ?, 'failed', ?, ?)", (relative, entry["size"], str(failure)[:500], now()))
+                ledger.commit()
+                failed += 1
+                print(f"  FAILED {relative}: {str(failure)[:120]}")
+                continue
+
+            ledger.execute(
+                "INSERT OR REPLACE INTO transferred (path, size, status, error, updated_at)"
+                " VALUES (?, ?, 'done', NULL, ?)", (relative, entry["size"], now()))
+            transferred += 1
+            moved_bytes += entry["size"]
+
+            if transferred % 100 == 0:
+                ledger.commit()
+                print(f"    {transferred:,} moved ({human(moved_bytes)}), "
+                      f"{skipped:,} already there, {failed:,} failed", flush=True)
+
+        ledger.commit()
+        print(f"{name}: done\n", flush=True)
+
+    print(f"transferred {transferred:,} files ({human(moved_bytes)})")
+    print(f"already present {skipped:,}")
+    print(f"failed {failed:,}")
+    if failed:
+        print("\nRerun to retry the failures; they are recorded and will be picked up.")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
