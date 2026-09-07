@@ -23,7 +23,7 @@ spec:
         component: scheduler
     spec:
       nodeSelector:
-        node-role: edge
+        node-role: opal
       terminationGracePeriodSeconds: 60
       containers:
         - name: scheduler

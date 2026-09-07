@@ -1,0 +1,118 @@
+# Redis for the library: cache, sessions and the queue Horizon supervises.
+#
+# Taken from the platform's own k8s/base/data/redis.yaml, with the secret
+# renamed. The two settings worth keeping as they are: appendonly with
+# everysec, so a restart does not drop queued jobs, and volatile-lru rather
+# than allkeys-lru, so cache entries with a TTL are evicted under pressure but
+# queue keys, which have none, never are.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  labels:
+    app: redis
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  # Recreate: single instance bound to an RWO volume — never run two writers.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      # RDS (VPC-private) and the redis PVC are only reachable/present on the AWS
+      # edge node; ResetData GPU nodes over the VPN cannot reach them. Unpinned
+      # migrate Jobs landing on olsyn-l40s-2 broke the 2026-07-31/08-02 deploys.
+      nodeSelector:
+        node-role: opal
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        # volatile-lru (not allkeys-lru): cache/session keys carry TTLs and may be
+        # evicted; queue keys have no TTL and must never be silently dropped.
+        # AOF persistence so queued jobs survive pod/node restarts.
+        command:
+        - redis-server
+        - --requirepass
+        - $(REDIS_PASSWORD)
+        - --maxmemory
+        - 256mb
+        - --maxmemory-policy
+        - volatile-lru
+        - --appendonly
+        - "yes"
+        - --appendfsync
+        - everysec
+        - --dir
+        - /data
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: opal-redis
+              key: REDIS_PASSWORD
+        - name: REDISCLI_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: opal-redis
+              key: REDIS_PASSWORD
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        livenessProbe:
+          exec:
+            command: [redis-cli, ping]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: [redis-cli, ping]
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 300Mi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: redis-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379

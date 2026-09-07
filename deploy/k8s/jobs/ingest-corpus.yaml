@@ -3,8 +3,8 @@
 # Not part of any overlay: this runs when there is a corpus to take in, not on
 # every deploy. Apply it by hand with the image tag that is live:
 #
-#   kubectl -n olsyn-asset-library apply -f deploy/k8s/jobs/ingest-corpus.yaml
-#   kubectl -n olsyn-asset-library logs -f job/opal-ingest-corpus
+#   kubectl -n opal apply -f deploy/k8s/jobs/ingest-corpus.yaml
+#   kubectl -n opal logs -f job/opal-ingest-corpus
 #
 # The ingest is ledgered: every file is recorded with its size, modification
 # time and hash, so the job can be killed and reapplied and will pick up where
@@ -21,7 +21,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: opal-ingest-corpus
-  namespace: olsyn-asset-library
+  namespace: opal
   labels:
     app.kubernetes.io/name: opal
     app.kubernetes.io/component: ingest
@@ -40,7 +40,7 @@ spec:
       # The database is VPC-private and the bucket credentials come from the
       # node's instance profile, both of which only the edge node has.
       nodeSelector:
-        node-role: edge
+        node-role: opal
       imagePullSecrets:
         - name: ghcr-secret
       containers:

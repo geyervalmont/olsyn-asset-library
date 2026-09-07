@@ -16,7 +16,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`library.olsyn.com`)
+    - match: Host(`opal.olsyn.com`)
       kind: Rule
       services:
         - name: opal-web
@@ -35,7 +35,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`library-ws.olsyn.com`)
+    - match: Host(`opal-ws.olsyn.com`)
       kind: Rule
       services:
         - name: opal-reverb
@@ -56,7 +56,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`library.olsyn.com`) || Host(`library-ws.olsyn.com`)
+    - match: Host(`opal.olsyn.com`) || Host(`opal-ws.olsyn.com`)
       kind: Rule
       services:
         - name: opal-web

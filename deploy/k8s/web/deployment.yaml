@@ -28,7 +28,7 @@ spec:
       # node's instance profile supplies the S3 credentials, so pods here need
       # no AWS keys at all.
       nodeSelector:
-        node-role: edge
+        node-role: opal
       # Long enough for in-flight requests to finish after the endpoint is
       # withdrawn.
       terminationGracePeriodSeconds: 45

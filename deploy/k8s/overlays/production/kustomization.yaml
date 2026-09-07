@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: olsyn-asset-library
+namespace: opal
 
 resources:
   - ../../web
@@ -21,4 +21,4 @@ patches:
 # CI rewrites the tag to the image it just built.
 images:
   - name: ghcr.io/geyervalmont/olsyn-asset-library
-    newTag: latest
+    newTag: sha-40a7284

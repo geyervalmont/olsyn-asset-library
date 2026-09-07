@@ -23,7 +23,7 @@ spec:
         component: horizon
     spec:
       nodeSelector:
-        node-role: edge
+        node-role: opal
       # A preview render or a downscale can run for a couple of minutes;
       # horizon:terminate lets the current job finish before the process goes.
       terminationGracePeriodSeconds: 300

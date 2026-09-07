@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: olsyn-asset-library
+  name: opal
   labels:
     app.kubernetes.io/part-of: opal
 # The name matters: cert-manager's wildcard certificate is copied into

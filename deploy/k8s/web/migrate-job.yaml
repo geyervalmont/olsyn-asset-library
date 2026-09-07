@@ -22,7 +22,7 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector:
-        node-role: edge
+        node-role: opal
       containers:
         - name: migrate
           image: ghcr.io/geyervalmont/olsyn-asset-library:latest  # overridden by CI

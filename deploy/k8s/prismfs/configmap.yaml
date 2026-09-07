@@ -7,7 +7,7 @@ data:
   PRISMFS_DRIVE_SLUG: studio-share
   PRISMFS_TENANT_ID: studio-share
   # Manifest and access-event endpoints are derived from this base URL.
-  PRISMFS_MANIFEST_URL: https://library.olsyn.com/prismfs/drives/studio-share/manifest.yaml
+  PRISMFS_MANIFEST_URL: https://opal.olsyn.com/prismfs/drives/studio-share/manifest.yaml
   PRISMFS_REFRESH_INTERVAL: "30"
   PRISMFS_AUDIT_FLUSH_INTERVAL: "5"
   PRISMFS_AUDIT_BATCH: "500"

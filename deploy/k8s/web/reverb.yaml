@@ -28,7 +28,7 @@ spec:
         component: reverb
     spec:
       nodeSelector:
-        node-role: edge
+        node-role: opal
       terminationGracePeriodSeconds: 30
       containers:
         - name: reverb

@@ -1,7 +1,7 @@
 # Deploying OPAL
 
 The control plane (Laravel, Horizon, the scheduler and Reverb) runs on the
-Olsyn K3s cluster in the `olsyn-asset-library` namespace. PrismFS is deployed
+Olsyn K3s cluster in the `opal` namespace. PrismFS is deployed
 separately, on purpose — see below.
 
 ```text
@@ -20,16 +20,16 @@ deploy/secrets/                  SOPS-encrypted environment
 | `opal-scheduler` | `schedule:work` | 1 | Two schedulers fire every due task twice |
 | `opal-reverb` | `reverb:start` on 8080 | 1 | Connections live in memory; see the note below |
 
-Everything is pinned to the AWS edge node (`node-role: edge`). Postgres is
+Everything is pinned to the AWS edge node (`node-role: opal`). Postgres is
 VPC-private and only that node reaches it, and the same node's instance profile
 supplies the S3 credentials, so no AWS keys appear anywhere in this directory.
 
-Hosts are `library.olsyn.com` and `library-ws.olsyn.com`. Both are single-label
+Hosts are `opal.olsyn.com` and `opal-ws.olsyn.com`. Both are single-label
 under `olsyn.com`, so the wildcard DNS record and the existing
 `olsyn-wildcard-tls` certificate already cover them: **no DNS or cert-manager
 change is needed**. The namespace name matters for the same reason — the
 emberstack reflector copies that certificate into namespaces matching
-`olsyn-.*`, and `olsyn-asset-library` matches. Rename the namespace and Traefik
+`olsyn-.*`, and `opal` matches. Rename the namespace and Traefik
 will quietly serve its self-signed default instead.
 
 ## First deploy: what to create by hand
@@ -46,8 +46,8 @@ will quietly serve its self-signed default instead.
 2. **The namespace and the image pull secret**:
 
    ```sh
-   kubectl create namespace olsyn-asset-library
-   kubectl -n olsyn-asset-library create secret docker-registry ghcr-secret \
+   kubectl create namespace opal
+   kubectl -n opal create secret docker-registry ghcr-secret \
      --docker-server=ghcr.io --docker-username=<gh-user> \
      --docker-password=<PAT with read:packages>
    ```
@@ -68,25 +68,25 @@ CI does this, and it is worth knowing in what order:
 ```sh
 # 1. the environment (does not restart anything on its own — see below)
 sops -d --output-type dotenv deploy/secrets/production.sops.yaml > .env.secrets
-kubectl create secret generic opal-secrets -n olsyn-asset-library \
+kubectl create secret generic opal-secrets -n opal \
   --from-env-file=.env.secrets --dry-run=client -o yaml | kubectl apply -f -
 rm .env.secrets
 
 # 2. migrations, before anything rolls, with the tag being released
 sed -e "s|name: opal-migrate|name: opal-migrate-${SHA}|" \
     -e "s|:latest|:${TAG}|" deploy/k8s/web/migrate-job.yaml \
-  | kubectl apply -n olsyn-asset-library -f -
-kubectl -n olsyn-asset-library wait --for=condition=complete \
+  | kubectl apply -n opal -f -
+kubectl -n opal wait --for=condition=complete \
   job/opal-migrate-${SHA} --timeout=900s
 
 # 3. the workloads
 cd deploy/k8s/overlays/production
 kustomize edit set image ghcr.io/geyervalmont/olsyn-asset-library:${TAG}
 kubectl apply -k .
-kubectl -n olsyn-asset-library rollout status deploy/opal-web --timeout=10m
-kubectl -n olsyn-asset-library rollout status deploy/opal-horizon --timeout=5m
-kubectl -n olsyn-asset-library rollout status deploy/opal-scheduler --timeout=5m
-kubectl -n olsyn-asset-library rollout status deploy/opal-reverb --timeout=5m
+kubectl -n opal rollout status deploy/opal-web --timeout=10m
+kubectl -n opal rollout status deploy/opal-horizon --timeout=5m
+kubectl -n opal rollout status deploy/opal-scheduler --timeout=5m
+kubectl -n opal rollout status deploy/opal-reverb --timeout=5m
 ```
 
 Check every workload, not just the web one: a crash-looping Horizon leaves jobs
@@ -95,10 +95,10 @@ piling up in Redis while the deploy reports success.
 ## Rollback
 
 ```sh
-kubectl -n olsyn-asset-library rollout undo deploy/opal-web
-kubectl -n olsyn-asset-library rollout undo deploy/opal-horizon
-kubectl -n olsyn-asset-library rollout undo deploy/opal-scheduler
-kubectl -n olsyn-asset-library rollout undo deploy/opal-reverb
+kubectl -n opal rollout undo deploy/opal-web
+kubectl -n opal rollout undo deploy/opal-horizon
+kubectl -n opal rollout undo deploy/opal-scheduler
+kubectl -n opal rollout undo deploy/opal-reverb
 ```
 
 Migrations do not roll back with the image. A release that changes the schema
@@ -109,7 +109,7 @@ or the rollback is a restore.
 
 - **Changing a secret restarts nothing.** `kubectl apply` on a Secret updates it
   silently; the pods keep the environment they booted with. Follow it with
-  `kubectl -n olsyn-asset-library rollout restart deploy/opal-web deploy/opal-horizon deploy/opal-scheduler deploy/opal-reverb`.
+  `kubectl -n opal rollout restart deploy/opal-web deploy/opal-horizon deploy/opal-scheduler deploy/opal-reverb`.
 - **More than one Reverb replica needs `REVERB_SCALING_ENABLED=true`.** Without
   it, a command broadcast by the pod that served the web request never reaches a
   Revit client connected to the other replica, and the failure is silent.
@@ -137,8 +137,8 @@ database are fetched from the bucket, so nothing has to sit on local disk.
 2. **Run the ingest**:
 
    ```sh
-   kubectl -n olsyn-asset-library apply -f deploy/k8s/jobs/ingest-corpus.yaml
-   kubectl -n olsyn-asset-library logs -f job/opal-ingest-corpus
+   kubectl -n opal apply -f deploy/k8s/jobs/ingest-corpus.yaml
+   kubectl -n opal logs -f job/opal-ingest-corpus
    ```
 
 It is ledgered on the source path, size and modification time, so it can be

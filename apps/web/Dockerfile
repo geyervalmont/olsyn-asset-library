@@ -92,7 +92,7 @@ COPY --from=php_deps /app/vendor ./vendor
 # it is meant to be readable in the bundle, so BuildKit's warning about
 # secrets in ARG does not apply. The Reverb *secret* never leaves the cluster.
 ARG VITE_REVERB_APP_KEY=""
-ARG VITE_REVERB_HOST="library-ws.olsyn.com"
+ARG VITE_REVERB_HOST="opal-ws.olsyn.com"
 ARG VITE_REVERB_PORT="443"
 ARG VITE_REVERB_SCHEME="https"
 

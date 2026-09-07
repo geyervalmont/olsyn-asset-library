@@ -12,7 +12,7 @@ data:
   APP_NAME: Olsyn Asset Library
   APP_ENV: production
   APP_DEBUG: "false"
-  APP_URL: https://library.olsyn.com
+  APP_URL: https://opal.olsyn.com
   APP_LOCALE: en
   APP_FALLBACK_LOCALE: en
   APP_MAINTENANCE_DRIVER: file
@@ -26,13 +26,11 @@ data:
   # Octane behind a TLS-terminating proxy. Without OCTANE_HTTPS the app
   # generates http:// URLs, which breaks assets, redirects and Livewire's
   # update endpoint.
-  OCTANE_SERVER: frankenphp
-  OCTANE_HTTPS: "true"
 
   DB_CONNECTION: pgsql
-  DB_HOST: REPLACE_ME.ap-southeast-2.rds.amazonaws.com
+  DB_HOST: olsyn-prod.c1caaoe68gcm.ap-southeast-2.rds.amazonaws.com
   DB_PORT: "5432"
-  DB_DATABASE: asset_library
+  DB_DATABASE: opal
   DB_USERNAME: opal
 
   REDIS_CLIENT: phpredis
@@ -43,7 +41,7 @@ data:
   SESSION_LIFETIME: "120"
   SESSION_ENCRYPT: "false"
   SESSION_PATH: /
-  SESSION_DOMAIN: library.olsyn.com
+  SESSION_DOMAIN: opal.olsyn.com
   CACHE_STORE: redis
   QUEUE_CONNECTION: redis
   BROADCAST_CONNECTION: reverb
@@ -79,17 +77,21 @@ data:
   OPAL_SESSION_LIVE_SECONDS: "90"
   OPAL_LINK_TTL_MINUTES: "10"
 
-  # What the Reverb server binds, and what clients are told to connect to.
+  # What the Reverb server binds.
   REVERB_SERVER_HOST: 0.0.0.0
   REVERB_SERVER_PORT: "8080"
-  REVERB_HOST: library-ws.olsyn.com
-  REVERB_PORT: "443"
-  REVERB_SCHEME: https
+  # Where the application publishes events: straight to the service over the
+  # cluster network, rather than out through Traefik and back. Browsers and
+  # Revit clients reach Reverb on its public host instead, which they learn
+  # from the baked VITE_REVERB_* values and from OPAL_REALTIME_* below.
+  REVERB_HOST: opal-reverb
+  REVERB_PORT: "8080"
+  REVERB_SCHEME: http
   # One Reverb replica holds all connections in memory. Running more than one
   # requires REVERB_SCALING_ENABLED=true so they share state over Redis.
   REVERB_SCALING_ENABLED: "false"
 
   # What the Revit extension is handed when it links (config/opal.php).
   OPAL_REALTIME_SCHEME: https
-  OPAL_REALTIME_HOST: library-ws.olsyn.com
+  OPAL_REALTIME_HOST: opal-ws.olsyn.com
   OPAL_REALTIME_PORT: "443"

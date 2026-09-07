@@ -19,9 +19,9 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: geyervalmont/olsyn-asset-library
-  NAMESPACE: olsyn-asset-library
-  APP_HOST: library.olsyn.com
+  IMAGE_NAME: geyervalmont/opal
+  NAMESPACE: opal
+  APP_HOST: opal.olsyn.com
 
 jobs:
   deploy:
@@ -71,7 +71,7 @@ jobs:
             ${{ steps.image.outputs.image }}:latest
           build-args: |
             VITE_REVERB_APP_KEY=${{ secrets.VITE_REVERB_APP_KEY }}
-            VITE_REVERB_HOST=library-ws.olsyn.com
+            VITE_REVERB_HOST=opal-ws.olsyn.com
             VITE_REVERB_PORT=443
             VITE_REVERB_SCHEME=https
           cache-from: type=gha
