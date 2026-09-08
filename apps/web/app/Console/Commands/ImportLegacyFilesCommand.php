@@ -24,7 +24,8 @@ class ImportLegacyFilesCommand extends Command
         {--database-disk= : Fetch the database from this filesystem disk before reading it}
         {--limit= : Consider at most this many products}
         {--only= : A single product by legacy slug}
-        {--dry-run : Report what would be stored without reading file contents}';
+        {--dry-run : Report what would be stored without reading file contents}
+        {--fresh : Remove everything a previous import created before importing}';
 
     protected $description = 'Resumable ingest of the legacy corpus files into the library';
 
@@ -59,6 +60,15 @@ class ImportLegacyFilesCommand extends Command
 
         $importer->useLedger = true;
         $importer->dryRun = (bool) $this->option('dry-run');
+
+        // Reversible on purpose. The reset is scoped to materials this import
+        // created, so a re-import cannot reach anything authored in the app,
+        // and the file ledger is left alone — the corpus is not re-uploaded,
+        // only re-interpreted. That is what makes changing the mapping a
+        // decision rather than a migration.
+        if ($this->option('fresh') && ! $importer->dryRun) {
+            $this->components->info(sprintf('Removed %d previously imported materials.', $importer->forget()));
+        }
 
         $bar = $this->output->createProgressBar();
         $bar->setFormat(' %current% files  %elapsed:6s%  %message%');

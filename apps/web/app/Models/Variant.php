@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use LogicException;
 
@@ -209,5 +210,28 @@ class Variant extends Model
     public function attributes(): HasMany
     {
         return $this->hasMany(VariantAttribute::class);
+    }
+
+    /**
+     * How this variant is described when it is not scanned: a paint colour, a
+     * generator and its parameters.
+     *
+     * @return HasOne<Definition, $this>
+     */
+    public function definition(): HasOne
+    {
+        return $this->hasOne(Definition::class);
+    }
+
+    /**
+     * Every USDZ built for this variant, newest revision first. Rows are never
+     * edited, so the head of this list is the current package and the rest are
+     * the history of what was shipped before it.
+     *
+     * @return HasMany<Package, $this>
+     */
+    public function packages(): HasMany
+    {
+        return $this->hasMany(Package::class)->orderByDesc('revision');
     }
 }
