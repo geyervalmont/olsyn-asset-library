@@ -16,6 +16,26 @@ use App\Models\Variant;
  */
 class AssembleBuildRequest
 {
+    /**
+     * The toolbox's LOD ladder, in pixels along the longest edge.
+     *
+     * OPAL's own quality tiers are not a ladder: the legacy import created one
+     * per resolution it actually found, so the library holds 1140px, 2401px,
+     * 2404px and 2560px alongside 2k and 4k. Those describe what a file is; a
+     * rung describes what a consumer asks for. Packaging has to translate
+     * between the two, because a viewer asking for "2k" wants 2048 pixels, not
+     * whatever the supplier happened to export.
+     *
+     * @var array<string, int>
+     */
+    private const RUNGS = [
+        'preview' => 512,
+        '1k' => 1024,
+        '2k' => 2048,
+        '4k' => 4096,
+        '8k' => 8192,
+    ];
+
     public function handle(Variant $variant): BuildRequest
     {
         $representations = Representation::query()
@@ -26,19 +46,22 @@ class AssembleBuildRequest
             ->get();
 
         $channels = [];
+        $pixels = [];
 
         foreach ($representations as $representation) {
-            $tier = $representation->quality->slug;
-
             foreach ($representation->representationFiles as $entry) {
                 $role = $entry->role->slug;
+                $source = $entry->file->width_px ?? $representation->quality->pixels;
+                $tier = $this->rung($source);
 
-                // A role can appear at several tiers, but only once per tier.
-                // The first approved representation wins; a second is a data
-                // problem rather than something to merge silently.
-                if (isset($channels[$role][$tier])) {
+                // Two sources can land on the same rung — 2401px and 2560px
+                // are both 2k. Keep the larger, because downscaling to the rung
+                // is lossless-ish and upscaling to it is not.
+                if (isset($channels[$role][$tier]) && ($pixels[$role][$tier] ?? 0) >= (int) $source) {
                     continue;
                 }
+
+                $pixels[$role][$tier] = (int) $source;
 
                 $channels[$role][$tier] = new ChannelSource(
                     sha256: $entry->file->sha256,
@@ -57,6 +80,18 @@ class AssembleBuildRequest
         }
 
         return new BuildRequest(
+            // When the material's inputs last changed, not when the packager
+            // happened to run. Using the wall clock would put a fresh timestamp
+            // inside every package, so two builds of identical inputs would
+            // differ — and a package could never be verified by rebuilding it
+            // and comparing hashes. That check is worth more than recording a
+            // build time the database already holds in packages.built_at.
+            ingestedAt: $representations->max('updated_at')?->toRfc3339String()
+                ?? $variant->updated_at?->toRfc3339String(),
+            // Never ask for a rung nothing can supply: the toolbox downscales
+            // what is missing below the largest source and fails rather than
+            // inventing detail above it, which is the behaviour we want.
+            requiredTiers: $this->rungsUpTo($channels),
             variantCode: $variant->code,
             name: $variant->name,
             channels: $channels,
@@ -71,5 +106,48 @@ class AssembleBuildRequest
                 'variant' => $variant->code,
             ],
         );
+    }
+
+    /**
+     * The largest rung a source of this size can fill without being upscaled.
+     */
+    private function rung(?int $pixels): string
+    {
+        $chosen = array_key_first(self::RUNGS);
+
+        foreach (self::RUNGS as $slug => $edge) {
+            if (($pixels ?? 0) >= $edge) {
+                $chosen = $slug;
+            }
+        }
+
+        return $chosen;
+    }
+
+    /**
+     * Every rung from preview up to the largest one any channel can fill.
+     *
+     * @param  array<string, array<string, ChannelSource>>  $channels
+     * @return list<string>
+     */
+    private function rungsUpTo(array $channels): array
+    {
+        $ceiling = 0;
+
+        foreach ($channels as $sources) {
+            foreach (array_keys($sources) as $tier) {
+                $ceiling = max($ceiling, self::RUNGS[$tier] ?? 0);
+            }
+        }
+
+        $wanted = [];
+
+        foreach (self::RUNGS as $slug => $edge) {
+            if ($edge <= $ceiling) {
+                $wanted[] = $slug;
+            }
+        }
+
+        return $wanted === [] ? ['preview'] : $wanted;
     }
 }

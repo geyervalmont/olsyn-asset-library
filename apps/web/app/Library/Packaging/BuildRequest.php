@@ -33,7 +33,7 @@ readonly class BuildRequest
         public array $tiling = [],
         public array $provenance = [],
         public ?string $shadingModel = 'openpbr',
-        public array $requiredTiers = ['preview', '1k', '2k', '4k'],
+        public array $requiredTiers = ['preview'],
         public ?string $ingestedAt = null,
     ) {}
 
@@ -116,6 +116,9 @@ readonly class BuildRequest
      */
     public function toManifest(): array
     {
-        return [...$this->toArray(), 'ingested_at' => $this->ingestedAt ?? now()->toRfc3339String()];
+        // Deliberately not now(): see AssembleBuildRequest. A build with no
+        // known input time is pinned to the epoch rather than the clock, so it
+        // stays reproducible.
+        return [...$this->toArray(), 'ingested_at' => $this->ingestedAt ?? '1970-01-01T00:00:00+00:00'];
     }
 }

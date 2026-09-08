@@ -56,6 +56,18 @@ class PackageVariant
 
         $built = $this->builder->build($request);
 
+        // A forced rebuild of unchanged inputs produces byte-identical output,
+        // because packaging is deterministic. That is a result worth reporting
+        // rather than a revision worth creating: the archive gains nothing from
+        // a second copy of the same bytes under a new number.
+        $identical = Package::query()->where('sha256', $built->sha256)->first();
+
+        if ($identical !== null) {
+            @unlink($built->path);
+
+            return $identical;
+        }
+
         // The revision is claimed inside the transaction that writes the row,
         // so two workers packaging the same variant cannot agree on a number.
         // The lock is taken on the variant rather than on its packages, because

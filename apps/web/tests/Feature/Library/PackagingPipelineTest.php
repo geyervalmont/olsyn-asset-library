@@ -64,11 +64,15 @@ function fakeBuilder(array &$calls, array $losses = []): PackageBuilder
     };
 }
 
-function approvedCanonical(Variant $variant, string $tier = '4k', array $extra = []): void
+/**
+ * The rung a file lands on comes from its actual pixels, not from the tier it
+ * was filed under, so tests have to give their files real dimensions.
+ */
+function approvedCanonical(Variant $variant, string $tier = '4k', int $pixels = 4096, array $extra = []): void
 {
     $representation = app(CreateRepresentation::class)->handle($variant, 'pbr', $tier, array_merge([
-        'base_color' => File::factory()->create(['colour_space' => 'srgb']),
-        'normal' => File::factory()->create(['colour_space' => null]),
+        'base_color' => File::factory()->create(['colour_space' => 'srgb', 'width_px' => $pixels, 'height_px' => $pixels]),
+        'normal' => File::factory()->create(['colour_space' => null, 'width_px' => $pixels, 'height_px' => $pixels]),
     ], $extra), metadata: ['normal_convention' => 'opengl']);
 
     app(ReviewRepresentation::class)->handle($representation, ReviewState::Approved, User::factory()->create());
@@ -76,8 +80,8 @@ function approvedCanonical(Variant $variant, string $tier = '4k', array $extra =
 
 test('a build request carries each map role at each tier', function () {
     $variant = Variant::factory()->create();
-    approvedCanonical($variant, '4k');
-    approvedCanonical($variant, '2k');
+    approvedCanonical($variant, '4k', 4096);
+    approvedCanonical($variant, '2k', 2048);
 
     $request = app(AssembleBuildRequest::class)->handle($variant);
 
@@ -102,14 +106,14 @@ test('colour space and normal convention are stated, never inferred', function (
 
 test('the digest is stable across runs and moves when the inputs do', function () {
     $variant = Variant::factory()->create();
-    approvedCanonical($variant, '4k');
+    approvedCanonical($variant, '4k', 4096);
 
     $assemble = app(AssembleBuildRequest::class);
     $before = $assemble->handle($variant)->digest();
 
     expect($assemble->handle($variant)->digest())->toBe($before);
 
-    approvedCanonical($variant, '2k');
+    approvedCanonical($variant, '2k', 2048);
 
     expect($assemble->handle($variant)->digest())->not->toBe($before);
 });
@@ -174,12 +178,12 @@ test('force rebuilds and takes the next revision rather than overwriting', funct
 test('a changed variant is repackaged without being forced', function () {
     $calls = [];
     $variant = Variant::factory()->create();
-    approvedCanonical($variant, '4k');
+    approvedCanonical($variant, '4k', 4096);
 
     $action = new PackageVariant(app(AssembleBuildRequest::class), fakeBuilder($calls));
     $action->handle($variant);
 
-    approvedCanonical($variant, '2k');
+    approvedCanonical($variant, '2k', 2048);
     $second = $action->handle($variant);
 
     expect($calls)->toHaveCount(2)
@@ -206,4 +210,86 @@ test('without a toolbox the pipeline refuses clearly instead of appearing to wor
 
     expect(fn () => $action->handle($variant))
         ->toThrow(RuntimeException::class, 'No materials toolbox is available');
+});
+
+test('an odd supplier resolution lands on the rung below it, never above', function () {
+    $variant = Variant::factory()->create();
+    // The corpus really does hold sizes like this — the legacy import made a
+    // tier per resolution it found rather than assuming a ladder. What decides
+    // the rung is the file's own pixels, not the tier it was filed under.
+    approvedCanonical($variant, '2k', 2401);
+
+    $request = app(AssembleBuildRequest::class)->handle($variant);
+
+    expect($request->tiers())->toBe(['2k'])
+        // Asking for 4k would make the toolbox fail rather than upscale, which
+        // is the behaviour we want — so we must not ask.
+        ->and($request->requiredTiers)->toBe(['preview', '1k', '2k']);
+});
+
+test('the larger source wins when two land on the same rung', function () {
+    $variant = Variant::factory()->create();
+    approvedCanonical($variant, '2k', 2401);
+    approvedCanonical($variant, '4k', 2560);
+
+    $request = app(AssembleBuildRequest::class)->handle($variant);
+    $manifest = $request->toArray();
+
+    expect($request->tiers())->toBe(['2k'])
+        ->and($manifest['channels']['base_color']['2k']['width_px'])->toBe(2560);
+});
+
+test('an unmeasured file falls back to the size its tier claims', function () {
+    $variant = Variant::factory()->create();
+    $representation = app(CreateRepresentation::class)->handle($variant, 'pbr', '4k', [
+        'base_color' => File::factory()->create(['colour_space' => 'srgb', 'width_px' => null]),
+    ]);
+    app(ReviewRepresentation::class)->handle($representation, ReviewState::Approved, User::factory()->create());
+
+    // A claim rather than a measurement, and deliberately trusted: if it turns
+    // out to be wrong the toolbox fails on the missing pixels rather than
+    // inventing them, which is a better failure than silently shipping a
+    // material at a quarter of the resolution it says it is.
+    expect(app(AssembleBuildRequest::class)->handle($variant)->tiers())->toBe(['4k']);
+});
+
+test('a forced rebuild that produces identical bytes reuses the package', function () {
+    $calls = [];
+    $variant = Variant::factory()->create();
+    approvedCanonical($variant);
+
+    // A deterministic builder: the same inputs give the same digest, as the
+    // real toolbox does.
+    $builder = new class implements PackageBuilder
+    {
+        public function name(): string
+        {
+            return 'deterministic';
+        }
+
+        public function version(): string
+        {
+            return '1.0.0';
+        }
+
+        public function available(): bool
+        {
+            return true;
+        }
+
+        public function build(BuildRequest $request): BuiltPackage
+        {
+            $path = tempnam(sys_get_temp_dir(), 'usdz');
+            file_put_contents($path, 'same-every-time');
+
+            return new BuiltPackage($path, hash('sha256', $request->digest()), 15, $request->tiers(), [], $this->name(), $this->version());
+        }
+    };
+
+    $action = new PackageVariant(app(AssembleBuildRequest::class), $builder);
+    $first = $action->handle($variant);
+    $second = $action->handle($variant, force: true);
+
+    expect($second->id)->toBe($first->id)
+        ->and($second->revision)->toBe(1);
 });

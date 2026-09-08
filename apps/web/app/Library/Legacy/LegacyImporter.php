@@ -393,7 +393,7 @@ class LegacyImporter
             }
 
             $groupKey = $variant->getKey().'|'.$row->channel.'|'.dirname((string) $row->relative_path);
-            $groups[$groupKey] ??= ['variant' => $variant, 'channel' => (string) $row->channel, 'files' => [], 'states' => [], 'ids' => [], 'paths' => []];
+            $groups[$groupKey] ??= ['variant' => $variant, 'channel' => (string) $row->channel, 'files' => [], 'legacy_roles' => [], 'states' => [], 'ids' => [], 'paths' => []];
 
             if (isset($groups[$groupKey]['files'][$role])) {
                 $this->stats['files_skipped']++;
@@ -408,6 +408,11 @@ class LegacyImporter
             }
 
             $groups[$groupKey]['files'][$role] = $file;
+            // The legacy role is kept because the mapped one loses information
+            // we cannot recover later: normal_gl and normal_dx both become
+            // "normal", and which convention a normal map uses cannot be read
+            // back off the pixels.
+            $groups[$groupKey]['legacy_roles'][$role] = (string) $row->asset_role;
             $groups[$groupKey]['states'][] = (string) $row->asset_state;
             $groups[$groupKey]['ids'][] = $row->id;
             $groups[$groupKey]['paths'][] = $relative;
@@ -442,7 +447,10 @@ class LegacyImporter
                 self::CHANNEL_TARGETS[$group['channel']],
                 $pixels,
                 $group['files'],
-                metadata: ['legacy' => ['channel' => $group['channel'], 'directory' => $directory, 'asset_ids' => $group['ids'], 'states' => $group['states']]],
+                metadata: array_filter([
+                    'normal_convention' => $this->normalConvention($group['legacy_roles'] ?? []),
+                    'legacy' => ['channel' => $group['channel'], 'directory' => $directory, 'asset_ids' => $group['ids'], 'states' => $group['states']],
+                ], fn ($value): bool => $value !== null),
             );
 
             if ($approved) {
@@ -485,6 +493,23 @@ class LegacyImporter
      * Store one corpus file, through the ledger when enabled: unchanged files
      * are not re-read, failures are recorded and skipped, dry runs only count.
      */
+    /**
+     * Which convention this set's normal map uses, from the legacy role that
+     * produced it. The corpus states it for 1,537 of them and leaves 92 genuinely
+     * unknown; an unknown one is left unset rather than guessed, so packaging
+     * refuses it instead of shipping inverted lighting.
+     *
+     * @param  array<string, string>  $legacyRoles
+     */
+    private function normalConvention(array $legacyRoles): ?string
+    {
+        return match ($legacyRoles['normal'] ?? null) {
+            'normal_gl', 'normal_gl_compressed_lossless' => 'opengl',
+            'normal_dx' => 'directx',
+            default => null,
+        };
+    }
+
     private function storeCorpusFile(CorpusSource $corpus, string $relative): ?File
     {
         $key = $corpus->key($relative);
