@@ -293,3 +293,22 @@ test('a forced rebuild that produces identical bytes reuses the package', functi
     expect($second->id)->toBe($first->id)
         ->and($second->revision)->toBe(1);
 });
+
+test('the tier floor is what every map can meet, not what the largest can', function () {
+    $variant = Variant::factory()->create();
+
+    // A 4K base colour beside a small normal is common in the corpus. Asking
+    // for a 1k normal it cannot produce makes the toolbox refuse the whole
+    // package, correctly, so the request must ask for less.
+    $representation = app(CreateRepresentation::class)->handle($variant, 'pbr', '4k', [
+        'base_color' => File::factory()->create(['colour_space' => 'srgb', 'width_px' => 4096]),
+        'normal' => File::factory()->create(['colour_space' => null, 'width_px' => 489]),
+    ], metadata: ['normal_convention' => 'opengl']);
+    app(ReviewRepresentation::class)->handle($representation, ReviewState::Approved, User::factory()->create());
+
+    $request = app(AssembleBuildRequest::class)->handle($variant);
+
+    expect($request->requiredTiers)->toBe(['preview'])
+        // The larger source is still carried; only the floor came down.
+        ->and($request->tiers())->toEqualCanonicalizing(['preview', '4k']);
+});

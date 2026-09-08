@@ -125,20 +125,35 @@ class AssembleBuildRequest
     }
 
     /**
-     * Every rung from preview up to the largest one any channel can fill.
+     * Every rung from preview up to the largest one *every* channel can fill.
+     *
+     * required_tiers is a floor the toolbox applies to every map, so it has to
+     * be satisfiable by the smallest one. Taking the largest instead asks a
+     * 489px normal for a 1k tier beside a 4K base colour, and the toolbox
+     * refuses rather than upscaling — which is the behaviour we want, so the
+     * request is what has to change.
+     *
+     * Nothing is lost by asking for less: higher tiers that do exist are still
+     * packaged. The floor only says what must be present everywhere.
      *
      * @param  array<string, array<string, ChannelSource>>  $channels
      * @return list<string>
      */
     private function rungsUpTo(array $channels): array
     {
-        $ceiling = 0;
+        $ceiling = null;
 
         foreach ($channels as $sources) {
+            $best = 0;
+
             foreach (array_keys($sources) as $tier) {
-                $ceiling = max($ceiling, self::RUNGS[$tier] ?? 0);
+                $best = max($best, self::RUNGS[$tier] ?? 0);
             }
+
+            $ceiling = $ceiling === null ? $best : min($ceiling, $best);
         }
+
+        $ceiling ??= 0;
 
         $wanted = [];
 
