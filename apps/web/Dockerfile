@@ -117,7 +117,7 @@ RUN bun run build
 # way round.
 FROM rust:1-bookworm AS toolbox
 
-ARG USD_TOOLBOX_REF=b53c7d979b88bda0d7aeff84e8f73e0080c4510f
+ARG USD_TOOLBOX_REF=a7b18ce5d2f7b61cab2c1cf7e5209f9c650594c0
 
 RUN git clone https://github.com/geyervalmont/usd-toolbox.git /src \
     && cd /src \
