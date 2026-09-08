@@ -2,9 +2,11 @@
 
 namespace App\Actions\Packaging;
 
+use App\Library\Packaging\BuiltPackage;
 use App\Library\Packaging\PackageBuilder;
 use App\Models\Package;
 use App\Models\Variant;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -73,6 +75,21 @@ class PackageVariant
         // The lock is taken on the variant rather than on its packages, because
         // Postgres will not lock the rows behind an aggregate — and locking the
         // parent is what actually serialises builds of the same variant.
+        try {
+            return $this->record($variant, $built, $digest);
+        } catch (UniqueConstraintViolationException) {
+            // Another attempt banked these exact bytes between the check above
+            // and the insert. Deterministic packaging makes that a normal race
+            // rather than a conflict: the package that won is the one we would
+            // have written.
+            @unlink($built->path);
+
+            return Package::query()->where('sha256', $built->sha256)->firstOrFail();
+        }
+    }
+
+    private function record(Variant $variant, BuiltPackage $built, string $digest): Package
+    {
         return DB::transaction(function () use ($variant, $built, $digest): Package {
             Variant::query()->whereKey($variant->getKey())->lockForUpdate()->first();
 
