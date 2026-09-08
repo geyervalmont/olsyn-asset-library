@@ -115,7 +115,7 @@ class ToolboxPackageBuilder implements PackageBuilder
     private function stage(BuildRequest $request, string $workspace): string
     {
         $disk = $this->disk();
-        $manifest = $request->toArray();
+        $manifest = $request->toManifest();
 
         foreach ($request->channels as $role => $sources) {
             foreach ($sources as $tier => $source) {

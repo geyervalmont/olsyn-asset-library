@@ -24,6 +24,7 @@ readonly class BuildRequest
      * @param  array<string, array<string, ChannelSource>>  $channels  role => tier => source
      * @param  array<string, mixed>  $tiling
      * @param  array<string, mixed>  $provenance
+     * @param  list<string>  $requiredTiers
      */
     public function __construct(
         public string $variantCode,
@@ -32,6 +33,8 @@ readonly class BuildRequest
         public array $tiling = [],
         public array $provenance = [],
         public ?string $shadingModel = 'openpbr',
+        public array $requiredTiers = ['preview', '1k', '2k', '4k'],
+        public ?string $ingestedAt = null,
     ) {}
 
     /**
@@ -82,6 +85,10 @@ readonly class BuildRequest
             'schema' => 1,
             'variant' => ['code' => $this->variantCode, 'name' => $this->name],
             'shading_model' => $this->shadingModel,
+            // Which resolutions the package must end up holding. The toolbox
+            // generates whatever is missing by downscaling, so this is a
+            // statement of intent rather than of what was supplied.
+            'required_tiers' => $this->requiredTiers,
             'tiling' => $this->tiling,
             'channels' => $channels,
             'provenance' => $this->provenance,
@@ -95,6 +102,20 @@ readonly class BuildRequest
      */
     public function digest(): string
     {
+        // The ingest time is deliberately excluded: it is recorded in the
+        // package's provenance but must not make an otherwise identical build
+        // look like a change, or nothing would ever be skipped.
         return hash('sha256', (string) json_encode($this->toArray()));
+    }
+
+    /**
+     * The manifest plus the things that describe this particular run rather
+     * than the material. Kept out of the digest for that reason.
+     *
+     * @return array<string, mixed>
+     */
+    public function toManifest(): array
+    {
+        return [...$this->toArray(), 'ingested_at' => $this->ingestedAt ?? now()->toRfc3339String()];
     }
 }
