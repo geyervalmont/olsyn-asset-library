@@ -1,0 +1,57 @@
+# Build a USDZ package for every variant that has canonical files.
+#
+#   kubectl -n opal apply -f deploy/k8s/jobs/package-library.yaml
+#   kubectl -n opal logs -f job/opal-package-library
+#
+# Resumable and idempotent: a variant whose inputs have not changed is skipped
+# by its manifest digest, and a rebuild that produces identical bytes returns
+# the package that already exists rather than adding a revision. So this can be
+# killed and reapplied freely, and costs only what has actually moved.
+#
+# Runs in one process rather than through Horizon. The work is CPU-bound image
+# resizing on a two-core node, so queue parallelism would buy contention rather
+# than throughput, and a single log is easier to follow across a run of hours.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opal-package-library
+  namespace: opal
+  labels:
+    app.kubernetes.io/name: opal
+    app.kubernetes.io/component: packaging
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 172800
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: opal
+        app.kubernetes.io/component: packaging
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        node-role: opal
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: package
+          image: ghcr.io/geyervalmont/opal:latest
+          command: [php, artisan, opal:package, --sync]
+          envFrom:
+            - configMapRef:
+                name: opal-config
+            - secretRef:
+                name: opal-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+              # Sources are staged to disk per variant and cleared after each.
+              ephemeral-storage: 4Gi
+            limits:
+              # Capped below the node so a run of hours cannot starve the
+              # application sharing it.
+              cpu: 1500m
+              memory: 3Gi
+              ephemeral-storage: 12Gi
