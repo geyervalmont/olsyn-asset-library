@@ -79,6 +79,39 @@ abstract class TrackedJob implements NotTenantAware, ShouldQueue
     }
 
     /**
+     * Record a run and do the work here, without going near the queue.
+     *
+     * launch() dispatches, so a caller that also ran the job inline would do
+     * everything twice — once on a worker and once in its own process. For a
+     * bulk command that is double the work and two builds racing to write the
+     * same row.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public static function launchHere(array $payload = [], ?Model $subject = null, ?User $actor = null): WorkerRun
+    {
+        $run = new WorkerRun([
+            'type' => static::type(),
+            'status' => RunStatus::Queued,
+            'payload' => $payload,
+            'actor_id' => $actor?->getKey(),
+            'tenant_id' => Tenant::current()?->getKey(),
+            'queue' => 'sync',
+            'queued_at' => now(),
+        ]);
+
+        if ($subject !== null) {
+            $run->subject()->associate($subject);
+        }
+
+        $run->save();
+
+        (new static((int) $run->getKey()))->handle();
+
+        return $run->refresh();
+    }
+
+    /**
      * Queue the same work again, as a new run with the same payload.
      */
     public static function requeue(WorkerRun $previous, ?User $actor = null): WorkerRun

@@ -29,6 +29,14 @@ class BuildVariantPackage extends TrackedJob
     }
 
     /**
+     * Package this variant in the calling process, still recording the run.
+     */
+    public static function forVariantHere(Variant $variant, bool $force = false, ?User $actor = null): WorkerRun
+    {
+        return static::launchHere(['variant_id' => $variant->getKey(), 'force' => $force], $variant, $actor);
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     protected function execute(WorkerRun $run): ?array

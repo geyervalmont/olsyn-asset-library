@@ -55,7 +55,9 @@ class PackageLibraryCommand extends Command
             foreach ($variants as $variant) {
                 try {
                     if ($sync) {
-                        BuildVariantPackage::dispatchSync(BuildVariantPackage::forVariant($variant, $force)->getKey());
+                        // Not forVariant(): that dispatches, and running it
+                        // here as well would package every variant twice.
+                        BuildVariantPackage::forVariantHere($variant, $force);
                     } else {
                         BuildVariantPackage::forVariant($variant, $force);
                     }
