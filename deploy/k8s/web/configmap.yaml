@@ -5,15 +5,18 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  OLSYN_ACCESS_ENABLED: "true"
-  OLSYN_OIDC_ISSUER: "https://auth.olsyn.com"
-  OLSYN_OIDC_CLIENT_ID: "client_01M1X9GMQ01Q3A18JK1D3TS948"
-  OLSYN_OIDC_REDIRECT_URI: "https://opal.olsyn.com/auth/callback"
-  OLSYN_ACCESS_URL: "https://app.olsyn.com/api/service-access/v1/opal/decision"
   name: opal-config
   labels:
     app: opal
 data:
+  # Shared sign-in and centrally managed service access. These belong in data,
+  # not metadata: a ConfigMap's metadata takes no arbitrary keys, so the apply
+  # was rejected outright and the values never reached a pod.
+  OLSYN_ACCESS_ENABLED: "true"
+  OLSYN_ACCESS_URL: "https://app.olsyn.com/api/service-access/v1/opal/decision"
+  OLSYN_OIDC_CLIENT_ID: "client_01M1X9GMQ01Q3A18JK1D3TS948"
+  OLSYN_OIDC_ISSUER: "https://auth.olsyn.com"
+  OLSYN_OIDC_REDIRECT_URI: "https://opal.olsyn.com/auth/callback"
   APP_NAME: Olsyn Asset Library
   APP_ENV: production
   APP_DEBUG: "false"
