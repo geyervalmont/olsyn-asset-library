@@ -8,6 +8,7 @@ use JsonException;
 use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
+use ZipArchive;
 
 /**
  * Runs usd-toolbox as a subprocess.
@@ -27,6 +28,7 @@ class ToolboxPackageBuilder implements PackageBuilder
         private readonly string $binary,
         private readonly string $filesDisk,
         private readonly int $timeout = 900,
+        private readonly int $descriptionCeiling = 8388608,
     ) {}
 
     public function name(): string
@@ -40,7 +42,18 @@ class ToolboxPackageBuilder implements PackageBuilder
         $process->setTimeout(30);
         $process->run();
 
-        return $process->isSuccessful() ? trim($process->getOutput()) : 'unknown';
+        if (! $process->isSuccessful()) {
+            return 'unknown';
+        }
+
+        // The binary prints "usd-toolbox 0.1.0". Recording that whole line as a
+        // version leaves every package saying "usd-toolbox usd-toolbox 0.1.0",
+        // since the name is stored beside it.
+        $reported = trim($process->getOutput());
+
+        return preg_match('/^\S+\s+(v?\d[^\s]*)$/', $reported, $matches) === 1
+            ? $matches[1]
+            : $reported;
     }
 
     public function available(): bool
@@ -84,6 +97,8 @@ class ToolboxPackageBuilder implements PackageBuilder
                 throw new RuntimeException("The toolbox reported success but wrote no package for [{$request->variantCode}].");
             }
 
+            $this->assertNothingInlined($output, $request);
+
             $report = $this->report($workspace.'/report.json');
             $digest = hash_file('sha256', $output);
 
@@ -105,6 +120,61 @@ class ToolboxPackageBuilder implements PackageBuilder
         } finally {
             $this->clean($workspace, keep: 'package.usdz');
         }
+    }
+
+    /**
+     * Refuse a package whose scene description has swallowed its own textures.
+     *
+     * A USDZ is a scene description plus images. The description is text and
+     * should be kilobytes; if it is megabytes, something has been serialised
+     * into it that belongs in a file — which is exactly what happened when
+     * provenance embedded raw image bytes as JSON integer arrays and made every
+     * package four times its proper size.
+     *
+     * Checked on the description rather than on the package total, because the
+     * total legitimately varies with the image codec and would false-alarm on a
+     * lossless map set.
+     */
+    private function assertNothingInlined(string $package, BuildRequest $request): void
+    {
+        $archive = new ZipArchive;
+
+        if ($archive->open($package) !== true) {
+            throw new RuntimeException("The package built for [{$request->variantCode}] is not readable as an archive.");
+        }
+
+        $described = 0;
+
+        for ($index = 0; $index < $archive->numFiles; $index++) {
+            $entry = $archive->statIndex($index);
+
+            if ($entry === false) {
+                continue;
+            }
+
+            if (in_array(strtolower(pathinfo((string) $entry['name'], PATHINFO_EXTENSION)), ['usda', 'usdc', 'json'], true)) {
+                $described += (int) $entry['size'];
+            }
+        }
+
+        $archive->close();
+
+        if ($described > $this->descriptionCeiling) {
+            throw new RuntimeException(sprintf(
+                'The package for [%s] carries %s of scene description, over the %s ceiling. '
+                .'Something is being serialised into the description instead of stored as a file.',
+                $request->variantCode,
+                $this->humanBytes($described),
+                $this->humanBytes($this->descriptionCeiling),
+            ));
+        }
+    }
+
+    private function humanBytes(int $bytes): string
+    {
+        return $bytes >= 1048576
+            ? round($bytes / 1048576, 1).' MB'
+            : round($bytes / 1024).' KB';
     }
 
     /**
