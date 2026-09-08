@@ -1,4 +1,4 @@
-# Materials Toolbox — implementation brief
+# USD Toolbox — materials implementation brief
 
 A standalone Rust library for reading, writing and converting material definitions
 between USD/USDZ, MaterialX and glTF. Built as a general-purpose interchange
@@ -110,7 +110,7 @@ A workspace. The core carries no I/O opinions and no async, so it drops into WAS
 without ceremony.
 
 ```
-materials-toolbox/
+usd-toolbox/
 ├── crates/
 │   ├── core/       # neutral model, capabilities, loss reporting. No I/O.
 │   ├── usd/        # USD + USDZ import/export      (depends: openusd)

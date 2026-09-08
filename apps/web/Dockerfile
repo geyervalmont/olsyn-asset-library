@@ -106,6 +106,25 @@ RUN bun run build
 # ---------------------------------------------------------------------------
 # Stage 4: The application.
 # ---------------------------------------------------------------------------
+# The USD toolbox, which packages a variant into a self-contained USDZ.
+#
+# Built from source rather than downloaded, because the toolbox publishes CI
+# artifacts rather than releases, and an Actions artifact needs credentials and
+# expires. A pinned commit is reproducible without either.
+#
+# Bookworm rather than trixie deliberately: its glibc is older than the runtime
+# image's, and a binary built against older glibc runs on newer, not the other
+# way round.
+FROM rust:1-bookworm AS toolbox
+
+ARG USD_TOOLBOX_REF=b53c7d979b88bda0d7aeff84e8f73e0080c4510f
+
+RUN git clone https://github.com/geyervalmont/usd-toolbox.git /src \
+    && cd /src \
+    && git checkout "${USD_TOOLBOX_REF}" \
+    && cargo build --locked --release -p usd-toolbox-cli \
+    && strip target/release/usd-toolbox
+
 FROM php_base AS app
 
 # Links the package to this repository in the registry, which is what lets the
@@ -119,6 +138,10 @@ WORKDIR /app
 COPY . .
 COPY --from=php_deps /app/vendor ./vendor
 COPY --from=assets /app/public/build ./public/build
+
+# Invoked as a subprocess rather than linked: the toolbox releases on its own
+# cadence, and a crash in it should cost one variant rather than the worker.
+COPY --from=toolbox /src/target/release/usd-toolbox /usr/local/bin/usd-toolbox
 
 # composer install ran with --no-scripts, so package discovery happens here.
 RUN composer dump-autoload --optimize --classmap-authoritative --no-interaction \

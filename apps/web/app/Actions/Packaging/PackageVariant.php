@@ -50,7 +50,7 @@ class PackageVariant
 
         if (! $this->builder->available()) {
             throw new RuntimeException(
-                'No materials toolbox is available, so ['.$variant->code.'] cannot be packaged.'
+                'No USD toolbox is available, so ['.$variant->code.'] cannot be packaged.'
             );
         }
 

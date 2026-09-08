@@ -5,7 +5,7 @@ namespace App\Library\Packaging;
 use RuntimeException;
 
 /**
- * The builder in use until the materials toolbox is installed.
+ * The builder in use until usd-toolbox is installed.
  *
  * It exists so the pipeline around it is real, exercised and tested now, and
  * the toolbox becomes a configuration change rather than an integration. When
@@ -31,7 +31,7 @@ class PendingToolbox implements PackageBuilder
     public function build(BuildRequest $request): BuiltPackage
     {
         throw new RuntimeException(
-            'No materials toolbox is installed, so ['.$request->variantCode.'] cannot be packaged. '
+            'No USD toolbox is installed, so ['.$request->variantCode.'] cannot be packaged. '
             .'Set OPAL_TOOLBOX_BIN to the built binary.'
         );
     }

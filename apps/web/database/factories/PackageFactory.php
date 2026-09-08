@@ -27,7 +27,7 @@ class PackageFactory extends Factory
             'sha256' => $digest,
             'bytes' => fake()->numberBetween(1_000_000, 400_000_000),
             'tiers' => ['preview', '1k', '2k', '4k'],
-            'builder' => 'materials-toolbox',
+            'builder' => 'usd-toolbox',
             'builder_version' => '0.1.0',
             'losses' => [],
             'built_at' => now(),

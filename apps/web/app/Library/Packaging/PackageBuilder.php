@@ -5,7 +5,7 @@ namespace App\Library\Packaging;
 /**
  * Builds a USDZ from a variant's canonical files.
  *
- * Implemented by the materials toolbox. The interface exists ahead of it so the
+ * Implemented by usd-toolbox. The interface exists ahead of it so the
  * pipeline either works or fails loudly, rather than being wired up later in a
  * hurry against whatever shape the binary happens to have.
  */

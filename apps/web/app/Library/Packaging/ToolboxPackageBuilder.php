@@ -10,7 +10,7 @@ use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 /**
- * Runs the materials toolbox as a subprocess.
+ * Runs usd-toolbox as a subprocess.
  *
  * A subprocess rather than FFI: the toolbox is a separate project on its own
  * release cadence, and a crash in a foreign library would take the worker with
@@ -31,7 +31,7 @@ class ToolboxPackageBuilder implements PackageBuilder
 
     public function name(): string
     {
-        return 'materials-toolbox';
+        return 'usd-toolbox';
     }
 
     public function version(): string

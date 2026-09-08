@@ -209,7 +209,7 @@ test('without a toolbox the pipeline refuses clearly instead of appearing to wor
     $action = new PackageVariant(app(AssembleBuildRequest::class), new PendingToolbox);
 
     expect(fn () => $action->handle($variant))
-        ->toThrow(RuntimeException::class, 'No materials toolbox is available');
+        ->toThrow(RuntimeException::class, 'No USD toolbox is available');
 });
 
 test('an odd supplier resolution lands on the rung below it, never above', function () {

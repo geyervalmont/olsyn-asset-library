@@ -23,7 +23,7 @@ class PackageLibraryCommand extends Command
     public function handle(PackageBuilder $builder): int
     {
         if (! $builder->available()) {
-            $this->components->error('No materials toolbox is installed; set OPAL_TOOLBOX_BIN to the built binary.');
+            $this->components->error('No USD toolbox is installed; set OPAL_TOOLBOX_BIN to the built binary.');
 
             return self::FAILURE;
         }

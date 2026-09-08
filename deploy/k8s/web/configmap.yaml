@@ -79,6 +79,9 @@ data:
   LEGACY_AWS_DEFAULT_REGION: ap-southeast-2
 
   OPAL_FILES_DISK: s3
+  # Baked into the image at a pinned commit, so a package's builder_version
+  # points at something that can be rebuilt.
+  OPAL_TOOLBOX_BIN: /usr/local/bin/usd-toolbox
   OPAL_FILES_PREFIX: opal/files
   OPAL_BUCKET: olsyn-prod-materials
   OPAL_AUTO_RENDER_PREVIEWS: "true"
