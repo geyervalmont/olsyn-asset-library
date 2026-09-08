@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property int $revision
  * @property string $object_key
  * @property string $sha256
+ * @property string|null $request_digest
  * @property int $bytes
  * @property list<string> $tiers
  * @property string|null $builder
@@ -31,7 +32,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $built_at
  * @property-read Variant $variant
  */
-#[Fillable(['revision', 'object_key', 'sha256', 'bytes', 'tiers', 'builder', 'builder_version', 'losses', 'built_at'])]
+#[Fillable(['revision', 'object_key', 'sha256', 'request_digest', 'bytes', 'tiers', 'builder', 'builder_version', 'losses', 'built_at'])]
 class Package extends Model
 {
     /** @use HasFactory<PackageFactory> */

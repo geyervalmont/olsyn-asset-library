@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\BuildVariantPackage;
 use App\Jobs\DownscaleRepresentation;
 use App\Jobs\RenderPreview;
 
@@ -18,6 +19,29 @@ return [
     'files_disk' => env('OPAL_FILES_DISK', env('FILESYSTEM_DISK', 'local')),
 
     'files_prefix' => env('OPAL_FILES_PREFIX', 'opal/files'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Packaging
+    |--------------------------------------------------------------------------
+    |
+    | Built USDZ packages: the archive the library is managed as. Keys are
+    | readable rather than content-addressed, because navigating it by hand is
+    | the point; immutability comes from revisions never being reused.
+    |
+    | The toolbox is invoked as a subprocess. Without it the pipeline still
+    | runs and reports plainly that nothing can be built, rather than appearing
+    | to work.
+    |
+    */
+
+    'packages_disk' => env('OPAL_PACKAGES_DISK', env('OPAL_FILES_DISK', env('FILESYSTEM_DISK', 'local'))),
+
+    'packages_prefix' => env('OPAL_PACKAGES_PREFIX', 'opal/packages'),
+
+    'toolbox_bin' => env('OPAL_TOOLBOX_BIN'),
+
+    'toolbox_timeout' => (int) env('OPAL_TOOLBOX_TIMEOUT', 900),
 
     /*
     |--------------------------------------------------------------------------
@@ -42,6 +66,7 @@ return [
     */
 
     'workers' => [
+        'build_variant_package' => BuildVariantPackage::class,
         'downscale_representation' => DownscaleRepresentation::class,
         'render_preview' => RenderPreview::class,
     ],

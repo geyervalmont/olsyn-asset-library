@@ -8,6 +8,9 @@ use App\Http\Middleware\UseCurrentTenant;
 use App\Library\Conversion\ConverterRegistry;
 use App\Library\Conversion\OmniverseMdlConverter;
 use App\Library\Conversion\RevitImageSetConverter;
+use App\Library\Packaging\PackageBuilder;
+use App\Library\Packaging\PendingToolbox;
+use App\Library\Packaging\ToolboxPackageBuilder;
 use App\Models\Drive;
 use App\Models\File;
 use App\Models\Material;
@@ -44,6 +47,25 @@ class AppServiceProvider extends ServiceProvider
             $registry->register($this->app->make(OmniverseMdlConverter::class));
 
             return $registry;
+        });
+
+        // The toolbox is chosen once, at boot, so a half-installed binary is a
+        // startup-time answer rather than a surprise in the middle of a
+        // 26,000-variant run.
+        $this->app->singleton(PackageBuilder::class, function (): PackageBuilder {
+            $binary = config('opal.toolbox_bin');
+
+            if (! is_string($binary) || $binary === '') {
+                return new PendingToolbox;
+            }
+
+            $builder = new ToolboxPackageBuilder(
+                binary: $binary,
+                filesDisk: (string) config('opal.files_disk'),
+                timeout: (int) config('opal.toolbox_timeout'),
+            );
+
+            return $builder->available() ? $builder : new PendingToolbox;
         });
     }
 
