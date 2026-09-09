@@ -31,7 +31,7 @@ class MaterialsController
             ->when(isset($validated['category']), fn ($query) => $query->whereRelation('category', 'code', strtoupper($validated['category'])))
             ->when(isset($validated['supplier']), fn ($query) => $query->whereRelation('supplier', 'code', strtoupper($validated['supplier'])))
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
-            ->with(['category', 'supplier', 'currentVersion'])
+            ->with(['category', 'supplier', 'currentVersion', 'variants.attributes.type'])
             ->orderBy('name')
             ->paginate((int) ($validated['per_page'] ?? 25));
 

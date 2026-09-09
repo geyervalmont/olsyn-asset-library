@@ -8,6 +8,7 @@ Route::middleware(['auth'])->group(function () {
     Route::livewire('settings/profile', 'pages::settings.profile')->name('profile.edit');
     Route::livewire('settings/api-tokens', 'pages::settings.api-tokens')->name('api-tokens.edit');
     Route::livewire('settings/sessions', 'pages::settings.sessions')->name('sessions.edit');
+    Route::livewire('settings/revit', 'pages::settings.revit')->name('revit.edit');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

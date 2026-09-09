@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Clients\RevitDownloadController;
 use App\Http\Controllers\Drives\DriveManifestController;
 use App\Http\Controllers\Files\FileController;
 use App\Http\Controllers\OlsynLoginController;
@@ -16,6 +17,10 @@ if (app()->environment(['local', 'testing'])) {
 
 Route::get('prismfs/drives/{drive:slug}/manifest.yaml', PrismfsManifestController::class)->name('prismfs.drives.manifest');
 Route::post('prismfs/drives/{drive:slug}/accesses', PrismfsAccessController::class)->name('prismfs.drives.accesses');
+Route::get('downloads/revit/{channel}/{asset}', RevitDownloadController::class)
+    ->whereIn('channel', ['development', 'stable'])
+    ->whereIn('asset', ['installer', 'package'])
+    ->name('revit.download');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'dashboard')->name('dashboard');

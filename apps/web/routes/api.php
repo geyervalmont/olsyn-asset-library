@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ClientReleasesController;
 use App\Http\Controllers\Api\CommandsController;
 use App\Http\Controllers\Api\DrivesController;
 use App\Http\Controllers\Api\IdentitiesController;
@@ -25,6 +26,10 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     Route::post('link', [LinkController::class, 'store'])->middleware('throttle:10,1')->name('api.link.store');
     Route::get('link/{code}', [LinkController::class, 'show'])->middleware('throttle:60,1')->name('api.link.show');
+    Route::get('client-releases/revit/{channel}', [ClientReleasesController::class, 'show'])
+        ->whereIn('channel', ['development', 'stable'])
+        ->middleware('throttle:300,1')
+        ->name('api.client-releases.revit');
 });
 
 Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class])->group(function () {

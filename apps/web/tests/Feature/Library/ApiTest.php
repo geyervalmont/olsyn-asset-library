@@ -54,6 +54,7 @@ test('the api searches, shows and resolves within the token users visibility', f
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.code', 'CPT-TARKETT-ACADEMIX')
         ->assertJsonPath('data.0.supplier.code', 'TARKETT')
+        ->assertJsonPath('data.0.variants.0.code', 'CPT-TARKETT-ACADEMIX-ASHEN')
         ->assertJsonPath('meta.total', 1);
 
     $this->getJson('/api/v1/materials')->assertOk()->assertJsonMissing(['name' => 'Secret stone']);

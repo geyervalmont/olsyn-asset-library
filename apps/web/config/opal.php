@@ -119,4 +119,32 @@ return [
         'link_ttl' => (int) env('OPAL_LINK_TTL_MINUTES', 10),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Desktop clients
+    |--------------------------------------------------------------------------
+    |
+    | Native client releases live as public GitHub release assets. OPAL remains
+    | the stable discovery and download address, so a client never needs to
+    | know where the binaries are hosted and we can move them later.
+    |
+    */
+
+    'clients' => [
+        'revit' => [
+            'repository' => env('OPAL_REVIT_RELEASE_REPOSITORY', 'geyervalmont/olsyn-asset-library'),
+            'default_channel' => env('OPAL_REVIT_RELEASE_CHANNEL', 'development'),
+            'channels' => [
+                'development' => [
+                    'label' => 'Development',
+                    'tag' => env('OPAL_REVIT_DEVELOPMENT_TAG', 'revit-development'),
+                ],
+                'stable' => [
+                    'label' => 'Stable',
+                    'tag' => env('OPAL_REVIT_STABLE_TAG', 'revit-stable'),
+                ],
+            ],
+        ],
+    ],
+
 ];

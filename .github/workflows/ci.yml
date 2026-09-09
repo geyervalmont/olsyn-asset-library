@@ -92,3 +92,67 @@ jobs:
           name: opal-revit-extension
           path: ${{ runner.temp }}/opal-revit
           retention-days: 30
+
+  revit-native:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+      - name: Build native connector release
+        env:
+          SIGNING_CERTIFICATE: ${{ secrets.REVIT_SIGNING_CERTIFICATE_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.REVIT_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          ./integrations/revit-native/build-release.ps1 `
+            -Version "0.1.0.${env:GITHUB_RUN_NUMBER}" `
+            -Commit "${env:GITHUB_SHA}" `
+            -Channel development `
+            -SigningCertificateBase64 "${env:SIGNING_CERTIFICATE}" `
+            -SigningPassword "${env:SIGNING_PASSWORD}"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: opal-revit-native-${{ github.run_number }}
+          path: |
+            artifacts/revit/OPAL-Revit-Setup.exe
+            artifacts/revit/OPAL-Revit-Package.zip
+            artifacts/revit/release-manifest.json
+          retention-days: 30
+      - name: Publish development release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "revit-development"
+          $release = gh release view $tag --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag `
+              artifacts/revit/OPAL-Revit-Setup.exe `
+              artifacts/revit/OPAL-Revit-Package.zip `
+              --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Could not upload Revit release binaries" }
+            gh release upload $tag artifacts/revit/release-manifest.json --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Could not publish the Revit release manifest" }
+            gh release edit $tag `
+              --title "OPAL for Revit 2027 — development" `
+              --notes "Automatically built from ${env:GITHUB_SHA}. Download through OPAL → Settings → Revit extension." `
+              --prerelease
+          }
+          else {
+            gh release create $tag `
+              artifacts/revit/OPAL-Revit-Setup.exe `
+              artifacts/revit/OPAL-Revit-Package.zip `
+              artifacts/revit/release-manifest.json `
+              --target "${env:GITHUB_SHA}" `
+              --title "OPAL for Revit 2027 — development" `
+              --notes "Automatically built from ${env:GITHUB_SHA}. Download through OPAL → Settings → Revit extension." `
+              --prerelease
+          }

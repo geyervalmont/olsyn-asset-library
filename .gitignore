@@ -14,6 +14,11 @@ services/prismfs/target/
 services/prismfs/mnt/*
 !services/prismfs/mnt/.gitkeep
 
+# .NET / Revit release output
+integrations/revit-native/**/bin/
+integrations/revit-native/**/obj/
+artifacts/
+
 # Laravel
 apps/web/.env
 apps/web/vendor/
