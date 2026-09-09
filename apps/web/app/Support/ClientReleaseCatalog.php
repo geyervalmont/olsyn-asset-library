@@ -112,7 +112,7 @@ class ClientReleaseCatalog
         return [
             'name' => $asset['name'],
             'sha256' => strtolower($asset['sha256']),
-            'bytes' => (int) ($asset['bytes'] ?? 0),
+            'bytes' => (int) $asset['bytes'],
         ];
     }
 
