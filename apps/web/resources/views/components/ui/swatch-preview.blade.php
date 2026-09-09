@@ -12,14 +12,18 @@
     $labels = \App\Library\Previews\MaterialPreviews::badgeLabels();
 @endphp
 
-<div {{ $attributes->class(['ui-swatch-card__preview', 'ui-swatch-card__preview--open' => $open]) }}>
+<div
+    {{ $attributes->class(['ui-swatch-card__preview', 'ui-swatch-card__preview--open' => $open]) }}
+    data-has-render="{{ $first['image'] === null ? 'false' : 'true' }}"
+    x-bind:data-has-render="current?.image ? 'true' : 'false'"
+>
     <div class="ui-swatch-card__fill" style="--chip: {{ $first['hex'] }}" x-bind:style="current ? '--chip: ' + current.hex : ''" aria-hidden="true"></div>
     <img
-        src="{{ $first['image'] ?? '' }}"
+        @if ($first['image'] !== null) src="{{ $first['image'] }}" @endif
         alt="{{ $name }}"
         loading="lazy"
         @if ($first['image'] === null) hidden @endif
-        x-bind:src="current?.image ?? ''"
+        x-bind:src="current?.image || null"
         x-bind:hidden="! current?.image"
     />
     {{ $stage ?? '' }}

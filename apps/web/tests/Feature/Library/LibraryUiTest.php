@@ -28,7 +28,7 @@ test('signed-in users land on the library and guests see the cover page', functi
     $this->actingAs($this->viewer)->get('/')->assertRedirect(route('materials.index'));
 });
 
-test('the library shows swatches by default, colour chips without files, real previews with them, and toggles to a table', function () {
+test('the library uses consistent renders instead of raw maps and toggles to a table', function () {
     $plain = Material::factory()->create(['name' => 'Wool felt']);
     app(AddVariant::class)->handle($plain, ['colourway' => 'Dusk'], overrides: ['dominant_hex' => '#6b7a8c']);
     app(AddVariant::class)->handle($plain, ['colourway' => 'Dawn'], overrides: ['dominant_hex' => '#d8c7b0']);
@@ -38,15 +38,23 @@ test('the library shows swatches by default, colour chips without files, real pr
     $image = imagecreatetruecolor(8, 8);
     ob_start();
     imagepng($image);
-    $file = app(FileStore::class)->store((string) ob_get_clean(), 'travertine.png');
-    app(CreateRepresentation::class)->handle($variant, 'pbr', '1k', ['base_color' => $file]);
+    $raw = app(FileStore::class)->store((string) ob_get_clean(), 'travertine-base.png');
+    app(CreateRepresentation::class)->handle($variant, 'pbr', '1k', ['base_color' => $raw]);
+
+    $image = imagecreatetruecolor(8, 8);
+    imagefilledrectangle($image, 0, 0, 7, 7, imagecolorallocate($image, 120, 100, 90));
+    ob_start();
+    imagepng($image);
+    $render = app(FileStore::class)->store((string) ob_get_clean(), 'travertine-preview.png');
+    app(CreateRepresentation::class)->handle($variant, 'preview', 'preview', ['render' => $render]);
 
     $page = Livewire::actingAs($this->viewer)
         ->test('pages::materials.index')
         ->assertSee('data-test="swatch-grid"', false)
         ->assertSee('--chip: #6b7a8c', false)
         ->assertSee('--chip: #d8c7b0', false)
-        ->assertSee($file->url(), false)
+        ->assertSee($render->url(), false)
+        ->assertDontSee($raw->url(), false)
         ->assertSee('data-test="colourways"', false)
         ->assertSee('data-badge="pbr" data-state="candidate"', false)
         ->assertSee('data-badge="none"', false)

@@ -13,15 +13,17 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * What a material looks like in a list: a rendered swatch when one exists,
- * else a thumbnail, base colour or reference image of a usable
- * representation, otherwise a strip of its variants' dominant colours.
+ * What a material looks like in a list: a purpose-built sphere render when
+ * one exists, otherwise a neutral sphere made from the variant's dominant
+ * colour. Raw maps and reference photography are deliberately not used as
+ * swatches: mixing those crops with renders makes the library impossible to
+ * scan and can misrepresent the material under inspection.
  */
 class MaterialPreviews
 {
     public const CHIPS = 8;
 
-    private const ROLE_PRIORITY = ['render' => 0, 'thumbnail' => 1, 'base_color' => 2, 'ref_image' => 3];
+    private const PREVIEW_ROLE = 'render';
 
     /**
      * How a category behaves in the inspector beyond its maps: fibre catches
@@ -55,15 +57,14 @@ class MaterialPreviews
             ->join('variants', 'variants.id', '=', 'representations.variant_id')
             ->join('map_roles', 'map_roles.id', '=', 'representation_files.map_role_id')
             ->whereIn('variants.material_id', $materials->modelKeys())
-            ->whereIn('map_roles.slug', array_keys(self::ROLE_PRIORITY))
+            ->where('map_roles.slug', self::PREVIEW_ROLE)
             ->whereIn('representations.review_state', [ReviewState::Approved->value, ReviewState::Candidate->value])
             ->get(['variants.material_id', 'representation_files.file_id', 'map_roles.slug', 'representations.review_state', 'variants.position']);
 
         $chosen = [];
 
         foreach ($rows as $row) {
-            $score = (self::ROLE_PRIORITY[$row->slug] ?? 9) * 10
-                + ($row->review_state === ReviewState::Approved->value ? 0 : 5)
+            $score = ($row->review_state === ReviewState::Approved->value ? 0 : 5)
                 + min((int) $row->position, 4);
 
             if (! isset($chosen[$row->material_id]) || $score < $chosen[$row->material_id][0]) {
@@ -126,14 +127,14 @@ class MaterialPreviews
             ->join('representations', 'representations.id', '=', 'representation_files.representation_id')
             ->join('map_roles', 'map_roles.id', '=', 'representation_files.map_role_id')
             ->whereIn('representations.variant_id', $variants->pluck('id')->all())
-            ->whereIn('map_roles.slug', array_keys(self::ROLE_PRIORITY))
+            ->where('map_roles.slug', self::PREVIEW_ROLE)
             ->whereIn('representations.review_state', [ReviewState::Approved->value, ReviewState::Candidate->value])
             ->get(['representations.variant_id', 'representation_files.file_id', 'map_roles.slug', 'representations.review_state']);
 
         $chosen = [];
 
         foreach ($rows as $row) {
-            $score = (self::ROLE_PRIORITY[$row->slug] ?? 9) * 10 + ($row->review_state === ReviewState::Approved->value ? 0 : 5);
+            $score = $row->review_state === ReviewState::Approved->value ? 0 : 5;
 
             if (! isset($chosen[$row->variant_id]) || $score < $chosen[$row->variant_id][0]) {
                 $chosen[$row->variant_id] = [$score, (int) $row->file_id];

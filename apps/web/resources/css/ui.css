@@ -3054,14 +3054,35 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-swatch-card__fill {
     position: absolute;
-    inset: 0;
-    background: var(--chip, var(--ui-paper-deep));
-    transition: background var(--ui-medium) var(--ui-ease);
+    top: 7%;
+    left: 50%;
+    height: 68%;
+    aspect-ratio: 1;
+    background: radial-gradient(
+        circle at 34% 28%,
+        color-mix(in srgb, var(--chip, #cfcbc1), white 36%) 0,
+        var(--chip, #cfcbc1) 48%,
+        color-mix(in srgb, var(--chip, #cfcbc1), black 42%) 100%
+    );
+    border: 1px solid color-mix(in srgb, var(--chip, #cfcbc1), black 18%);
+    border-radius: 50%;
+    box-shadow: 0 14px 18px -13px rgba(44, 53, 77, 0.65);
+    transform: translateX(-50%);
+    transition: background var(--ui-medium) var(--ui-ease), opacity var(--ui-fast);
+}
+
+.ui-swatch-card__preview[data-has-render='true'] .ui-swatch-card__fill {
+    opacity: 0;
 }
 
 .ui-swatch-card__preview img {
-    position: relative;
+    position: absolute;
+    top: 4%;
+    left: 16%;
     z-index: 1;
+    width: 68%;
+    height: 76%;
+    object-fit: contain;
 }
 
 .ui-swatch-card__badges {
@@ -3752,6 +3773,7 @@ h1.ui-reveal.is-revealed em::after {
     position: absolute;
     inset: 0;
     z-index: 2;
+    overflow: hidden;
     background: var(--ui-paper-deep);
     opacity: 0;
     transition: opacity var(--ui-medium) var(--ui-ease);

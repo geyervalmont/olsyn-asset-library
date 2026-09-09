@@ -314,7 +314,7 @@ new #[Title('Library')] class extends Component {
         <div>
             <x-ui.eyebrow>{{ __('Library') }}</x-ui.eyebrow>
             <h1>{{ __('Materials') }} <small>{{ number_format($this->materials->total()) }} {{ __('records') }}</small></h1>
-            <p class="ui-page-head__lede">{{ __('Search by name, code, supplier, product code, colourway or tag. Swatches show a real preview when one exists, otherwise the colourways on record.') }}</p>
+            <p class="ui-page-head__lede">{{ __('Search by name, code, supplier, product code, colourway or tag. Every swatch uses the same sphere view; a colour-only sphere means its render is still missing.') }}</p>
         </div>
         <div class="ui-page-head__actions">
             @can('materials.contribute')

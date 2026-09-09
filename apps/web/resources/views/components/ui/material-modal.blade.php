@@ -49,7 +49,7 @@
                         <div
                             class="ui-swatch-card__stage"
                             wire:ignore
-                            x-data="materialViewer(@js(['sets' => $sets, 'objectSizeMm' => 1000]))"
+                            x-data="materialViewer(@js(['sets' => $sets, 'objectSizeMm' => 1000, 'framing' => 1.65, 'verticalBias' => 0.12]))"
                             x-effect="show(current?.id)"
                             x-bind:class="status === 'ready' && 'is-ready'"
                             data-test="quick-stage"

@@ -113,6 +113,19 @@ test('the render job produces an approved preview with provenance and skips unch
     expect($previews[$material->getKey()]->id)->toBe(Representation::query()->findOrFail($forced->result['representation_id'])->fileFor('render')?->id);
 });
 
+test('raw material maps are never used as library swatches', function () {
+    $material = Material::factory()->create();
+    $variant = app(AddVariant::class)->handle($material, ['colourway' => 'Raw only']);
+    $base = app(FileStore::class)->store(mapPng(16, 120, 100, 90), 'base.png');
+    app(CreateRepresentation::class)->handle($variant, 'pbr', '1k', ['base_color' => $base]);
+
+    $materials = Material::query()->whereKey($material->getKey())->get();
+    $previews = app(MaterialPreviews::class);
+
+    expect($previews->filesFor($materials))->toBe([])
+        ->and($previews->variantFilesFor(collect([$variant])))->toBe([]);
+});
+
 test('approving a canonical set queues a render when auto rendering is on, and the command fills gaps', function () {
     config(['opal.previews.auto_render' => true]);
     $material = Material::factory()->create();

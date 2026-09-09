@@ -142,6 +142,8 @@ const stage = {
     visible: true,
     pending: null,
     shownKey: null,
+    framing: 1.08,
+    verticalBias: 0,
     cache: new Map(),
 
     boot() {
@@ -252,6 +254,8 @@ const stage = {
         const gl = await this.boot();
 
         this.host = host;
+        this.framing = options.framing ?? 1.08;
+        this.verticalBias = options.verticalBias ?? 0;
         host.appendChild(gl.canvas);
         gl.controls.enableZoom = options.zoom !== false;
         gl.controls.enableRotate = options.rotate !== false;
@@ -325,12 +329,14 @@ const stage = {
         const vertical = THREE.MathUtils.degToRad(gl.camera.fov);
         const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * gl.camera.aspect);
         // Far enough that both the height and the width clear the frame.
-        const distance = 1.08 * Math.max(
+        const distance = this.framing * Math.max(
             (size.y / 2) / Math.tan(vertical / 2),
             (Math.max(size.x, size.z) / 2) / Math.tan(horizontal / 2),
         );
 
-        gl.controls.target.copy(centre);
+        const target = centre.clone();
+        target.y -= size.y * this.verticalBias;
+        gl.controls.target.copy(target);
         gl.camera.position.set(centre.x, centre.y + size.y * 0.12, centre.z + distance);
         gl.controls.minDistance = distance * 0.12;
         gl.controls.maxDistance = distance * 3;
@@ -550,6 +556,8 @@ document.addEventListener('alpine:init', () => {
         sets: config.sets ?? {},
         objectSizeMm: config.objectSizeMm ?? 1000,
         shape: config.shape ?? 'ball',
+        framing: config.framing ?? 1.08,
+        verticalBias: config.verticalBias ?? 0,
         zoom: config.zoom !== false,
         status: 'idle',
         host: null,
@@ -565,7 +573,8 @@ document.addEventListener('alpine:init', () => {
 
             this.status = 'loading';
             this.host = this.$refs.stage ?? this.$el;
-            stage.attach(this.host, { zoom: this.zoom }).then(() => {
+            stage.attach(this.host, { zoom: this.zoom, framing: this.framing, verticalBias: this.verticalBias }).then(() => {
+                stage.setShape(this.shape);
                 this.status = 'ready';
             });
 
