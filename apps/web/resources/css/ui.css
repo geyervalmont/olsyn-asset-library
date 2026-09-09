@@ -3765,7 +3765,203 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-viewer__stage {
+    position: relative;
     min-height: 330px;
+    overflow: hidden;
+}
+
+.ui-material-maps {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.ui-material-maps__image {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 22px 22px 88px;
+    background:
+        linear-gradient(45deg, rgba(44, 53, 77, 0.035) 25%, transparent 25%, transparent 75%, rgba(44, 53, 77, 0.035) 75%),
+        linear-gradient(45deg, rgba(44, 53, 77, 0.035) 25%, transparent 25%, transparent 75%, rgba(44, 53, 77, 0.035) 75%),
+        var(--ui-paper-deep);
+    background-position: 0 0, 10px 10px;
+    background-size: 20px 20px;
+    pointer-events: auto;
+}
+
+.ui-material-maps__image > img {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    object-fit: contain;
+    image-rendering: auto;
+}
+
+.ui-material-maps__image p {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 6px 8px;
+    color: var(--ui-paper);
+    font-family: var(--ui-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    background: rgba(44, 53, 77, 0.82);
+    border-radius: var(--ui-radius-control);
+    backdrop-filter: blur(8px);
+}
+
+.ui-material-maps__image p span {
+    color: rgba(245, 243, 239, 0.68);
+    font-size: 8px;
+    text-transform: uppercase;
+}
+
+.ui-material-maps__rail {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    gap: 5px;
+    align-items: stretch;
+    width: max-content;
+    max-width: calc(100% - 24px);
+    padding: 5px;
+    overflow-x: auto;
+    background: rgba(245, 243, 239, 0.86);
+    border: 1px solid rgba(74, 77, 92, 0.22);
+    border-radius: var(--ui-radius-button);
+    box-shadow: var(--ui-el-2);
+    pointer-events: auto;
+    scrollbar-width: none;
+    backdrop-filter: blur(12px);
+}
+
+.ui-material-maps__rail::-webkit-scrollbar {
+    display: none;
+}
+
+.ui-material-maps__rail button {
+    display: grid;
+    grid-template-columns: 30px auto;
+    gap: 6px;
+    align-items: center;
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 3px 8px 3px 3px;
+    color: var(--ui-muted);
+    font-family: var(--ui-font-mono);
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    cursor: pointer;
+}
+
+.ui-material-maps__rail button:hover {
+    color: var(--ui-ink);
+    background: rgba(255, 255, 255, 0.58);
+}
+
+.ui-material-maps__rail button:focus-visible {
+    color: var(--ui-ink);
+    background: rgba(255, 255, 255, 0.58);
+    outline: 1px solid var(--ui-periwinkle-deep);
+    outline-offset: 1px;
+}
+
+.ui-material-maps__rail button.is-active {
+    color: var(--ui-ink);
+    background: var(--ui-paper);
+    border-color: var(--ui-line-strong);
+    box-shadow: var(--ui-el-1);
+}
+
+.ui-material-maps__rail button > img,
+.ui-material-maps__surface {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    display: block;
+    width: 30px;
+    height: 30px;
+    object-fit: cover;
+    background: var(--ui-paper-deep);
+    border: 1px solid var(--ui-line);
+    border-radius: 4px;
+}
+
+.ui-material-maps__surface {
+    background:
+        radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.96), rgba(143, 167, 201, 0.88) 34%, rgba(44, 53, 77, 0.94) 100%);
+    border-radius: 50%;
+}
+
+.ui-material-maps__rail em {
+    overflow: hidden;
+    font-style: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ui-material-maps--compact .ui-material-maps__image {
+    padding: 58px 12px 72px;
+}
+
+.ui-material-maps--compact .ui-material-maps__rail {
+    top: 8px;
+    right: 8px;
+    bottom: auto;
+    left: 8px;
+    max-width: calc(100% - 16px);
+}
+
+.ui-material-maps--compact .ui-material-maps__image p {
+    display: none;
+}
+
+.ui-material-maps--compact .ui-material-maps__rail button {
+    grid-template-columns: 26px auto;
+    padding-right: 6px;
+}
+
+.ui-material-maps--compact .ui-material-maps__rail button > img,
+.ui-material-maps--compact .ui-material-maps__surface {
+    width: 26px;
+    height: 26px;
+}
+
+@media (max-width: 640px) {
+    .ui-material-maps__rail button {
+        grid-template-columns: 30px;
+        padding-right: 3px;
+    }
+
+    .ui-material-maps__rail em {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        clip-path: inset(50%);
+    }
+
+    .ui-material-maps--compact .ui-material-maps__image {
+        padding: 54px 10px 70px;
+    }
 }
 
 /* The 3D view sits over the flat preview and fades in once it has drawn. */

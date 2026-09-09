@@ -52,8 +52,11 @@
                             x-data="materialViewer(@js(['sets' => $sets, 'objectSizeMm' => 1000, 'framing' => 1.65, 'verticalBias' => 0.12]))"
                             x-effect="show(current?.id)"
                             x-bind:class="status === 'ready' && 'is-ready'"
+                            x-ref="stage"
                             data-test="quick-stage"
-                        ></div>
+                        >
+                            <x-ui.material-map-inspector compact />
+                        </div>
                     </x-slot:stage>
                 @endif
             </x-ui.swatch-preview>

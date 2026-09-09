@@ -561,9 +561,44 @@ document.addEventListener('alpine:init', () => {
         zoom: config.zoom !== false,
         status: 'idle',
         host: null,
+        variantId: null,
+        view: 'surface',
+        mapRole: null,
 
         get available() {
             return Object.keys(this.sets).length > 0;
+        },
+
+        get currentSet() {
+            return this.sets[this.variantId] ?? Object.values(this.sets)[0] ?? null;
+        },
+
+        get maps() {
+            const set = this.currentSet;
+
+            if (! set) {
+                return [];
+            }
+
+            const roles = [
+                ['base_color', 'Base colour', 'Colour'],
+                ['normal', 'Normal', 'Normal'],
+                ['roughness', 'Roughness', 'Rough'],
+                ['metallic', 'Metallic', 'Metal'],
+                ['ao', 'Ambient occlusion', 'AO'],
+                ['height', 'Height', 'Height'],
+                ['bump', 'Bump', 'Bump'],
+                ['emissive', 'Emissive', 'Emit'],
+                ['opacity', 'Opacity', 'Opacity'],
+            ];
+
+            return roles
+                .filter(([role]) => typeof set[role] === 'string' && set[role] !== '')
+                .map(([role, label, shortLabel]) => ({ role, label, shortLabel, url: set[role] }));
+        },
+
+        get activeMap() {
+            return this.maps.find((map) => map.role === this.mapRole) ?? null;
         },
 
         init() {
@@ -593,10 +628,30 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
 
+            this.variantId = variantId;
+
+            if (this.view === 'map' && ! this.activeMap) {
+                this.inspectSurface();
+            }
+
             this.status = 'loading';
             stage.show(set, this.objectSizeMm).then(() => {
                 this.status = 'ready';
             });
+        },
+
+        inspectSurface() {
+            this.view = 'surface';
+            this.mapRole = null;
+        },
+
+        inspectMap(role) {
+            if (! this.maps.some((map) => map.role === role)) {
+                return;
+            }
+
+            this.mapRole = role;
+            this.view = 'map';
         },
     }));
 

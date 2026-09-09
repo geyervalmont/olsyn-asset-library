@@ -432,8 +432,12 @@ new class extends Component {
         data-test="material-viewer"
     >
         <div class="ui-viewer__bar">
-            <p>{{ __('Inspector') }} · {{ __('canonical maps under studio light') }} · <span x-text="status"></span></p>
-            <div class="ui-segment" role="group" aria-label="{{ __('Shape') }}">
+            <p>
+                {{ __('Inspector') }} ·
+                <span x-text="view === 'surface' ? '{{ __('canonical maps under studio light') }}' : `${activeMap?.label ?? ''} · {{ __('raw map') }}`">{{ __('canonical maps under studio light') }}</span>
+                · <span x-text="view === 'surface' ? status : '{{ __('ready') }}'"></span>
+            </p>
+            <div class="ui-segment" role="group" aria-label="{{ __('Shape') }}" x-show="view === 'surface'">
                 <button type="button" x-on:click="shape = 'ball'" x-bind:class="shape === 'ball' && 'is-active'">{{ __('Ball') }}</button>
                 <button type="button" x-on:click="shape = 'panel'" x-bind:class="shape === 'panel' && 'is-active'">{{ __('Panel') }}</button>
                 <button type="button" x-on:click="shape = 'cube'" x-bind:class="shape === 'cube' && 'is-active'">{{ __('Cube') }}</button>
@@ -442,7 +446,9 @@ new class extends Component {
         @if ($this->viewerSets === [])
             <div class="ui-viewer__empty">{{ __('No canonical maps to inspect yet') }}</div>
         @else
-            <div class="ui-viewer__stage" x-ref="stage" wire:ignore></div>
+            <div class="ui-viewer__stage" x-ref="stage" wire:ignore>
+                <x-ui.material-map-inspector />
+            </div>
         @endif
     </div>
 

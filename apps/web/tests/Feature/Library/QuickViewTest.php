@@ -132,7 +132,15 @@ test('the quick view carries the maps the shared inspector needs', function () {
         ->test('pages::materials.index')
         ->call('openQuick', $this->material->code)
         ->assertSeeHtml('data-test="quick-stage"')
+        ->assertSeeHtml('data-test="material-map-inspector"')
+        ->assertSeeHtml('data-test="material-map-surface"')
         ->assertSeeHtml('materialViewer');
+
+    Livewire::actingAs($this->viewer)
+        ->test('pages::materials.show', ['material' => $this->material])
+        ->assertSeeHtml('data-test="material-viewer"')
+        ->assertSeeHtml('data-test="material-map-inspector"')
+        ->assertSee('Surface');
 
     // A material without canonical maps shows the flat preview only.
     $bare = Material::factory()->create(['category_id' => Category::query()->where('code', 'CPT')->sole(), 'supplier_id' => Supplier::factory()->create()]);

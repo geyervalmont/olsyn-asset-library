@@ -67,3 +67,28 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: composer test
+
+  revit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Verify the packaged client is current
+        run: diff -ru --exclude='__pycache__' integrations/revit/opal_client integrations/revit/pyrevit/OPAL.extension/lib/opal_client
+      - name: Test the Revit-independent client
+        run: python -m unittest discover -s integrations/revit/tests -v
+      - name: Assemble pyRevit extension
+        run: |
+          mkdir -p "$RUNNER_TEMP/opal-revit"
+          cp -R integrations/revit/pyrevit/OPAL.extension "$RUNNER_TEMP/opal-revit/"
+          cp integrations/revit/install_pyrevit_extension.ps1 "$RUNNER_TEMP/opal-revit/"
+          cp integrations/revit/README.md "$RUNNER_TEMP/opal-revit/"
+          find "$RUNNER_TEMP/opal-revit" -type d -name __pycache__ -prune -exec rm -rf {} +
+          find "$RUNNER_TEMP/opal-revit" -type f -name '*.pyc' -delete
+      - uses: actions/upload-artifact@v6
+        with:
+          name: opal-revit-extension
+          path: ${{ runner.temp }}/opal-revit
+          retention-days: 30
