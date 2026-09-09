@@ -41,8 +41,11 @@ class FileStore
 
         Storage::disk($this->disk())->put($objectKey, $contents);
 
-        return File::create([
-            'sha256' => $sha256,
+        // Another worker can finish the same deterministic output between the
+        // lookup above and this insert. firstOrCreate's create-or-first path
+        // catches that unique-key race and returns the winner instead of
+        // failing one of two otherwise valid jobs.
+        return File::query()->firstOrCreate(['sha256' => $sha256], [
             'disk' => $this->disk(),
             'object_key' => $objectKey,
             'kind' => $this->kindFor($mimeType),

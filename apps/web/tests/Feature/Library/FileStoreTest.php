@@ -18,14 +18,16 @@ function pngBytes(int $width = 4, int $height = 3): string
     return (string) ob_get_clean();
 }
 
-test('bytes are stored once, content-addressed, with image attributes', function () {
+test('bytes are stored once, content-addressed, with image attributes and reusable across output names', function () {
     $store = app(FileStore::class);
     $png = pngBytes(4, 3);
 
     $first = $store->store($png, 'travertine_albedo.PNG');
     $again = $store->store(UploadedFile::fake()->createWithContent('copy.png', $png));
+    $deterministicOutput = $store->store($png, 'another-variant-preview.png');
 
     expect($again->is($first))->toBeTrue()
+        ->and($deterministicOutput->is($first))->toBeTrue()
         ->and(File::query()->count())->toBe(1)
         ->and($first->sha256)->toBe(hash('sha256', $png))
         ->and($first->object_key)->toBe(sprintf('opal/files/%s/%s/%s.png', substr($first->sha256, 0, 2), substr($first->sha256, 2, 2), $first->sha256))
