@@ -115,6 +115,9 @@
 
             <div class="ui-modal__actions">
                 <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.show', $material) }}" wire:navigate data-test="quick-open-record">{{ __('Full record') }}</a>
+                @if (config('opal.embeddings.enabled'))
+                    <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.index', ['similar' => $material->code]) }}" data-test="quick-find-similar">{{ __('Find similar') }}</a>
+                @endif
 
                 <button
                     type="button"

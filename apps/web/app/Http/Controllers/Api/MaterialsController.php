@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Resources\MaterialResource;
+use App\Library\Embeddings\MaterialSimilarity;
 use App\Models\Material;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -19,20 +20,34 @@ class MaterialsController
     {
         $validated = $request->validate([
             'q' => ['nullable', 'string', 'max:200'],
+            'mode' => ['nullable', 'in:keyword,semantic'],
+            'similar_to' => ['nullable', 'string', 'max:96'],
             'category' => ['nullable', 'string', 'max:8'],
             'supplier' => ['nullable', 'string', 'max:32'],
             'status' => ['nullable', 'in:draft,active,archived'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        $materials = Material::query()
+        $query = Material::query()
             ->visibleTo($request->user())
-            ->search((string) ($validated['q'] ?? ''))
             ->when(isset($validated['category']), fn ($query) => $query->whereRelation('category', 'code', strtoupper($validated['category'])))
             ->when(isset($validated['supplier']), fn ($query) => $query->whereRelation('supplier', 'code', strtoupper($validated['supplier'])))
-            ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
+            ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']));
+
+        if (isset($validated['similar_to'])) {
+            abort_unless(config('opal.embeddings.enabled'), 503, 'Material similarity is not enabled.');
+            $source = Material::resolveCode($validated['similar_to']);
+            abort_if($source === null || ! $source->isVisibleTo($request->user()), 404);
+            $query = app(MaterialSimilarity::class)->toMaterial($query, $source);
+        } elseif (($validated['mode'] ?? 'keyword') === 'semantic' && trim((string) ($validated['q'] ?? '')) !== '') {
+            abort_unless(config('opal.embeddings.enabled'), 503, 'Semantic search is not enabled.');
+            $query = app(MaterialSimilarity::class)->toText($query, (string) $validated['q']);
+        } else {
+            $query->search((string) ($validated['q'] ?? ''))->orderBy('name');
+        }
+
+        $materials = $query
             ->with(['category', 'supplier', 'currentVersion', 'variants.attributes.type'])
-            ->orderBy('name')
             ->paginate((int) ($validated['per_page'] ?? 25));
 
         return MaterialResource::collection($materials);

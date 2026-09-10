@@ -2,6 +2,7 @@
 
 use App\Actions\Clients\IssueClientCommand;
 use App\Enums\CommandType;
+use App\Library\Embeddings\MaterialSimilarity;
 use App\Library\Previews\MaterialPreviews;
 use App\Models\Category;
 use App\Models\ClientCommand;
@@ -34,6 +35,12 @@ new #[Title('Library')] class extends Component {
     public string $status = '';
 
     #[Url]
+    public string $mode = 'keyword';
+
+    #[Url(as: 'similar')]
+    public string $similar = '';
+
+    #[Url]
     public string $view = 'swatches';
 
     /** Material code shown in the quick view; empty when the modal is closed. */
@@ -53,6 +60,8 @@ new #[Title('Library')] class extends Component {
     {
         abort_unless(auth()->user()?->can('materials.view'), 403);
 
+        $this->mode = in_array($this->mode, ['keyword', 'semantic'], true) ? $this->mode : 'keyword';
+        $this->view = in_array($this->view, ['swatches', 'table'], true) ? $this->view : 'swatches';
         $this->userId = (int) auth()->id();
         $this->revitSessionId = $this->revitSessions->first()?->id;
     }
@@ -212,6 +221,19 @@ new #[Title('Library')] class extends Component {
         $this->resetPage();
     }
 
+    public function updatedMode(): void
+    {
+        $this->mode = in_array($this->mode, ['keyword', 'semantic'], true) ? $this->mode : 'keyword';
+        $this->similar = '';
+        $this->resetPage();
+    }
+
+    public function clearSimilarity(): void
+    {
+        $this->similar = '';
+        $this->resetPage();
+    }
+
     public function updatedCategory(): void
     {
         $this->resetPage();
@@ -235,16 +257,36 @@ new #[Title('Library')] class extends Component {
     #[Computed]
     public function materials(): LengthAwarePaginator
     {
-        return Material::query()
+        $query = Material::query()
             ->visibleTo(auth()->user())
-            ->search($this->search)
             ->when($this->category !== '', fn ($query) => $query->where('category_id', $this->category))
             ->when($this->supplier !== '', fn ($query) => $query->where('supplier_id', $this->supplier))
-            ->when($this->status !== '', fn ($query) => $query->where('status', $this->status))
+            ->when($this->status !== '', fn ($query) => $query->where('status', $this->status));
+
+        if ($this->similarMaterial !== null && config('opal.embeddings.enabled')) {
+            $query = app(MaterialSimilarity::class)->toMaterial($query, $this->similarMaterial);
+        } elseif ($this->mode === 'semantic' && trim($this->search) !== '' && config('opal.embeddings.enabled')) {
+            $query = app(MaterialSimilarity::class)->toText($query, $this->search);
+        } else {
+            $query->search($this->search)->orderBy('name');
+        }
+
+        return $query
             ->with(['category', 'supplier', 'currentVersion'])
             ->withCount('variants')
-            ->orderBy('name')
             ->paginate($this->view === 'table' ? 25 : 30);
+    }
+
+    #[Computed]
+    public function similarMaterial(): ?Material
+    {
+        if ($this->similar === '') {
+            return null;
+        }
+
+        $material = Material::resolveCode($this->similar);
+
+        return $material !== null && $material->isVisibleTo(auth()->user()) ? $material : null;
     }
 
     /**
@@ -314,7 +356,7 @@ new #[Title('Library')] class extends Component {
         <div>
             <x-ui.eyebrow>{{ __('Library') }}</x-ui.eyebrow>
             <h1>{{ __('Materials') }} <small>{{ number_format($this->materials->total()) }} {{ __('records') }}</small></h1>
-            <p class="ui-page-head__lede">{{ __('Search by name, code, supplier, product code, colourway or tag. Every swatch uses the same sphere view; a colour-only sphere means its render is still missing.') }}</p>
+            <p class="ui-page-head__lede">{{ __('Search exact library data or switch to Meaning for visual and semantic similarity. Every swatch uses the same sphere view; a colour-only sphere means its render is still missing.') }}</p>
         </div>
         <div class="ui-page-head__actions">
             @can('materials.contribute')
@@ -329,8 +371,14 @@ new #[Title('Library')] class extends Component {
     <div class="ui-toolbar">
         <label class="ui-search">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3 3" /></svg>
-            <input class="ui-input" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('Search materials…') }}" aria-label="{{ __('Search materials') }}" data-test="search" />
+            <input class="ui-input" type="search" wire:model.live.debounce.600ms="search" placeholder="{{ __('Search materials…') }}" aria-label="{{ __('Search materials') }}" data-test="search" />
         </label>
+        @if (config('opal.embeddings.enabled'))
+            <div class="ui-segment" role="group" aria-label="{{ __('Search mode') }}">
+                <button type="button" wire:click="$set('mode', 'keyword')" @class(['is-active' => $mode === 'keyword' && $similar === '']) data-test="search-keyword">{{ __('Keywords') }}</button>
+                <button type="button" wire:click="$set('mode', 'semantic')" @class(['is-active' => $mode === 'semantic' && $similar === '']) data-test="search-semantic">{{ __('Meaning') }}</button>
+            </div>
+        @endif
         <select class="ui-select" wire:model.live="category" aria-label="{{ __('Category') }}">
             <option value="">{{ __('All categories') }}</option>
             @foreach ($this->categories as $category)
@@ -361,6 +409,18 @@ new #[Title('Library')] class extends Component {
         </div>
     </div>
 
+    @if ($this->similarMaterial)
+        <x-ui.panel tone="paper" style="margin-bottom: 12px" data-test="similar-source">
+            <div class="ui-panel__heading">
+                <div>
+                    <h3>{{ __('Materials similar to :name', ['name' => $this->similarMaterial->name]) }}</h3>
+                    <p>{{ __('Ranked from the material description and rendered appearance. Your category, supplier and status filters still apply.') }}</p>
+                </div>
+                <x-ui.button wire:click="clearSimilarity" variant="quiet" size="sm">{{ __('Clear similarity') }}</x-ui.button>
+            </div>
+        </x-ui.panel>
+    @endif
+
     @if ($this->materials->isEmpty())
         <x-ui.panel data-test="empty">
             <x-ui.empty-state :title="__('No materials match')" :description="__('Try another term, or add the material if it is missing.')" />
@@ -378,6 +438,7 @@ new #[Title('Library')] class extends Component {
                             <th>{{ __('Variants') }}</th>
                             <th>{{ __('Version') }}</th>
                             <th>{{ __('Status') }}</th>
+                            @if ($similar !== '' || $mode === 'semantic')<th>{{ __('Match') }}</th>@endif
                         </tr>
                     </thead>
                     <tbody>
@@ -408,6 +469,9 @@ new #[Title('Library')] class extends Component {
                                         <x-ui.badge tone="warning">{{ __('Restricted') }}</x-ui.badge>
                                     @endif
                                 </td>
+                                @if ($similar !== '' || $mode === 'semantic')
+                                    <td>{{ $material->getAttribute('similarity_score') !== null ? round(max(0, min(1, (float) $material->getAttribute('similarity_score'))) * 100).'%' : '—' }}</td>
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>
@@ -441,7 +505,13 @@ new #[Title('Library')] class extends Component {
                         <small>{{ $material->supplier?->name ?? __('In-house') }}@if ($material->collection) · {{ $material->collection }}@endif</small>
                         <div class="ui-swatch-card__meta">
                             <span>{{ trans_choice(':count variant|:count variants', $material->variants_count) }}</span>
-                            <span>{{ $material->currentVersion ? 'v'.$material->currentVersion->number : $material->status->label() }}</span>
+                            <span>
+                                @if ($material->getAttribute('similarity_score') !== null)
+                                    {{ round(max(0, min(1, (float) $material->getAttribute('similarity_score'))) * 100) }}% {{ __('match') }}
+                                @else
+                                    {{ $material->currentVersion ? 'v'.$material->currentVersion->number : $material->status->label() }}
+                                @endif
+                            </span>
                         </div>
                     </div>
                 </a>

@@ -25,7 +25,7 @@ later slices are design notes until they land.
   change produces a new file and an event that explains it.
 - **Search is designed in.** Every material and variant maintains a
   `search_text` column; PostgreSQL provides the generated `tsvector`, trigram
-  fuzziness and, later, pgvector embeddings.
+  fuzziness and pgvector similarity indexes.
 
 ## Slice one: identity and variants (implemented)
 
@@ -408,8 +408,33 @@ metalness for anodised aluminium.
   `websearch_to_tsquery`, `word_similarity` and a contains fallback.
 - Dominant colour per variant (hex and LAB) supports colour filters and
   nearest-colour queries.
-- Embeddings (image and text) will live in a polymorphic `embeddings` table on
-  pgvector, which requires the `pgvector/pgvector` Postgres image.
+- Multimodal embeddings live in a polymorphic `embeddings` table on pgvector.
+  A material document combines stable catalogue metadata, descriptions, tags,
+  variant attributes and the best approved rendered preview. AWS Bedrock's
+  Titan Multimodal model places that text and image in one 1,024-dimensional
+  space, so the same index supports natural-language queries and “find
+  materials like this” from a material record.
+- The embedding provider is an application contract rather than a model call
+  embedded in the UI. Each vector records its provider, model, source text,
+  preview file, source digest and profile; a model/profile change creates an
+  explicit backfill instead of silently mixing incompatible vectors. The
+  table is polymorphic so furniture and other future asset types can reuse the
+  same infrastructure.
+- `EmbedMaterial` is a tracked, retryable, rate-limited job on the
+  `embeddings` queue. Creation, variant changes and preview renders enqueue a
+  refresh; `opal:embeddings:index --stale` supplies resumable backfills and
+  runs nightly to repair missed or changed records. Operators can also force a
+  refresh from the material record.
+- `/materials` offers **Keywords** for exact/fuzzy lookup and **Meaning** for
+  semantic text search. Every material record and quick view links to a
+  visibility-aware similarity result. The API accepts `mode=semantic&q=...`
+  or `similar_to={material-code}` and returns a cosine similarity score.
+  Authorization is applied to the material query before ranking, so an
+  inaccessible material is never disclosed by vector retrieval.
+- The vectors are also the reusable input for future clustering, duplicate
+  detection and material-family suggestions; those workflows should store
+  their own versioned results rather than changing the embedding records.
 
 Tests run against a PostgreSQL database (`asset_library_testing`) because the
-search features have no SQLite equivalent; CI provisions the same service.
+search features have no SQLite equivalent; local development and CI use the
+same `pgvector/pgvector` PostgreSQL image as production.

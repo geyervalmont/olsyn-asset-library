@@ -2,6 +2,7 @@
 
 use App\Jobs\BuildVariantPackage;
 use App\Jobs\DownscaleRepresentation;
+use App\Jobs\EmbedMaterial;
 use App\Jobs\RenderPreview;
 
 $revitMatrix = json_decode(
@@ -83,7 +84,28 @@ return [
     'workers' => [
         'build_variant_package' => BuildVariantPackage::class,
         'downscale_representation' => DownscaleRepresentation::class,
+        'embed_material' => EmbedMaterial::class,
         'render_preview' => RenderPreview::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Material similarity
+    |--------------------------------------------------------------------------
+    |
+    | The provider is hidden behind an application contract. Titan multimodal
+    | is the first implementation because it embeds text and preview images in
+    | one space and uses the same AWS identity as the library worker.
+    |
+    */
+
+    'embeddings' => [
+        'enabled' => filter_var(env('OPAL_EMBEDDINGS_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'provider' => env('OPAL_EMBEDDINGS_PROVIDER', 'bedrock'),
+        'model' => env('OPAL_EMBEDDINGS_MODEL', 'amazon.titan-embed-image-v1'),
+        'dimensions' => (int) env('OPAL_EMBEDDINGS_DIMENSIONS', 1024),
+        'region' => env('OPAL_EMBEDDINGS_REGION', env('AWS_DEFAULT_REGION', 'ap-southeast-2')),
+        'requests_per_minute' => (int) env('OPAL_EMBEDDINGS_REQUESTS_PER_MINUTE', 60),
     ],
 
     /*

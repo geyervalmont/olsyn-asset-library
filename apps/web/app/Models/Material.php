@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Str;
 use LogicException;
@@ -188,6 +189,16 @@ class Material extends Model
             $this->exists ? $this->tags()->pluck('name')->all() : [],
             $variants->map(fn (Variant $variant): array => $variant->searchParts())->all(),
         ]);
+    }
+
+    /**
+     * Replaceable vector indexes generated from this material.
+     *
+     * @return MorphMany<Embedding, $this>
+     */
+    public function embeddings(): MorphMany
+    {
+        return $this->morphMany(Embedding::class, 'embeddable');
     }
 
     /**

@@ -8,10 +8,13 @@ use App\Http\Middleware\UseCurrentTenant;
 use App\Library\Conversion\ConverterRegistry;
 use App\Library\Conversion\OmniverseMdlConverter;
 use App\Library\Conversion\RevitImageSetConverter;
+use App\Library\Embeddings\EmbeddingProvider;
+use App\Library\Embeddings\TitanMultimodalEmbeddingProvider;
 use App\Library\Packaging\PackageBuilder;
 use App\Library\Packaging\PendingToolbox;
 use App\Library\Packaging\ToolboxPackageBuilder;
 use App\Models\Drive;
+use App\Models\Embedding;
 use App\Models\File;
 use App\Models\Material;
 use App\Models\ProvenanceEvent;
@@ -24,10 +27,12 @@ use Carbon\CarbonImmutable;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Livewire\Livewire;
@@ -41,6 +46,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(EmbeddingProvider::class, TitanMultimodalEmbeddingProvider::class);
+
         $this->app->singleton(ConverterRegistry::class, function (): ConverterRegistry {
             $registry = new ConverterRegistry;
             $registry->register($this->app->make(RevitImageSetConverter::class));
@@ -79,6 +86,9 @@ class AppServiceProvider extends ServiceProvider
         $this->configureMorphMap();
         $this->configureApiDocs();
 
+        RateLimiter::for('material-embeddings', fn () => Limit::perMinute(max(1, (int) config('opal.embeddings.requests_per_minute', 60)))
+            ->by((string) config('opal.embeddings.provider').':'.(string) config('opal.embeddings.model')));
+
         Livewire::addPersistentMiddleware([
             UseCurrentTenant::class,
             EnsureOlsynAccess::class,
@@ -110,6 +120,7 @@ class AppServiceProvider extends ServiceProvider
             'provenance_event' => ProvenanceEvent::class,
             'representation' => Representation::class,
             'drive' => Drive::class,
+            'embedding' => Embedding::class,
             'worker_run' => WorkerRun::class,
         ]);
     }

@@ -87,6 +87,14 @@ data:
   OPAL_AUTO_RENDER_PREVIEWS: "true"
   OPAL_SESSION_LIVE_SECONDS: "90"
   OPAL_LINK_TTL_MINUTES: "10"
+  # Material metadata and approved sphere previews are embedded in Sydney by
+  # Titan Multimodal, then kept in RDS pgvector for semantic and visual search.
+  OPAL_EMBEDDINGS_ENABLED: "true"
+  OPAL_EMBEDDINGS_PROVIDER: bedrock
+  OPAL_EMBEDDINGS_MODEL: amazon.titan-embed-image-v1
+  OPAL_EMBEDDINGS_DIMENSIONS: "1024"
+  OPAL_EMBEDDINGS_REGION: ap-southeast-2
+  OPAL_EMBEDDINGS_REQUESTS_PER_MINUTE: "60"
 
   # What the Reverb server binds.
   REVERB_SERVER_HOST: 0.0.0.0

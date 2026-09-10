@@ -2,6 +2,7 @@
 
 namespace App\Actions\Materials;
 
+use App\Jobs\EmbedMaterial;
 use App\Models\Material;
 use Illuminate\Support\Facades\DB;
 
@@ -18,7 +19,7 @@ class CreateMaterial
      */
     public function handle(array $attributes, array $variants = [], array $tags = []): Material
     {
-        return DB::transaction(function () use ($attributes, $variants, $tags): Material {
+        $material = DB::transaction(function () use ($attributes, $variants, $tags): Material {
             $material = Material::create($attributes);
 
             if ($tags !== []) {
@@ -41,5 +42,11 @@ class CreateMaterial
 
             return $material->refresh();
         });
+
+        if (config('opal.embeddings.enabled')) {
+            EmbedMaterial::forMaterial($material);
+        }
+
+        return $material;
     }
 }

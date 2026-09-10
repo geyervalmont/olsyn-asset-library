@@ -31,6 +31,7 @@ class MaterialResource extends JsonResource
             'status' => $this->status->value,
             'visibility' => $this->visibility->value,
             'current_version' => $this->currentVersion?->number,
+            'similarity' => $this->getAttribute('similarity_score') === null ? null : round((float) $this->getAttribute('similarity_score'), 4),
             'variants' => VariantResource::collection($this->whenLoaded('variants')),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

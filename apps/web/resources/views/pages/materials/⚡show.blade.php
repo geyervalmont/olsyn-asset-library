@@ -12,6 +12,7 @@ use App\Actions\Visibility\SetMaterialVisibility;
 use App\Enums\CommandType;
 use App\Enums\ReviewState;
 use App\Enums\Visibility;
+use App\Jobs\EmbedMaterial;
 use App\Library\Previews\MaterialPreviews;
 use App\Models\ClientCommand;
 use App\Models\ClientSession;
@@ -237,6 +238,9 @@ new class extends Component {
         $this->validate(['newColourway' => ['required', 'string', 'max:120'], 'newColourwayCode' => ['nullable', 'string', 'max:120']]);
 
         $addVariant->handle($this->material, ['colourway' => ['value' => $this->newColourway, 'supplier_code' => $this->newColourwayCode ?: null]]);
+        if (config('opal.embeddings.enabled')) {
+            EmbedMaterial::forMaterial($this->material, auth()->user());
+        }
         $this->reset('newColourway', 'newColourwayCode');
         unset($this->variants);
         Flux::toast(variant: 'success', text: __('Variant added.'));
@@ -301,6 +305,14 @@ new class extends Component {
 
         unset($this->variants, $this->timeline, $this->preview, $this->card);
         Flux::toast(variant: 'success', text: __('Queued a preview render (run :run).', ['run' => substr($run->uuid, 0, 8)]));
+    }
+
+    public function refreshEmbedding(): void
+    {
+        abort_unless(auth()->user()?->can('materials.contribute'), 403);
+
+        $run = EmbedMaterial::forMaterial($this->material, auth()->user(), force: true);
+        Flux::toast(variant: 'success', text: __('Queued a fresh similarity index (run :run).', ['run' => substr($run->uuid, 0, 8)]));
     }
 
     public function publish(CutVersion $cut, PublishVersion $publish): void
@@ -383,6 +395,14 @@ new class extends Component {
         <div class="ui-page-head__actions">
             <x-ui.badge :tone="match ($material->status->value) { 'active' => 'success', 'archived' => 'neutral', default => 'warning' }" dot>{{ $material->status->label() }}</x-ui.badge>
             <x-ui.badge tone="info" data-test="current-version">{{ $material->currentVersion ? 'v'.$material->currentVersion->number : __('Unpublished') }}</x-ui.badge>
+            @if (config('opal.embeddings.enabled'))
+                <x-ui.button href="{{ route('materials.index', ['similar' => $material->code]) }}" variant="quiet" size="sm" data-test="find-similar">{{ __('Find similar') }}</x-ui.button>
+            @endif
+            @can('materials.contribute')
+                @if (config('opal.embeddings.enabled'))
+                    <x-ui.button wire:click="refreshEmbedding" variant="quiet" size="sm" data-test="refresh-embedding">{{ __('Refresh similarity') }}</x-ui.button>
+                @endif
+            @endcan
             @can('materials.publish')
                 <x-ui.button wire:click="publish" variant="secondary" size="sm" data-test="publish">{{ __('Publish new version') }}</x-ui.button>
             @endcan

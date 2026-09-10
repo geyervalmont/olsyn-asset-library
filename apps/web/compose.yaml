@@ -80,7 +80,7 @@ services:
     restart: unless-stopped
 
   pgsql:
-    image: postgres:18-alpine
+    image: pgvector/pgvector:0.8.1-pg18-trixie
     environment:
       PGPASSWORD: ${DB_PASSWORD:-password}
       POSTGRES_DB: ${DB_DATABASE:-asset_library}
