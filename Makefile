@@ -1,4 +1,6 @@
-.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update prism-drive-up prism-drive-down prism-drive-check vm-bridge-up vm-bridge-down vm-bridge-ca revit-sync web-test web-seed web-shell
+.PHONY: bootstrap dev up down check hmr-check prism-check prism-e2e prism-s3-test prism-run prism-publish prism-update prism-drive-up prism-drive-down prism-drive-check vm-bridge-up vm-bridge-down vm-bridge-ca revit-sync toolbox-local web-test web-seed web-shell
+
+USD_TOOLBOX_DIR ?= ../usd-toolbox
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -72,3 +74,9 @@ web-shell:
 REVIT_VM ?= harrison@192.168.122.82
 revit-sync:
 	cd integrations/revit && tar czf - pyrevit/OPAL.extension | ssh $(REVIT_VM) 'powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path opal | Out-Null; tar -xzf - -C opal; Write-Host synced"'
+
+# Build the standalone toolbox and install it into the bind-mounted app storage
+# so both the web preview and Horizon use the same local binary.
+toolbox-local:
+	cargo build --manifest-path $(USD_TOOLBOX_DIR)/Cargo.toml --locked --release -p usd-toolbox-cli
+	install -D -m 0755 $(USD_TOOLBOX_DIR)/target/release/usd-toolbox apps/web/storage/app/bin/usd-toolbox

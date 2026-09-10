@@ -43,6 +43,9 @@ new #[Title('Library')] class extends Component {
     #[Url]
     public string $view = 'swatches';
 
+    #[Url]
+    public string $sort = 'name';
+
     /** Material code shown in the quick view; empty when the modal is closed. */
     #[Url(as: 'material')]
     public string $quick = '';
@@ -62,6 +65,7 @@ new #[Title('Library')] class extends Component {
 
         $this->mode = in_array($this->mode, ['keyword', 'semantic'], true) ? $this->mode : 'keyword';
         $this->view = in_array($this->view, ['swatches', 'table'], true) ? $this->view : 'swatches';
+        $this->sort = in_array($this->sort, ['name', 'newest', 'variants'], true) ? $this->sort : 'name';
         $this->userId = (int) auth()->id();
         $this->revitSessionId = $this->revitSessions->first()?->id;
     }
@@ -234,6 +238,17 @@ new #[Title('Library')] class extends Component {
         $this->resetPage();
     }
 
+    public function clearFilters(): void
+    {
+        $this->reset('search', 'category', 'supplier', 'status', 'similar');
+        $this->resetPage();
+    }
+
+    public function hasFilters(): bool
+    {
+        return $this->search !== '' || $this->category !== '' || $this->supplier !== '' || $this->status !== '' || $this->similar !== '';
+    }
+
     public function updatedCategory(): void
     {
         $this->resetPage();
@@ -259,21 +274,28 @@ new #[Title('Library')] class extends Component {
     {
         $query = Material::query()
             ->visibleTo(auth()->user())
+            ->withCount('variants')
             ->when($this->category !== '', fn ($query) => $query->where('category_id', $this->category))
             ->when($this->supplier !== '', fn ($query) => $query->where('supplier_id', $this->supplier))
-            ->when($this->status !== '', fn ($query) => $query->where('status', $this->status));
+            ->when($this->status === '', fn ($query) => $query->where('status', '!=', 'archived'))
+            ->when($this->status !== '' && $this->status !== 'all', fn ($query) => $query->where('status', $this->status));
 
         if ($this->similarMaterial !== null && config('opal.embeddings.enabled')) {
             $query = app(MaterialSimilarity::class)->toMaterial($query, $this->similarMaterial);
         } elseif ($this->mode === 'semantic' && trim($this->search) !== '' && config('opal.embeddings.enabled')) {
             $query = app(MaterialSimilarity::class)->toText($query, $this->search);
         } else {
-            $query->search($this->search)->orderBy('name');
+            $query->search($this->search);
+
+            match ($this->sort) {
+                'newest' => $query->orderByDesc('created_at')->orderBy('name'),
+                'variants' => $query->orderByDesc('variants_count')->orderBy('name'),
+                default => $query->orderBy('name'),
+            };
         }
 
         return $query
             ->with(['category', 'supplier', 'currentVersion'])
-            ->withCount('variants')
             ->paginate($this->view === 'table' ? 25 : 30);
     }
 
@@ -356,12 +378,13 @@ new #[Title('Library')] class extends Component {
         <div>
             <x-ui.eyebrow>{{ __('Library') }}</x-ui.eyebrow>
             <h1>{{ __('Materials') }} <small>{{ number_format($this->materials->total()) }} {{ __('records') }}</small></h1>
-            <p class="ui-page-head__lede">{{ __('Search exact library data or switch to Meaning for visual and semantic similarity. Every swatch uses the same sphere view; a colour-only sphere means its render is still missing.') }}</p>
+            <p class="ui-page-head__lede">{{ __('Find a known specification with keywords, discover related finishes by meaning, or start a traceable import or procedural recipe.') }}</p>
         </div>
         <div class="ui-page-head__actions">
             @can('materials.contribute')
+                <x-ui.button :href="route('materials.studio')" variant="secondary" data-test="material-studio" wire:navigate>{{ __('Material Studio') }}</x-ui.button>
                 <x-ui.button :href="route('materials.create')" data-test="add-material" wire:navigate>
-                    {{ __('Add material') }}
+                    {{ __('Import maps') }}
                     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>
                 </x-ui.button>
             @endcan
@@ -371,7 +394,7 @@ new #[Title('Library')] class extends Component {
     <div class="ui-toolbar">
         <label class="ui-search">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3 3" /></svg>
-            <input class="ui-input" type="search" wire:model.live.debounce.600ms="search" placeholder="{{ __('Search materials…') }}" aria-label="{{ __('Search materials') }}" data-test="search" />
+            <input class="ui-input" type="search" wire:model.live.debounce.600ms="search" placeholder="{{ $mode === 'semantic' ? __('Describe colour, texture or use…') : __('Name, code, supplier or colour…') }}" aria-label="{{ __('Search materials') }}" data-test="search" />
         </label>
         @if (config('opal.embeddings.enabled'))
             <div class="ui-segment" role="group" aria-label="{{ __('Search mode') }}">
@@ -392,11 +415,19 @@ new #[Title('Library')] class extends Component {
             @endforeach
         </select>
         <select class="ui-select" wire:model.live="status" aria-label="{{ __('Status') }}">
-            <option value="">{{ __('Any status') }}</option>
+            <option value="">{{ __('Current (active + draft)') }}</option>
+            <option value="all">{{ __('All statuses') }}</option>
             <option value="active">{{ __('Active') }}</option>
             <option value="draft">{{ __('Draft') }}</option>
             <option value="archived">{{ __('Archived') }}</option>
         </select>
+        @if ($similar === '' && ! ($mode === 'semantic' && trim($search) !== ''))
+            <select class="ui-select" wire:model.live="sort" aria-label="{{ __('Sort materials') }}">
+                <option value="name">{{ __('Name A–Z') }}</option>
+                <option value="newest">{{ __('Newest first') }}</option>
+                <option value="variants">{{ __('Most variants') }}</option>
+            </select>
+        @endif
         <div class="ui-segment" role="group" aria-label="{{ __('View') }}">
             <button type="button" wire:click="setView('swatches')" @class(['is-active' => $view === 'swatches']) data-test="view-swatches">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1" /><rect x="11" y="3" width="6" height="6" rx="1" /><rect x="3" y="11" width="6" height="6" rx="1" /><rect x="11" y="11" width="6" height="6" rx="1" /></svg>
@@ -407,6 +438,9 @@ new #[Title('Library')] class extends Component {
                 {{ __('Table') }}
             </button>
         </div>
+        @if ($this->hasFilters())
+            <x-ui.button wire:click="clearFilters" variant="ghost" size="sm" data-test="clear-filters">{{ __('Clear') }}</x-ui.button>
+        @endif
     </div>
 
     @if ($this->similarMaterial)

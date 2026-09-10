@@ -60,10 +60,50 @@ class Definition extends Model
      */
     public function digest(): string
     {
-        $parameters = $this->parameters;
-        ksort($parameters);
+        $parameters = $this->canonicalize($this->parameters);
 
         return hash('sha256', $this->generator.'@'.($this->generator_version ?? '').':'.json_encode($parameters));
+    }
+
+    /**
+     * The strict input consumed by usd-toolbox. Output controls live beside
+     * the recipe in our record, but are separated at the Rust boundary.
+     *
+     * @return array<string, mixed>
+     */
+    public function toolboxDefinition(): array
+    {
+        $parameters = $this->parameters;
+        $output = is_array($parameters['output'] ?? null) ? $parameters['output'] : [];
+        $recipe = is_array($parameters['recipe'] ?? null) ? $parameters['recipe'] : [];
+
+        return [
+            'schema' => 1,
+            'width_px' => (int) ($output['width_px'] ?? 1024),
+            'height_px' => (int) ($output['height_px'] ?? 1024),
+            'width_mm' => (float) ($output['width_mm'] ?? $this->variant->effectiveTileWidthMm() ?? 1000),
+            'height_mm' => (float) ($output['height_mm'] ?? $this->variant->effectiveTileHeightMm() ?? 1000),
+            'seed' => (int) ($parameters['seed'] ?? 0),
+            'generator' => $this->generator,
+            'parameters' => $recipe,
+        ];
+    }
+
+    private function canonicalize(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalize($item);
+        }
+
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return $value;
     }
 
     /**

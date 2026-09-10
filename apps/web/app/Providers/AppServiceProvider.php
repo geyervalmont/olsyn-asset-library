@@ -13,6 +13,9 @@ use App\Library\Embeddings\TitanMultimodalEmbeddingProvider;
 use App\Library\Packaging\PackageBuilder;
 use App\Library\Packaging\PendingToolbox;
 use App\Library\Packaging\ToolboxPackageBuilder;
+use App\Library\Procedural\PendingProceduralBaker;
+use App\Library\Procedural\ProceduralBaker;
+use App\Library\Procedural\ToolboxProceduralBaker;
 use App\Models\Drive;
 use App\Models\Embedding;
 use App\Models\File;
@@ -73,6 +76,18 @@ class AppServiceProvider extends ServiceProvider
             );
 
             return $builder->available() ? $builder : new PendingToolbox;
+        });
+
+        $this->app->singleton(ProceduralBaker::class, function (): ProceduralBaker {
+            $binary = config('opal.toolbox_bin');
+
+            if (! is_string($binary) || $binary === '') {
+                return new PendingProceduralBaker;
+            }
+
+            $baker = new ToolboxProceduralBaker($binary, (int) config('opal.toolbox_timeout'));
+
+            return $baker->available() ? $baker : new PendingProceduralBaker;
         });
     }
 

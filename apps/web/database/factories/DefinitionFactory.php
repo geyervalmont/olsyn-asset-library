@@ -22,13 +22,10 @@ class DefinitionFactory extends Factory
             'variant_id' => Variant::factory(),
             'generator' => 'paint',
             'generator_version' => '1.0.0',
-            // A paint: a measured colour and a sheen, which is the whole
-            // definition of a material that has no textures at all.
             'parameters' => [
-                'l' => fake()->randomFloat(2, 0, 100),
-                'a' => fake()->randomFloat(2, -60, 60),
-                'b' => fake()->randomFloat(2, -60, 60),
-                'sheen' => fake()->randomElement(['matt', 'low', 'semi_gloss', 'gloss']),
+                'seed' => fake()->numberBetween(1, 100000),
+                'output' => ['width_px' => 1024, 'height_px' => 1024, 'width_mm' => 1000, 'height_mm' => 1000],
+                'recipe' => ['colour' => fake()->hexColor(), 'roughness' => 0.62, 'variation' => 0.02, 'texture_depth' => 0.1],
             ],
         ];
     }

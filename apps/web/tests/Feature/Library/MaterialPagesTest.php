@@ -45,6 +45,7 @@ test('the library page lists visible materials and searches them', function () {
     $academix = Material::factory()->create(['name' => 'Academix', 'category_id' => $carpet, 'supplier_id' => Supplier::factory()->create(['name' => 'Tarkett'])]);
     app(AddVariant::class)->handle($academix, ['colourway' => 'Ashen']);
     $oak = Material::factory()->create(['name' => 'Oak plank']);
+    $archived = Material::factory()->create(['name' => 'Obsolete import', 'status' => 'archived']);
     $secret = Material::factory()->create(['name' => 'Secret stone', 'visibility' => Visibility::Restricted]);
 
     $this->actingAs($this->viewer)
@@ -52,6 +53,7 @@ test('the library page lists visible materials and searches them', function () {
         ->assertOk()
         ->assertSee('Academix')
         ->assertSee('Oak plank')
+        ->assertDontSee('Obsolete import')
         ->assertDontSee('Secret stone')
         ->assertDontSee('data-test="add-material"', false);
 
@@ -69,6 +71,14 @@ test('the library page lists visible materials and searches them', function () {
         ->set('category', '')
         ->set('search', 'nothing-like-this')
         ->assertSee('No materials match');
+
+    Livewire::actingAs($this->viewer)
+        ->test('pages::materials.index')
+        ->set('status', 'all')
+        ->assertSee('Obsolete import')
+        ->set('status', 'archived')
+        ->assertSee('Obsolete import')
+        ->assertDontSee('Oak plank');
 });
 
 test('a user without a workspace is sent to the dashboard, and viewers cannot upload', function () {

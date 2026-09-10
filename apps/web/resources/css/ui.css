@@ -2918,6 +2918,161 @@ h1.ui-reveal.is-revealed em::after {
     font-size: 12px;
 }
 
+.ui-studio {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.ui-studio__controls,
+.ui-studio__preview {
+    display: grid;
+    gap: 12px;
+}
+
+.ui-studio__preview {
+    position: sticky;
+    top: 18px;
+}
+
+.ui-recipe-tabs {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.ui-recipe-tabs button {
+    min-height: 38px;
+    padding: 7px;
+    color: var(--ui-muted);
+    font-size: 10px;
+    font-weight: 650;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-control);
+}
+
+.ui-recipe-tabs button:hover,
+.ui-recipe-tabs button.is-active {
+    color: var(--ui-ink);
+    background: rgba(107, 141, 184, 0.1);
+    border-color: var(--ui-periwinkle);
+}
+
+.ui-colour {
+    width: 100%;
+    min-height: 38px;
+    padding: 3px;
+    background: var(--ui-surface-raised);
+    border: 1px solid var(--ui-line-strong);
+    border-radius: var(--ui-radius-control);
+}
+
+.ui-check {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-height: 38px;
+    color: var(--ui-slate);
+    font-size: 12px;
+}
+
+.ui-palette {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    align-items: center;
+    margin-top: 16px;
+}
+
+.ui-palette > strong {
+    width: 100%;
+    color: var(--ui-ink);
+    font-size: 11px;
+}
+
+.ui-palette span {
+    position: relative;
+    display: inline-flex;
+}
+
+.ui-palette .ui-colour {
+    width: 52px;
+}
+
+.ui-palette button {
+    min-height: 30px;
+    padding: 4px 8px;
+    color: var(--ui-muted);
+    font-size: 11px;
+    background: transparent;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-control);
+}
+
+.ui-palette span button {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 17px;
+    min-height: 17px;
+    padding: 0;
+    color: var(--ui-paper);
+    line-height: 15px;
+    background: var(--ui-slate);
+    border: 0;
+    border-radius: 50%;
+}
+
+.ui-studio__maps {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.ui-studio__maps figure {
+    overflow: hidden;
+    margin: 0;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-row);
+}
+
+.ui-studio__maps figure:first-child {
+    grid-column: 1 / -1;
+}
+
+.ui-studio__maps img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+}
+
+.ui-studio__maps figcaption {
+    padding: 7px 9px;
+    color: var(--ui-faint);
+    font-family: var(--ui-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.ui-studio__empty {
+    display: grid;
+    min-height: 340px;
+    place-items: center;
+    color: var(--ui-faint);
+    background: repeating-linear-gradient(45deg, rgba(107, 141, 184, 0.035), rgba(107, 141, 184, 0.035) 8px, transparent 8px, transparent 16px);
+    border: 1px dashed var(--ui-line-strong);
+    border-radius: var(--ui-radius-row);
+}
+
+.ui-studio__empty p {
+    font-size: 12px;
+}
+
 .ui-input[type='file'] {
     height: auto;
     padding: 7px 9px;
@@ -2933,6 +3088,17 @@ h1.ui-reveal.is-revealed em::after {
     background: var(--ui-surface);
     border: 1px solid var(--ui-line-strong);
     border-radius: var(--ui-radius-control);
+}
+
+.ui-file-picked {
+    display: block;
+    overflow: hidden;
+    margin-top: 5px;
+    color: var(--ui-periwinkle-deep);
+    font-family: var(--ui-font-mono);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .ui-inline-form {
@@ -4165,4 +4331,24 @@ h1.ui-reveal.is-revealed em::after {
     font-family: var(--ui-font-mono);
     font-size: 9px;
     letter-spacing: 0.04em;
+}
+
+@media (max-width: 980px) {
+    .ui-studio {
+        grid-template-columns: 1fr;
+    }
+
+    .ui-studio__preview {
+        position: static;
+    }
+}
+
+@media (max-width: 560px) {
+    .ui-recipe-tabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ui-studio__maps {
+        grid-template-columns: 1fr;
+    }
 }

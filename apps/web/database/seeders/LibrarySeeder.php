@@ -99,6 +99,8 @@ class LibrarySeeder extends Seeder
         ['slug' => 'ref_image', 'name' => 'Reference image', 'colour_space' => 'srgb'],
         ['slug' => 'render', 'name' => 'Render', 'colour_space' => 'srgb'],
         ['slug' => 'thumbnail', 'name' => 'Thumbnail', 'colour_space' => 'srgb'],
+        ['slug' => 'hatch_svg', 'name' => 'Vector hatch (SVG)', 'colour_space' => null],
+        ['slug' => 'hatch_pat', 'name' => 'Revit hatch (PAT)', 'colour_space' => null],
         ['slug' => 'mdl', 'name' => 'MDL module', 'colour_space' => null],
         ['slug' => 'usd', 'name' => 'USD', 'colour_space' => null],
         ['slug' => 'rvt', 'name' => 'Revit material library', 'colour_space' => null],

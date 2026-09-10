@@ -64,11 +64,11 @@ test('the digest ignores key order so a round trip does not look like a change',
     expect($one->digest())->toBe($two->digest());
 });
 
-test('a variant carries one definition per generator', function () {
+test('a variant carries one editable procedural definition', function () {
     $variant = Variant::factory()->create();
     $variant->definition()->create(['generator' => 'paint', 'parameters' => []]);
 
-    expect(fn () => $variant->definition()->create(['generator' => 'paint', 'parameters' => []]))
+    expect(fn () => $variant->definition()->create(['generator' => 'masonry', 'parameters' => []]))
         ->toThrow(QueryException::class);
 });
 

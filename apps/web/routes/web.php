@@ -43,6 +43,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::livewire('materials', 'pages::materials.index')->name('materials.index');
     Route::livewire('materials/create', 'pages::materials.create')->name('materials.create');
+    Route::livewire('materials/studio', 'pages::materials.studio')->name('materials.studio');
     Route::livewire('materials/{material:code}', 'pages::materials.show')->name('materials.show');
     Route::livewire('quality', 'pages::quality.index')->name('quality.index');
     Route::livewire('drives', 'pages::drives.index')->name('drives.index');

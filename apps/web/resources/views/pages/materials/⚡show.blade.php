@@ -67,7 +67,7 @@ new class extends Component {
     #[Computed]
     public function variants(): Collection
     {
-        return $this->material->variants()->with(['attributes.type', 'representations.target', 'representations.quality', 'representations.representationFiles.role', 'representations.representationFiles.file'])->get();
+        return $this->material->variants()->with(['definition', 'attributes.type', 'representations.target', 'representations.quality', 'representations.representationFiles.role', 'representations.representationFiles.file'])->get();
     }
 
     #[Computed]
@@ -399,6 +399,8 @@ new class extends Component {
                 <x-ui.button href="{{ route('materials.index', ['similar' => $material->code]) }}" variant="quiet" size="sm" data-test="find-similar">{{ __('Find similar') }}</x-ui.button>
             @endif
             @can('materials.contribute')
+                <x-ui.button href="{{ route('materials.create', ['mode' => 'existing', 'material' => $material->code, 'variant' => $this->variants->first()?->code]) }}" variant="quiet" size="sm" data-test="improve-material" wire:navigate>{{ __('Import improvement') }}</x-ui.button>
+                <x-ui.button href="{{ route('materials.studio', ['mode' => 'existing', 'material' => $material->code, 'variant' => $this->variants->first()?->code]) }}" variant="secondary" size="sm" data-test="edit-recipe" wire:navigate>{{ __('Open in Studio') }}</x-ui.button>
                 @if (config('opal.embeddings.enabled'))
                     <x-ui.button wire:click="refreshEmbedding" variant="quiet" size="sm" data-test="refresh-embedding">{{ __('Refresh similarity') }}</x-ui.button>
                 @endif
@@ -507,6 +509,8 @@ new class extends Component {
                         </div>
                         @can('materials.contribute')
                             <div class="ui-actions">
+                                <x-ui.button href="{{ route('materials.create', ['mode' => 'existing', 'material' => $material->code, 'variant' => $variant->code]) }}" variant="quiet" size="sm" wire:navigate>{{ __('Upload maps') }}</x-ui.button>
+                                <x-ui.button href="{{ route('materials.studio', ['mode' => 'existing', 'material' => $material->code, 'variant' => $variant->code]) }}" variant="quiet" size="sm" wire:navigate>{{ $variant->definition ? __('Edit recipe') : __('Add recipe') }}</x-ui.button>
                                 @foreach ($this->derivableTargets as $target)
                                     <x-ui.button wire:click="derive({{ $variant->id }}, '{{ $target->slug }}')" variant="secondary" size="sm" data-test="derive-{{ $target->slug }}">{{ __('Derive :target', ['target' => $target->name]) }}</x-ui.button>
                                 @endforeach

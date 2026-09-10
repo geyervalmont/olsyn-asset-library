@@ -13,14 +13,17 @@ narrative:
   — implemented tenancy, permission, and media invariants;
 - [`architecture/material-domain.md`](architecture/material-domain.md) — the
   material model: readable codes, variants, provenance, search;
+- [`material-authoring.md`](material-authoring.md) — procedural recipes, map
+  import, review boundaries, and the material-repair loop;
 - [`../services/prismfs/README.md`](../services/prismfs/README.md) — standalone
-- [`../integrations/revit/README.md`](../integrations/revit/README.md) — the pyRevit extension, its Revit-independent client, and the Unix proxy harness
-- [`../deploy/README.md`](../deploy/README.md) — running the control plane, PrismFS and the corpus ingest on the Olsyn cluster
   PrismFS usage, configuration, and development;
-- [`adr/`](adr/) — architectural decision records; and
+- [`../integrations/revit/README.md`](../integrations/revit/README.md) — the
+  native extension, installer, updater, and legacy test harness;
+- [`../deploy/README.md`](../deploy/README.md) — running the control plane,
+  PrismFS, and corpus ingest on the Olsyn cluster;
+- [`adr/`](adr/) — architectural decision records;
 - [`api/README.md`](api/README.md) — API documentation placeholder.
 
 The previous vibe-coded Material Asset Library is historical product and
 workflow reference. It is not a runtime dependency or a second source of truth
 for this rebuild. Its durable lessons are consolidated in the project overview.
-

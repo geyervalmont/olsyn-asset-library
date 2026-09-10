@@ -105,10 +105,12 @@ example environment. Production credentials must never reuse them.
    for the domain: codes, variants, representations, versions, provenance,
    visibility and drives, the workers, the JSON API, the inspector, the quality
    view, and the legacy import.
-3. [`integrations/revit/README.md`](integrations/revit/README.md) for how a
+3. [`docs/material-authoring.md`](docs/material-authoring.md) for the procedural
+   studio, map import and safe material-repair workflow.
+4. [`integrations/revit/README.md`](integrations/revit/README.md) for how a
    material reaches Revit, and how to exercise the whole loop on Linux without
    Revit installed.
-4. [`services/prismfs/README.md`](services/prismfs/README.md) for the data
+5. [`services/prismfs/README.md`](services/prismfs/README.md) for the data
    plane, the SMB drive server and the container images.
 
 Not in the repository: the legacy corpus (`apps/web/storage/app/legacy/`, kept

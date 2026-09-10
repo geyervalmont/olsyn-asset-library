@@ -51,6 +51,14 @@ class AssembleBuildRequest
         foreach ($representations as $representation) {
             foreach ($representation->representationFiles as $entry) {
                 $role = $entry->role->slug;
+
+                // Vector hatches are useful catalog outputs, but are not
+                // neutral shader channels. They remain downloadable beside
+                // the candidate rather than being mistaken for PBR inputs.
+                if (in_array($role, ['hatch_svg', 'hatch_pat'], true)) {
+                    continue;
+                }
+
                 $source = $entry->file->width_px ?? $representation->quality->pixels;
                 $tier = $this->rung($source);
 
