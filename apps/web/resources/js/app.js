@@ -217,6 +217,7 @@ const stage = {
             const material = new THREE.MeshPhysicalMaterial({ color: 0xcfcbc1, roughness: 0.8, metalness: 0 });
             const shapes = {
                 ball: await loadShaderBall(material),
+                sphere: sitOnGround(new THREE.Mesh(new THREE.SphereGeometry(1.1, 64, 32), material)),
                 // A slab rather than a plane: the sample keeps a face while
                 // the view turns, which a single-sided plane does not.
                 panel: sitOnGround(new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 0.07), material)),
@@ -583,8 +584,8 @@ document.addEventListener('alpine:init', () => {
             const roles = [
                 ['base_color', 'Base colour', 'Colour'],
                 ['normal', 'Normal', 'Normal'],
-                ['roughness', 'Roughness', 'Rough'],
-                ['metallic', 'Metallic', 'Metal'],
+                ['roughness', 'Roughness', 'Roughness'],
+                ['metallic', 'Metallic', 'Metallic'],
                 ['ao', 'Ambient occlusion', 'AO'],
                 ['height', 'Height', 'Height'],
                 ['bump', 'Bump', 'Bump'],
@@ -599,6 +600,14 @@ document.addEventListener('alpine:init', () => {
 
         get activeMap() {
             return this.maps.find((map) => map.role === this.mapRole) ?? null;
+        },
+
+        hasMap(role) {
+            return this.maps.some((map) => map.role === role);
+        },
+
+        mapUrl(role) {
+            return this.maps.find((map) => map.role === role)?.url ?? '';
         },
 
         init() {

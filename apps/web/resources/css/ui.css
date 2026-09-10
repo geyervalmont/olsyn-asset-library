@@ -3511,7 +3511,8 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-studio-live-viewer {
-    display: block;
+    display: grid;
+    grid-template-rows: auto minmax(500px, 1fr);
     min-height: 540px;
     background: transparent;
     border: 0;
@@ -3520,7 +3521,88 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-live-viewer .ui-viewer__stage,
 .ui-studio-live-viewer canvas {
-    min-height: 540px;
+    min-height: 500px;
+}
+
+.ui-studio-view-tools {
+    position: relative;
+    z-index: 6;
+    display: grid;
+    gap: 6px;
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--ui-paper), transparent 6%);
+    border-bottom: 1px solid var(--ui-line);
+}
+
+.ui-studio-view-tools__group {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+}
+
+.ui-studio-view-tools__group > span {
+    color: var(--ui-faint);
+    font-family: var(--ui-font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.ui-studio-view-tools__group > div {
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.ui-studio-view-tools__group > div::-webkit-scrollbar {
+    display: none;
+}
+
+.ui-studio-view-tools button {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    flex: 0 0 auto;
+    min-height: 27px;
+    padding: 4px 8px;
+    color: var(--ui-muted);
+    font-family: var(--ui-font-mono);
+    font-size: 8px;
+    letter-spacing: 0.025em;
+    background: rgba(255, 255, 255, 0.34);
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-control);
+    cursor: pointer;
+}
+
+.ui-studio-view-tools button:hover:not(:disabled) {
+    color: var(--ui-ink);
+    background: var(--ui-surface-raised);
+}
+
+.ui-studio-view-tools button.is-active {
+    color: var(--ui-ink);
+    background: var(--ui-surface-raised);
+    border-color: var(--ui-periwinkle);
+    box-shadow: var(--ui-el-1);
+}
+
+.ui-studio-view-tools button:disabled {
+    opacity: 0.34;
+    cursor: not-allowed;
+}
+
+.ui-studio-view-tools__group--maps button img {
+    width: 17px;
+    height: 17px;
+    object-fit: cover;
+    background: var(--ui-paper-deep);
+    border: 1px solid var(--ui-line);
+    border-radius: 3px;
 }
 
 .ui-studio-canvas__empty {

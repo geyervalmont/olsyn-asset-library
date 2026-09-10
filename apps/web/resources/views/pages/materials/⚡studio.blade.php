@@ -615,8 +615,44 @@ new #[Title('Material Studio')] class extends Component
                         x-effect="show('preview')"
                         data-test="studio-live-preview"
                     >
+                        <div class="ui-studio-view-tools">
+                            <div class="ui-studio-view-tools__group">
+                                <span>{{ __('Preview on') }}</span>
+                                <div role="group" aria-label="{{ __('Preview geometry') }}">
+                                    @foreach (['ball' => __('Shader ball'), 'sphere' => __('Sphere'), 'panel' => __('Flat sample'), 'cube' => __('Cube')] as $shape => $label)
+                                        <button
+                                            type="button"
+                                            x-on:click="shape = '{{ $shape }}'; inspectSurface()"
+                                            x-bind:class="shape === '{{ $shape }}' && 'is-active'"
+                                            x-bind:aria-pressed="shape === '{{ $shape }}'"
+                                            data-shape="{{ $shape }}"
+                                            data-test="studio-shape-{{ $shape }}"
+                                        >{{ $label }}</button>
+                                    @endforeach
+                                </div>
+                            </div>
+                            <div class="ui-studio-view-tools__group ui-studio-view-tools__group--maps">
+                                <span>{{ __('Inspect') }}</span>
+                                <div role="tablist" aria-label="{{ __('Material channels') }}">
+                                    <button type="button" role="tab" x-on:click="inspectSurface()" x-bind:class="view === 'surface' && 'is-active'" x-bind:aria-selected="view === 'surface'" data-test="studio-map-surface">{{ __('Material') }}</button>
+                                    <button type="button" role="tab" x-on:click="inspectTile()" x-bind:class="view === 'tile' && 'is-active'" x-bind:aria-selected="view === 'tile'" data-test="studio-map-repeat">{{ __('Repeat') }}</button>
+                                    @foreach (['base_color' => __('Colour'), 'normal' => __('Normal'), 'roughness' => __('Roughness'), 'metallic' => __('Metallic'), 'height' => __('Height')] as $role => $label)
+                                        <button
+                                            type="button"
+                                            role="tab"
+                                            x-on:click="inspectMap('{{ $role }}')"
+                                            x-bind:class="view === 'map' && mapRole === '{{ $role }}' && 'is-active'"
+                                            x-bind:aria-selected="view === 'map' && mapRole === '{{ $role }}'"
+                                            x-bind:disabled="! hasMap('{{ $role }}')"
+                                            data-role="{{ $role }}"
+                                            data-test="studio-map-{{ str_replace('_', '-', $role) }}"
+                                        ><img x-bind:src="mapUrl('{{ $role }}')" alt="" /><span>{{ $label }}</span></button>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
                         <div class="ui-viewer__stage" x-ref="stage" wire:ignore>
-                            <x-ui.material-map-inspector tileable />
+                            <x-ui.material-map-inspector tileable :rail="false" />
                         </div>
                     </div>
                 @endif
