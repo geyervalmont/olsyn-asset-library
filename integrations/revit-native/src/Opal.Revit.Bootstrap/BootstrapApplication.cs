@@ -9,7 +9,8 @@ public sealed class BootstrapApplication : IExternalApplication
 {
     private const string EntryType = "Opal.Revit.EntryPoint";
     private static Type? entryPoint;
-    private static AddinLoadContext? loadContext;
+    private static AssemblyDependencyResolver? dependencyResolver;
+    private static bool resolverRegistered;
 
     public Result OnStartup(UIControlledApplication application)
     {
@@ -29,8 +30,17 @@ public sealed class BootstrapApplication : IExternalApplication
                 throw new FileNotFoundException("The active OPAL Revit client is missing.", assemblyPath);
             }
 
-            loadContext = new AddinLoadContext(assemblyPath);
-            var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
+            dependencyResolver = new AssemblyDependencyResolver(assemblyPath);
+            if (!resolverRegistered)
+            {
+                AssemblyLoadContext.Default.Resolving += ResolveDependency;
+                resolverRegistered = true;
+            }
+
+            // Revit later resolves IExternalCommand types from the assembly path stored on
+            // each ribbon button. Keep the entry assembly in the default load context so
+            // those commands share the ClientRuntime initialized during startup.
+            var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath);
             entryPoint = assembly.GetType(EntryType, throwOnError: true);
             entryPoint!.GetMethod("Start", BindingFlags.Public | BindingFlags.Static)!
                 .Invoke(null, [application]);
@@ -105,6 +115,17 @@ public sealed class BootstrapApplication : IExternalApplication
     private static Exception Unwrap(Exception exception) =>
         exception is TargetInvocationException { InnerException: not null } invocation ? invocation.InnerException! : exception;
 
+    private static Assembly? ResolveDependency(AssemblyLoadContext context, AssemblyName assemblyName)
+    {
+        if (assemblyName.Name?.StartsWith("Autodesk.Revit", StringComparison.Ordinal) == true)
+        {
+            return null;
+        }
+
+        var path = dependencyResolver?.ResolveAssemblyToPath(assemblyName);
+        return path is null ? null : context.LoadFromAssemblyPath(path);
+    }
+
     private static void Log(string root, string message)
     {
         try
@@ -114,22 +135,6 @@ public sealed class BootstrapApplication : IExternalApplication
         catch
         {
             // Logging must never prevent Revit from opening.
-        }
-    }
-
-    private sealed class AddinLoadContext(string entryAssembly) : AssemblyLoadContext
-    {
-        private readonly AssemblyDependencyResolver resolver = new(entryAssembly);
-
-        protected override Assembly? Load(AssemblyName assemblyName)
-        {
-            if (assemblyName.Name?.StartsWith("Autodesk.Revit", StringComparison.Ordinal) == true)
-            {
-                return null;
-            }
-
-            var path = resolver.ResolveAssemblyToPath(assemblyName);
-            return path is null ? null : LoadFromAssemblyPath(path);
         }
     }
 
