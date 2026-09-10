@@ -630,7 +630,7 @@ document.addEventListener('alpine:init', () => {
 
             this.variantId = variantId;
 
-            if (this.view === 'map' && ! this.activeMap) {
+            if ((this.view === 'map' || this.view === 'tile') && ! this.activeMap) {
                 this.inspectSurface();
             }
 
@@ -652,6 +652,16 @@ document.addEventListener('alpine:init', () => {
 
             this.mapRole = role;
             this.view = 'map';
+        },
+
+        inspectTile() {
+            if (! this.activeMap) {
+                this.mapRole = this.maps.find((map) => map.role === 'base_color')?.role ?? this.maps[0]?.role ?? null;
+            }
+
+            if (this.activeMap) {
+                this.view = 'tile';
+            }
         },
     }));
 

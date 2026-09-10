@@ -13,12 +13,14 @@ use App\Models\Tenant;
 use App\Models\Variant;
 use Flux\Flux;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Validator;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Title('Material Studio')] class extends Component {
+new #[Title('Material Studio')] class extends Component
+{
     #[Url]
     public string $mode = 'new';
 
@@ -62,6 +64,10 @@ new #[Title('Material Studio')] class extends Component {
 
     public string $previewError = '';
 
+    public string $previewStatus = 'idle';
+
+    public int $previewRevision = 0;
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->can('materials.contribute'), 403);
@@ -73,6 +79,7 @@ new #[Title('Material Studio')] class extends Component {
         $this->mode = in_array($this->mode, ['new', 'existing'], true) ? $this->mode : 'new';
         $this->recipe = ProceduralRecipes::defaults($this->generator);
         $this->loadExistingDefinition();
+        $this->refreshPreview(app(ProceduralBaker::class));
     }
 
     /** @return array<string, string> */
@@ -130,6 +137,14 @@ new #[Title('Material Studio')] class extends Component {
     {
         $this->loadExistingDefinition();
         $this->clearPreview();
+        $this->refreshPreview(app(ProceduralBaker::class));
+    }
+
+    public function updated(string $property): void
+    {
+        if (preg_match('/^(recipe\.|width_mm$|height_mm$|seed$)/', $property) === 1) {
+            $this->refreshPreview(app(ProceduralBaker::class));
+        }
     }
 
     public function chooseGenerator(string $generator): void
@@ -144,6 +159,7 @@ new #[Title('Material Studio')] class extends Component {
         };
         $this->clearPreview();
         $this->resetValidation();
+        $this->refreshPreview(app(ProceduralBaker::class));
     }
 
     public function addPaletteColour(string $key): void
@@ -157,6 +173,7 @@ new #[Title('Material Studio')] class extends Component {
         if (count($values) < 8) {
             $values[] = end($values) ?: '#808080';
             $this->recipe[$key] = array_values($values);
+            $this->refreshPreview(app(ProceduralBaker::class));
         }
     }
 
@@ -167,7 +184,21 @@ new #[Title('Material Studio')] class extends Component {
         if (count($values) > 1 && array_key_exists($index, $values)) {
             unset($values[$index]);
             $this->recipe[$key] = array_values($values);
+            $this->refreshPreview(app(ProceduralBaker::class));
         }
+    }
+
+    public function randomizeSeed(): void
+    {
+        $this->seed = random_int(0, 2147483647);
+        $this->refreshPreview(app(ProceduralBaker::class));
+    }
+
+    public function resetRecipe(): void
+    {
+        $this->recipe = ProceduralRecipes::defaults($this->generator);
+        $this->resetValidation();
+        $this->refreshPreview(app(ProceduralBaker::class));
     }
 
     public function preview(ProceduralBaker $baker): void
@@ -178,16 +209,37 @@ new #[Title('Material Studio')] class extends Component {
             return;
         }
 
+        $this->refreshPreview($baker);
+    }
+
+    private function refreshPreview(ProceduralBaker $baker): void
+    {
+        $validator = Validator::make([
+            'generator' => $this->generator,
+            'resolution' => $this->resolution,
+            'width_mm' => $this->width_mm,
+            'height_mm' => $this->height_mm,
+            'seed' => $this->seed,
+            'recipe' => $this->recipe,
+        ], $this->recipeRules());
+
+        if ($validator->fails() || ! $this->validateRepeat(false)) {
+            $this->previewStatus = 'waiting';
+
+            return;
+        }
+
         $this->previewError = '';
 
         if (! $baker->available()) {
             $this->previewError = __('The USD toolbox is not installed on this server.');
+            $this->previewStatus = 'unavailable';
 
             return;
         }
 
         try {
-            $bake = $baker->bake($this->definitionPayload(384));
+            $bake = $baker->bake($this->definitionPayload(320));
             $this->previewMaps = [];
 
             foreach ($bake->assets as $asset) {
@@ -195,9 +247,12 @@ new #[Title('Material Studio')] class extends Component {
                     $this->previewMaps[$asset->role] = 'data:'.$asset->mimeType.';base64,'.base64_encode($asset->contents);
                 }
             }
+            $this->previewStatus = 'ready';
+            $this->previewRevision++;
         } catch (Throwable $exception) {
             report($exception);
             $this->previewError = $exception->getMessage();
+            $this->previewStatus = 'error';
         }
     }
 
@@ -349,7 +404,7 @@ new #[Title('Material Studio')] class extends Component {
         $this->seed = (int) ($definition->parameters['seed'] ?? 42);
     }
 
-    private function validateRepeat(): bool
+    private function validateRepeat(bool $showErrors = true): bool
     {
         $valid = true;
 
@@ -359,27 +414,31 @@ new #[Title('Material Studio')] class extends Component {
             $joint = (float) ($this->recipe['joint_mm'] ?? 0);
 
             if ($joint >= min($unitWidth, $unitHeight)) {
-                $this->addError('recipe.joint_mm', __('Joint must be smaller than both unit dimensions.'));
+                if ($showErrors) {
+                    $this->addError('recipe.joint_mm', __('Joint must be smaller than both unit dimensions.'));
+                }
                 $valid = false;
             }
 
-            $valid = $this->aligned('width_mm', $this->width_mm, $unitWidth + $joint, 1) && $valid;
-            $multiple = match ($this->recipe['bond'] ?? 'stack') { 'quarter' => 4, 'running' => 2, default => 1 };
-            $valid = $this->aligned('height_mm', $this->height_mm, $unitHeight + $joint, $multiple) && $valid;
+            $valid = $this->aligned('width_mm', $this->width_mm, $unitWidth + $joint, 1, $showErrors) && $valid;
+            $multiple = match ($this->recipe['bond'] ?? 'stack') {
+                'quarter' => 4, 'running' => 2, default => 1
+            };
+            $valid = $this->aligned('height_mm', $this->height_mm, $unitHeight + $joint, $multiple, $showErrors) && $valid;
         } elseif ($this->generator === 'timber') {
             $joint = (float) ($this->recipe['joint_mm'] ?? 0);
-            $valid = $this->aligned('width_mm', $this->width_mm, (float) ($this->recipe['board_length_mm'] ?? 0) + $joint, 1) && $valid;
-            $valid = $this->aligned('height_mm', $this->height_mm, (float) ($this->recipe['board_width_mm'] ?? 0) + $joint, ($this->recipe['stagger'] ?? false) ? 2 : 1) && $valid;
+            $valid = $this->aligned('width_mm', $this->width_mm, (float) ($this->recipe['board_length_mm'] ?? 0) + $joint, 1, $showErrors) && $valid;
+            $valid = $this->aligned('height_mm', $this->height_mm, (float) ($this->recipe['board_width_mm'] ?? 0) + $joint, ($this->recipe['stagger'] ?? false) ? 2 : 1, $showErrors) && $valid;
         } elseif ($this->generator === 'textile') {
             $pitch = (float) ($this->recipe['thread_mm'] ?? 0) * 2;
-            $valid = $this->aligned('width_mm', $this->width_mm, $pitch, 1) && $valid;
-            $valid = $this->aligned('height_mm', $this->height_mm, $pitch, 1) && $valid;
+            $valid = $this->aligned('width_mm', $this->width_mm, $pitch, 1, $showErrors) && $valid;
+            $valid = $this->aligned('height_mm', $this->height_mm, $pitch, 1, $showErrors) && $valid;
         }
 
         return $valid;
     }
 
-    private function aligned(string $field, float $dimension, float $pitch, int $multiple): bool
+    private function aligned(string $field, float $dimension, float $pitch, int $multiple, bool $showError): bool
     {
         if ($pitch <= 0) {
             return false;
@@ -392,7 +451,9 @@ new #[Title('Material Studio')] class extends Component {
             return true;
         }
 
-        $this->addError($field, __('Use :size mm for a complete repeat at these settings.', ['size' => round($pitch * $count, 3)]));
+        if ($showError) {
+            $this->addError($field, __('Use :size mm for a complete repeat at these settings.', ['size' => round($pitch * $count, 3)]));
+        }
 
         return false;
     }
@@ -401,144 +462,225 @@ new #[Title('Material Studio')] class extends Component {
     {
         $this->previewMaps = [];
         $this->previewError = '';
+        $this->previewStatus = 'idle';
     }
 }; ?>
 
-<section>
-    <div class="ui-page-head">
+<section class="ui-material-studio">
+    <div class="ui-material-studio__head">
         <div>
-            <x-ui.eyebrow>{{ __('Authoring') }}</x-ui.eyebrow>
-            <h1>{{ __('Material Studio') }}</h1>
-            <p class="ui-page-head__lede">{{ __('Build tileable, real-scale materials from editable recipes. Preview quickly, then bake an immutable candidate for review and every downstream target.') }}</p>
+            <x-ui.eyebrow>{{ __('Material authoring') }}</x-ui.eyebrow>
+            <h1>{{ __('Studio') }}</h1>
+            <p>{{ __('Tune a physically scaled recipe and see the production engine respond as you work.') }}</p>
         </div>
-        <div class="ui-page-head__actions">
-            <x-ui.button :href="route('materials.create')" variant="quiet" wire:navigate>{{ __('Import image maps') }}</x-ui.button>
+        <div class="ui-material-studio__head-actions">
+            <span class="ui-studio-engine" data-status="{{ $previewStatus }}" aria-live="polite">
+                <i></i>
+                <span wire:loading.remove>{{ $previewStatus === 'ready' ? __('Live preview') : ($previewStatus === 'waiting' ? __('Complete a valid repeat') : __('Preview unavailable')) }}</span>
+                <span wire:loading>{{ __('Updating material…') }}</span>
+            </span>
+            <x-ui.button :href="route('materials.create')" variant="quiet" wire:navigate>{{ __('Import maps') }}</x-ui.button>
         </div>
     </div>
 
-    <form wire:submit="save" class="ui-studio">
-        <div class="ui-studio__controls">
-            <x-ui.panel>
-                <div class="ui-form">
-                    <div class="ui-segment" role="group" aria-label="{{ __('Recipe destination') }}" style="width: fit-content">
-                        <button type="button" wire:click="$set('mode', 'new')" @class(['is-active' => $mode === 'new'])>{{ __('New material') }}</button>
-                        <button type="button" wire:click="$set('mode', 'existing')" @class(['is-active' => $mode === 'existing'])>{{ __('Improve existing') }}</button>
-                    </div>
+    <form wire:submit="save" class="ui-studio-workbench">
+        <nav class="ui-studio-recipes" aria-label="{{ __('Material recipe') }}">
+            @foreach ($this->generators() as $slug => $label)
+                @php
+                    [$mark, $description] = match ($slug) {
+                        'paint' => ['P', __('Solid finish')],
+                        'masonry' => ['M', __('Bonded units')],
+                        'timber' => ['T', __('Board layout')],
+                        'terrazzo' => ['Z', __('Seeded aggregate')],
+                        default => ['W', __('Woven surface')],
+                    };
+                @endphp
+                <button type="button" wire:click="chooseGenerator('{{ $slug }}')" @class(['is-active' => $generator === $slug]) data-test="generator-{{ $slug }}">
+                    <span>{{ $mark }}</span>
+                    <strong>{{ $label }}</strong>
+                    <small>{{ $description }}</small>
+                </button>
+            @endforeach
+        </nav>
 
-                    @if ($mode === 'new')
-                        <div class="ui-form ui-form--2">
-                            <x-ui.field :label="__('Name')" for="studio-name" required :error="$errors->first('name')"><input id="studio-name" class="ui-input" wire:model="name" placeholder="Warm white paint" /></x-ui.field>
-                            <x-ui.field :label="__('Category')" for="studio-category" required :error="$errors->first('category_id')"><select id="studio-category" class="ui-select" wire:model="category_id"><option value="">{{ __('Choose…') }}</option>@foreach ($this->categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></x-ui.field>
-                            <x-ui.field :label="__('Supplier')" for="studio-supplier"><select id="studio-supplier" class="ui-select" wire:model="supplier_id"><option value="">{{ __('In-house') }}</option>@foreach ($this->suppliers as $supplier)<option value="{{ $supplier->id }}">{{ $supplier->name }}</option>@endforeach</select></x-ui.field>
-                            <x-ui.field :label="__('Or new supplier')" for="studio-new-supplier"><input id="studio-new-supplier" class="ui-input" wire:model="new_supplier" /></x-ui.field>
-                            <x-ui.field :label="__('Collection')" for="studio-collection"><input id="studio-collection" class="ui-input" wire:model="collection" /></x-ui.field>
-                            <x-ui.field :label="__('Product code')" for="studio-product-code"><input id="studio-product-code" class="ui-input" wire:model="supplier_product_code" /></x-ui.field>
-                        </div>
-                    @else
-                        <div class="ui-form ui-form--2">
-                            <x-ui.field :label="__('Material')" for="studio-material" required :error="$errors->first('materialCode')"><select id="studio-material" class="ui-select" wire:model.live="materialCode"><option value="">{{ __('Choose…') }}</option>@foreach ($this->materials as $material)<option value="{{ $material->code }}">{{ $material->name }} · {{ $material->code }}</option>@endforeach</select></x-ui.field>
-                            <x-ui.field :label="__('Variant')" for="studio-variant" required :error="$errors->first('variantCode')"><select id="studio-variant" class="ui-select" wire:model.live="variantCode" @disabled($this->selectedMaterial === null)><option value="">{{ __('Choose…') }}</option>@foreach ($this->variants as $variant)<option value="{{ $variant->code }}">{{ $variant->name }}{{ $variant->definition ? ' · recipe' : '' }}</option>@endforeach<option value="__new">{{ __('+ Add a new variant') }}</option></select></x-ui.field>
-                        </div>
-                    @endif
+        <div class="ui-studio-layout">
+            <aside class="ui-studio-properties ui-studio-properties--recipe">
+                <header class="ui-studio-section-head">
+                    <div><span>01</span><h2>{{ $this->generators()[$generator] }}</h2></div>
+                    <button type="button" wire:click="resetRecipe">{{ __('Reset') }}</button>
+                </header>
 
-                    @if ($mode === 'new' || $variantCode === '__new')
-                        <div class="ui-form ui-form--2">
-                            <x-ui.field :label="__('Colourway')" for="studio-colourway" :error="$errors->first('colourway')"><input id="studio-colourway" class="ui-input" wire:model="colourway" placeholder="Natural" /></x-ui.field>
-                            <x-ui.field :label="__('Supplier colour code')" for="studio-colourway-code"><input id="studio-colourway-code" class="ui-input" wire:model="colourway_code" /></x-ui.field>
-                        </div>
-                    @endif
-                </div>
-            </x-ui.panel>
-
-            <x-ui.panel>
-                <div class="ui-panel__heading"><div><h3>{{ __('Recipe') }}</h3><p>{{ __('Choose a system, then tune physical parameters.') }}</p></div></div>
-                <div class="ui-recipe-tabs">
-                    @foreach ($this->generators() as $slug => $label)
-                        <button type="button" wire:click="chooseGenerator('{{ $slug }}')" @class(['is-active' => $generator === $slug])>{{ $label }}</button>
-                    @endforeach
-                </div>
-
-                <div class="ui-form ui-form--2" style="margin-top: 16px">
+                <div class="ui-studio-property-group">
                     @if ($generator === 'paint')
-                        <x-ui.field :label="__('Colour')" for="paint-colour" :error="$errors->first('recipe.colour')"><input id="paint-colour" class="ui-colour" type="color" wire:model="recipe.colour" /></x-ui.field>
-                        <x-ui.field :label="__('Roughness')" for="paint-rough"><input id="paint-rough" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.roughness" /></x-ui.field>
-                        <x-ui.field :label="__('Tone variation')" for="paint-var"><input id="paint-var" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.variation" /></x-ui.field>
-                        <x-ui.field :label="__('Surface depth')" for="paint-depth"><input id="paint-depth" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.texture_depth" /></x-ui.field>
+                        <x-ui.studio-colour :label="__('Paint colour')" model="recipe.colour" :value="$recipe['colour']" id="paint-colour" />
+                        <x-ui.studio-slider :label="__('Roughness')" model="recipe.roughness" :value="$recipe['roughness']" />
+                        <x-ui.studio-slider :label="__('Tone variation')" model="recipe.variation" :value="$recipe['variation']" />
+                        <x-ui.studio-slider :label="__('Surface relief')" model="recipe.texture_depth" :value="$recipe['texture_depth']" />
                     @elseif ($generator === 'masonry')
-                        <x-ui.field :label="__('Unit width (mm)')" for="unit-w"><input id="unit-w" class="ui-input" type="number" step="0.1" wire:model="recipe.unit_width_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Unit height (mm)')" for="unit-h"><input id="unit-h" class="ui-input" type="number" step="0.1" wire:model="recipe.unit_height_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Joint (mm)')" for="unit-j"><input id="unit-j" class="ui-input" type="number" step="0.1" wire:model="recipe.joint_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Bond')" for="unit-b"><select id="unit-b" class="ui-select" wire:model="recipe.bond"><option value="stack">{{ __('Stack') }}</option><option value="running">{{ __('Running') }}</option><option value="quarter">{{ __('Quarter') }}</option></select></x-ui.field>
-                        <x-ui.field :label="__('Joint colour')" for="joint-colour"><input id="joint-colour" class="ui-colour" type="color" wire:model="recipe.joint_colour" /></x-ui.field>
-                        <x-ui.field :label="__('Edge depth (mm)')" for="edge-depth"><input id="edge-depth" class="ui-input" type="number" min="0" step="0.1" wire:model="recipe.edge_depth_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Roughness')" for="masonry-rough"><input id="masonry-rough" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.roughness" /></x-ui.field>
-                        <x-ui.field :label="__('Tone variation')" for="masonry-var"><input id="masonry-var" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.tone_variation" /></x-ui.field>
+                        <div class="ui-studio-measure-grid">
+                            <x-ui.studio-measure :label="__('Unit width')" model="recipe.unit_width_mm" :value="$recipe['unit_width_mm']" min="1" />
+                            <x-ui.studio-measure :label="__('Unit height')" model="recipe.unit_height_mm" :value="$recipe['unit_height_mm']" min="1" />
+                            <x-ui.studio-measure :label="__('Joint')" model="recipe.joint_mm" :value="$recipe['joint_mm']" />
+                            <x-ui.studio-measure :label="__('Edge depth')" model="recipe.edge_depth_mm" :value="$recipe['edge_depth_mm']" />
+                        </div>
+                        <label class="ui-studio-select"><span>{{ __('Bond') }}</span><select wire:model.live="recipe.bond"><option value="stack">{{ __('Stack') }}</option><option value="running">{{ __('Running') }}</option><option value="quarter">{{ __('Quarter') }}</option></select></label>
+                        <x-ui.studio-colour :label="__('Joint colour')" model="recipe.joint_colour" :value="$recipe['joint_colour']" id="joint-colour" />
+                        <x-ui.studio-slider :label="__('Roughness')" model="recipe.roughness" :value="$recipe['roughness']" />
+                        <x-ui.studio-slider :label="__('Tone variation')" model="recipe.tone_variation" :value="$recipe['tone_variation']" />
                     @elseif ($generator === 'timber')
-                        <x-ui.field :label="__('Board width (mm)')" for="board-w"><input id="board-w" class="ui-input" type="number" step="0.1" wire:model="recipe.board_width_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Board length (mm)')" for="board-l"><input id="board-l" class="ui-input" type="number" step="0.1" wire:model="recipe.board_length_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Joint (mm)')" for="board-j"><input id="board-j" class="ui-input" type="number" min="0" step="0.1" wire:model="recipe.joint_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Grain strength')" for="grain"><input id="grain" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.grain_strength" /></x-ui.field>
-                        <x-ui.field :label="__('Roughness')" for="timber-rough"><input id="timber-rough" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.roughness" /></x-ui.field>
-                        <label class="ui-check"><input type="checkbox" wire:model="recipe.stagger" /> {{ __('Stagger boards') }}</label>
+                        <div class="ui-studio-measure-grid">
+                            <x-ui.studio-measure :label="__('Board width')" model="recipe.board_width_mm" :value="$recipe['board_width_mm']" min="1" />
+                            <x-ui.studio-measure :label="__('Board length')" model="recipe.board_length_mm" :value="$recipe['board_length_mm']" min="1" />
+                            <x-ui.studio-measure :label="__('Joint')" model="recipe.joint_mm" :value="$recipe['joint_mm']" />
+                        </div>
+                        <label class="ui-studio-switch"><input type="checkbox" wire:model.live="recipe.stagger" /><span></span><strong>{{ __('Stagger boards') }}</strong></label>
+                        <x-ui.studio-slider :label="__('Grain strength')" model="recipe.grain_strength" :value="$recipe['grain_strength']" />
+                        <x-ui.studio-slider :label="__('Roughness')" model="recipe.roughness" :value="$recipe['roughness']" />
                     @elseif ($generator === 'terrazzo')
-                        <x-ui.field :label="__('Matrix colour')" for="matrix-colour"><input id="matrix-colour" class="ui-colour" type="color" wire:model="recipe.matrix_colour" /></x-ui.field>
-                        <x-ui.field :label="__('Chip size (mm)')" for="chip-size"><input id="chip-size" class="ui-input" type="number" step="0.1" wire:model="recipe.chip_size_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Chip density')" for="chip-density"><input id="chip-density" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.density" /></x-ui.field>
-                        <x-ui.field :label="__('Roughness')" for="terrazzo-rough"><input id="terrazzo-rough" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.roughness" /></x-ui.field>
-                        <x-ui.field :label="__('Chip depth (mm)')" for="chip-depth"><input id="chip-depth" class="ui-input" type="number" min="0" step="0.1" wire:model="recipe.chip_depth_mm" /></x-ui.field>
+                        <x-ui.studio-colour :label="__('Matrix colour')" model="recipe.matrix_colour" :value="$recipe['matrix_colour']" id="matrix-colour" />
+                        <x-ui.studio-measure :label="__('Chip size')" model="recipe.chip_size_mm" :value="$recipe['chip_size_mm']" min="0.1" />
+                        <x-ui.studio-slider :label="__('Chip density')" model="recipe.density" :value="$recipe['density']" />
+                        <x-ui.studio-slider :label="__('Roughness')" model="recipe.roughness" :value="$recipe['roughness']" />
+                        <x-ui.studio-measure :label="__('Chip depth')" model="recipe.chip_depth_mm" :value="$recipe['chip_depth_mm']" />
                     @else
-                        <x-ui.field :label="__('Warp colour')" for="warp-colour"><input id="warp-colour" class="ui-colour" type="color" wire:model="recipe.warp_colour" /></x-ui.field>
-                        <x-ui.field :label="__('Weft colour')" for="weft-colour"><input id="weft-colour" class="ui-colour" type="color" wire:model="recipe.weft_colour" /></x-ui.field>
-                        <x-ui.field :label="__('Thread (mm)')" for="thread"><input id="thread" class="ui-input" type="number" step="0.1" wire:model="recipe.thread_mm" /></x-ui.field>
-                        <x-ui.field :label="__('Roughness')" for="textile-rough"><input id="textile-rough" class="ui-input" type="number" min="0" max="1" step="0.01" wire:model="recipe.roughness" /></x-ui.field>
-                        <x-ui.field :label="__('Depth (mm)')" for="textile-depth"><input id="textile-depth" class="ui-input" type="number" min="0" step="0.1" wire:model="recipe.depth_mm" /></x-ui.field>
-                        <label class="ui-check"><input type="checkbox" wire:model="recipe.basket" /> {{ __('Basket weave') }}</label>
+                        <div class="ui-studio-colour-pair">
+                            <x-ui.studio-colour :label="__('Warp')" model="recipe.warp_colour" :value="$recipe['warp_colour']" id="warp-colour" />
+                            <x-ui.studio-colour :label="__('Weft')" model="recipe.weft_colour" :value="$recipe['weft_colour']" id="weft-colour" />
+                        </div>
+                        <x-ui.studio-measure :label="__('Thread width')" model="recipe.thread_mm" :value="$recipe['thread_mm']" min="0.1" />
+                        <label class="ui-studio-switch"><input type="checkbox" wire:model.live="recipe.basket" /><span></span><strong>{{ __('Basket weave') }}</strong></label>
+                        <x-ui.studio-slider :label="__('Roughness')" model="recipe.roughness" :value="$recipe['roughness']" />
+                        <x-ui.studio-measure :label="__('Relief depth')" model="recipe.depth_mm" :value="$recipe['depth_mm']" />
                     @endif
                 </div>
 
                 @php $paletteKey = match ($generator) { 'masonry' => 'unit_colours', 'timber' => 'colours', 'terrazzo' => 'chip_colours', default => null }; @endphp
                 @if ($paletteKey)
-                    <div class="ui-palette">
-                        <strong>{{ __('Palette') }}</strong>
-                        @foreach (($recipe[$paletteKey] ?? []) as $index => $colour)
-                            <span wire:key="palette-{{ $paletteKey }}-{{ $index }}"><input class="ui-colour" type="color" wire:model="recipe.{{ $paletteKey }}.{{ $index }}" /><button type="button" wire:click="removePaletteColour('{{ $paletteKey }}', {{ $index }})" aria-label="{{ __('Remove colour') }}">×</button></span>
-                        @endforeach
-                        <button type="button" wire:click="addPaletteColour('{{ $paletteKey }}')">{{ __('+ colour') }}</button>
+                    <div class="ui-studio-palette">
+                        <div class="ui-studio-palette__head">
+                            <div><strong>{{ __('Material palette') }}</strong><small>{{ __('Click a swatch to edit; enter hex for exact supplier colour.') }}</small></div>
+                            <button type="button" wire:click="addPaletteColour('{{ $paletteKey }}')" @disabled(count($recipe[$paletteKey] ?? []) >= 8)>+ {{ __('Add') }}</button>
+                        </div>
+                        <div class="ui-studio-palette__swatches">
+                            @foreach (($recipe[$paletteKey] ?? []) as $index => $colour)
+                                <div class="ui-studio-palette__item" style="--studio-swatch: {{ $colour }}" wire:key="palette-{{ $paletteKey }}-{{ $index }}">
+                                    <label title="{{ __('Edit colour :number', ['number' => $index + 1]) }}">
+                                        <input type="color" wire:model.live.debounce.350ms="recipe.{{ $paletteKey }}.{{ $index }}" />
+                                        <span><b>{{ str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT) }}</b></span>
+                                    </label>
+                                    <input type="text" value="{{ $colour }}" wire:model.live.debounce.450ms="recipe.{{ $paletteKey }}.{{ $index }}" maxlength="7" aria-label="{{ __('Colour :number hex value', ['number' => $index + 1]) }}" />
+                                    <button type="button" wire:click="removePaletteColour('{{ $paletteKey }}', {{ $index }})" aria-label="{{ __('Remove colour :number', ['number' => $index + 1]) }}" @disabled(count($recipe[$paletteKey] ?? []) <= 1)>×</button>
+                                </div>
+                            @endforeach
+                        </div>
                     </div>
                 @endif
-            </x-ui.panel>
+            </aside>
 
-            <x-ui.panel>
-                <div class="ui-panel__heading"><div><h3>{{ __('Output') }}</h3><p>{{ __('Real-world repeat and production resolution.') }}</p></div></div>
-                <div class="ui-form ui-form--2">
-                    <x-ui.field :label="__('Width (mm)')" for="output-w" :error="$errors->first('width_mm')"><input id="output-w" class="ui-input" type="number" min="1" step="0.1" wire:model="width_mm" /></x-ui.field>
-                    <x-ui.field :label="__('Height (mm)')" for="output-h" :error="$errors->first('height_mm')"><input id="output-h" class="ui-input" type="number" min="1" step="0.1" wire:model="height_mm" /></x-ui.field>
-                    <x-ui.field :label="__('Resolution')" for="output-resolution"><select id="output-resolution" class="ui-select" wire:model="resolution">@foreach ([512, 1024, 2048, 4096] as $size)<option value="{{ $size }}">{{ $size >= 1024 ? ($size / 1024).'K' : $size.' px' }}</option>@endforeach</select></x-ui.field>
-                    <x-ui.field :label="__('Seed')" for="output-seed"><input id="output-seed" class="ui-input" type="number" min="0" wire:model="seed" /></x-ui.field>
+            <main class="ui-studio-canvas">
+                <div class="ui-studio-canvas__bar">
+                    <div>
+                        <strong>{{ __('Live material') }}</strong>
+                        <span>{{ number_format($width_mm, 1) }} × {{ number_format($height_mm, 1) }} mm repeat</span>
+                    </div>
+                    <div class="ui-studio-canvas__tools">
+                        <span>{{ __('Drag to rotate · scroll to zoom') }}</span>
+                        <button type="button" wire:click="preview" data-test="preview-recipe">{{ __('Refresh') }}</button>
+                    </div>
                 </div>
-            </x-ui.panel>
-        </div>
 
-        <div class="ui-studio__preview">
-            <x-ui.panel>
-                <div class="ui-panel__heading"><div><h3>{{ __('Preview') }}</h3><p>{{ __('A fast 384 px bake using the production engine.') }}</p></div><x-ui.button type="button" wire:click="preview" variant="secondary" size="sm" data-test="preview-recipe">{{ __('Update preview') }}</x-ui.button></div>
-                @if ($previewError !== '')<div class="ui-notice"><span class="ui-notice__rule"></span><div><strong>{{ __('Preview unavailable') }}</strong><p>{{ $previewError }}</p></div></div>@endif
+                @if ($previewError !== '')
+                    <div class="ui-studio-preview-error"><strong>{{ __('Preview unavailable') }}</strong><span>{{ $previewError }}</span></div>
+                @endif
+
                 @if ($previewMaps === [])
-                    <div class="ui-studio__empty"><span></span><p>{{ __('Set the recipe, then update the preview.') }}</p></div>
+                    <div class="ui-studio-canvas__empty">
+                        <span></span>
+                        <strong>{{ __('Waiting for a valid recipe') }}</strong>
+                        <p>{{ __('Complete the highlighted dimensions and the material will render here automatically.') }}</p>
+                    </div>
                 @else
-                    <div class="ui-studio__maps">
-                        @foreach ($previewMaps as $role => $url)
-                            <figure><img src="{{ $url }}" alt="{{ str_replace('_', ' ', $role) }}" /><figcaption>{{ str_replace('_', ' ', $role) }}</figcaption></figure>
-                        @endforeach
+                    @php
+                        $previewSet = ['preview' => [
+                            'key' => 'studio-'.$previewRevision,
+                            'tile_mm' => max($width_mm, $height_mm),
+                            'finish' => match ($generator) { 'paint' => 'matte', 'timber' => 'wood', 'textile' => 'textile', default => 'default' },
+                            ...$previewMaps,
+                        ]];
+                    @endphp
+                    <div
+                        class="ui-viewer ui-studio-live-viewer"
+                        wire:key="studio-preview-{{ $previewRevision }}"
+                        x-data="materialViewer(@js(['sets' => $previewSet, 'objectSizeMm' => max($width_mm, $height_mm), 'framing' => 1.28, 'verticalBias' => 0.04]))"
+                        x-effect="show('preview')"
+                        data-test="studio-live-preview"
+                    >
+                        <div class="ui-viewer__stage" x-ref="stage" wire:ignore>
+                            <x-ui.material-map-inspector tileable />
+                        </div>
                     </div>
                 @endif
-            </x-ui.panel>
 
-            <div class="ui-notice"><span class="ui-notice__rule"></span><div><strong>{{ __('Nothing publishes automatically') }}</strong><p>{{ __('Saving keeps the recipe editable and queues a deterministic candidate. Review it on the material page before publishing it to the drive, Revit, or Omniverse.') }}</p></div></div>
-            <div class="ui-actions">
-                <x-ui.button type="submit" data-test="save-recipe">{{ __('Save recipe & bake candidate') }}</x-ui.button>
-                <x-ui.button :href="route('materials.index')" variant="ghost" wire:navigate>{{ __('Cancel') }}</x-ui.button>
-            </div>
+                <div class="ui-studio-canvas__foot">
+                    <span><i></i>{{ __('Preview uses the same deterministic engine as the production bake') }}</span>
+                    <code>seed {{ $seed }}</code>
+                </div>
+                <div class="ui-studio-loading" wire:loading.flex>
+                    <span></span><strong>{{ __('Rebuilding preview') }}</strong>
+                </div>
+            </main>
+
+            <aside class="ui-studio-properties ui-studio-properties--output">
+                <details open>
+                    <summary><span>02</span><strong>{{ __('Scale & output') }}</strong><i></i></summary>
+                    <div class="ui-studio-details">
+                        <div class="ui-studio-measure-grid">
+                            <x-ui.studio-measure :label="__('Repeat width')" model="width_mm" :value="$width_mm" min="1" />
+                            <x-ui.studio-measure :label="__('Repeat height')" model="height_mm" :value="$height_mm" min="1" />
+                        </div>
+                        <label class="ui-studio-select"><span>{{ __('Production resolution') }}</span><select wire:model="resolution">@foreach ([512, 1024, 2048, 4096] as $size)<option value="{{ $size }}">{{ $size >= 1024 ? ($size / 1024).'K' : $size.' px' }}</option>@endforeach</select></label>
+                        <label class="ui-studio-seed"><span>{{ __('Variation seed') }}</span><span><input type="number" min="0" wire:model.live.debounce.450ms="seed" /><button type="button" wire:click="randomizeSeed" title="{{ __('Generate another deterministic variation') }}">↻</button></span></label>
+                        <p class="ui-studio-hint">{{ __('Patterned recipes only accept complete repeats, so exported maps remain seamless.') }}</p>
+                    </div>
+                </details>
+
+                <details open>
+                    <summary><span>03</span><strong>{{ __('Library destination') }}</strong><i></i></summary>
+                    <div class="ui-studio-details">
+                        <div class="ui-segment ui-studio-mode" role="group" aria-label="{{ __('Recipe destination') }}">
+                            <button type="button" wire:click="$set('mode', 'new')" @class(['is-active' => $mode === 'new'])>{{ __('New') }}</button>
+                            <button type="button" wire:click="$set('mode', 'existing')" @class(['is-active' => $mode === 'existing'])>{{ __('Existing') }}</button>
+                        </div>
+
+                        @if ($mode === 'new')
+                            <x-ui.field :label="__('Material name')" for="studio-name" required :error="$errors->first('name')"><input id="studio-name" class="ui-input" wire:model="name" placeholder="Warm white paint" /></x-ui.field>
+                            <x-ui.field :label="__('Category')" for="studio-category" required :error="$errors->first('category_id')"><select id="studio-category" class="ui-select" wire:model="category_id"><option value="">{{ __('Choose…') }}</option>@foreach ($this->categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></x-ui.field>
+                            <x-ui.field :label="__('Supplier')" for="studio-supplier"><select id="studio-supplier" class="ui-select" wire:model="supplier_id"><option value="">{{ __('In-house') }}</option>@foreach ($this->suppliers as $supplier)<option value="{{ $supplier->id }}">{{ $supplier->name }}</option>@endforeach</select></x-ui.field>
+                            <x-ui.field :label="__('Or new supplier')" for="studio-new-supplier"><input id="studio-new-supplier" class="ui-input" wire:model="new_supplier" /></x-ui.field>
+                            <div class="ui-studio-field-pair">
+                                <x-ui.field :label="__('Collection')" for="studio-collection"><input id="studio-collection" class="ui-input" wire:model="collection" /></x-ui.field>
+                                <x-ui.field :label="__('Product code')" for="studio-product-code"><input id="studio-product-code" class="ui-input" wire:model="supplier_product_code" /></x-ui.field>
+                            </div>
+                        @else
+                            <x-ui.field :label="__('Material')" for="studio-material" required :error="$errors->first('materialCode')"><select id="studio-material" class="ui-select" wire:model.live="materialCode"><option value="">{{ __('Choose…') }}</option>@foreach ($this->materials as $material)<option value="{{ $material->code }}">{{ $material->name }} · {{ $material->code }}</option>@endforeach</select></x-ui.field>
+                            <x-ui.field :label="__('Variant')" for="studio-variant" required :error="$errors->first('variantCode')"><select id="studio-variant" class="ui-select" wire:model.live="variantCode" @disabled($this->selectedMaterial === null)><option value="">{{ __('Choose…') }}</option>@foreach ($this->variants as $variant)<option value="{{ $variant->code }}">{{ $variant->name }}{{ $variant->definition ? ' · recipe' : '' }}</option>@endforeach<option value="__new">{{ __('+ Add a new variant') }}</option></select></x-ui.field>
+                        @endif
+
+                        @if ($mode === 'new' || $variantCode === '__new')
+                            <div class="ui-studio-field-pair">
+                                <x-ui.field :label="__('Colourway')" for="studio-colourway" :error="$errors->first('colourway')"><input id="studio-colourway" class="ui-input" wire:model="colourway" placeholder="Natural" /></x-ui.field>
+                                <x-ui.field :label="__('Supplier code')" for="studio-colourway-code"><input id="studio-colourway-code" class="ui-input" wire:model="colourway_code" /></x-ui.field>
+                            </div>
+                        @endif
+                    </div>
+                </details>
+
+                <div class="ui-studio-publish">
+                    <div><span></span><p><strong>{{ __('Saved as a candidate') }}</strong>{{ __('Nothing is approved or published automatically.') }}</p></div>
+                    <x-ui.button type="submit" data-test="save-recipe">{{ __('Save recipe & bake') }}</x-ui.button>
+                    <x-ui.button :href="route('materials.index')" variant="ghost" size="sm" wire:navigate>{{ __('Cancel') }}</x-ui.button>
+                </div>
+            </aside>
         </div>
     </form>
 </section>

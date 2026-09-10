@@ -22,6 +22,8 @@ use Livewire\Livewire;
 
 final class FakeProceduralBaker implements ProceduralBaker
 {
+    public int $bakes = 0;
+
     public function available(): bool
     {
         return true;
@@ -29,6 +31,7 @@ final class FakeProceduralBaker implements ProceduralBaker
 
     public function bake(array $definition): ProceduralBake
     {
+        $this->bakes++;
         $images = [];
 
         foreach (['base_color' => 120, 'normal' => 190, 'roughness' => 210, 'height' => 90, 'metallic' => 0] as $role => $grey) {
@@ -89,6 +92,21 @@ test('the studio is contributor-only and stores a versioned recipe', function ()
         ->and($definition?->isStale())->toBeTrue();
 
     Queue::assertPushed(BakeProceduralMaterial::class);
+});
+
+test('the studio renders immediately and refreshes after a recipe control changes', function () {
+    $baker = new FakeProceduralBaker;
+    app()->instance(ProceduralBaker::class, $baker);
+
+    Livewire::actingAs($this->editor)
+        ->test('pages::materials.studio')
+        ->assertSet('previewStatus', 'ready')
+        ->assertSee('data-test="studio-live-preview"', false)
+        ->set('recipe.roughness', 0.21)
+        ->assertSet('previewStatus', 'ready')
+        ->assertSet('recipe.roughness', 0.21);
+
+    expect($baker->bakes)->toBe(2);
 });
 
 test('a procedural job creates a traceable candidate without approving it', function () {

@@ -1,4 +1,4 @@
-@props(['compact' => false])
+@props(['compact' => false, 'tileable' => false])
 
 <div
     @class(['ui-material-maps', 'ui-material-maps--compact' => $compact])
@@ -20,6 +20,22 @@
         </p>
     </div>
 
+    @if ($tileable)
+        <div
+            class="ui-material-maps__tile"
+            x-show="view === 'tile' && activeMap"
+            x-transition.opacity
+            x-cloak
+            data-test="material-tile-view"
+        >
+            <span x-bind:style="activeMap ? `background-image: url('${activeMap.url}')` : ''"></span>
+            <p>
+                <strong x-text="activeMap?.label"></strong>
+                <span>{{ __('4-up repeat · inspect every seam') }}</span>
+            </p>
+        </div>
+    @endif
+
     <div class="ui-material-maps__rail" role="tablist" aria-label="{{ __('Material views') }}">
         <button
             type="button"
@@ -33,6 +49,21 @@
             <span class="ui-material-maps__surface" aria-hidden="true"></span>
             <em>{{ __('Surface') }}</em>
         </button>
+
+        @if ($tileable)
+            <button
+                type="button"
+                role="tab"
+                title="{{ __('Tiled repeat') }}"
+                x-on:click.stop="inspectTile()"
+                x-bind:aria-selected="view === 'tile'"
+                x-bind:class="view === 'tile' && 'is-active'"
+                data-test="material-map-tile"
+            >
+                <span class="ui-material-maps__repeat" aria-hidden="true"></span>
+                <em>{{ __('Repeat') }}</em>
+            </button>
+        @endif
 
         <template x-for="map in maps" x-bind:key="map.role">
             <button

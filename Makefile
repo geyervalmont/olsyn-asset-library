@@ -80,3 +80,4 @@ revit-sync:
 toolbox-local:
 	cargo build --manifest-path $(USD_TOOLBOX_DIR)/Cargo.toml --locked --release -p usd-toolbox-cli
 	install -D -m 0755 $(USD_TOOLBOX_DIR)/target/release/usd-toolbox apps/web/storage/app/bin/usd-toolbox
+	install -d -m 0777 apps/web/storage/app/procedural
