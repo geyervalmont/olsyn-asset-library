@@ -28,16 +28,15 @@ public sealed class ConfigStore
         WriteIndented = true,
     };
 
-    public ConfigStore(string? root = null)
+    public ConfigStore(string? root = null, string? settingsRoot = null)
     {
-        Root = root ?? System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Olsyn",
-            "OPAL");
+        Root = root ?? ClientPaths.SharedRoot;
+        SettingsRoot = settingsRoot ?? Root;
     }
 
     public string Root { get; }
-    public string Path => System.IO.Path.Combine(Root, "config.json");
+    public string SettingsRoot { get; }
+    public string Path => System.IO.Path.Combine(SettingsRoot, "config.json");
 
     public AppSettings Load()
     {
@@ -58,7 +57,7 @@ public sealed class ConfigStore
 
     public void Save(AppSettings settings)
     {
-        Directory.CreateDirectory(Root);
+        Directory.CreateDirectory(SettingsRoot);
         var temporary = Path + ".new";
         File.WriteAllText(temporary, JsonSerializer.Serialize(settings, Json));
         File.Move(temporary, Path, true);
@@ -102,4 +101,26 @@ public sealed class ConfigStore
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+}
+
+public static class ClientPaths
+{
+    public static string SharedRoot => System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Olsyn",
+        "OPAL");
+
+    public static string RevitRoot(string revitVersion) => System.IO.Path.Combine(
+        SharedRoot,
+        "revit",
+        revitVersion);
+
+    public static string ActiveRevitRoot(string revitVersion, string assemblyLocation)
+    {
+        var versionRoot = System.IO.Path.GetFullPath(RevitRoot(revitVersion)) + System.IO.Path.DirectorySeparatorChar;
+        var assemblyPath = System.IO.Path.GetFullPath(assemblyLocation);
+        return assemblyPath.StartsWith(versionRoot, StringComparison.OrdinalIgnoreCase)
+            ? RevitRoot(revitVersion)
+            : SharedRoot;
+    }
 }

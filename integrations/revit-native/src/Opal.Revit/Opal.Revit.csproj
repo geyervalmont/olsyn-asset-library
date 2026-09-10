@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows7.0</TargetFramework>
+    <TargetFramework>$(RevitTargetFramework)</TargetFramework>
     <UseWPF>true</UseWPF>
     <AssemblyName>Opal.Revit</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Opal.Client/Opal.Client.csproj" />
-    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2027.2.0" PrivateAssets="all" />
-    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2027.2.0" PrivateAssets="all" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitApiVersion)" PrivateAssets="all" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitApiVersion)" PrivateAssets="all" />
   </ItemGroup>
 </Project>

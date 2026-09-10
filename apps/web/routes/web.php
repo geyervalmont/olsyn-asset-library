@@ -17,10 +17,15 @@ if (app()->environment(['local', 'testing'])) {
 
 Route::get('prismfs/drives/{drive:slug}/manifest.yaml', PrismfsManifestController::class)->name('prismfs.drives.manifest');
 Route::post('prismfs/drives/{drive:slug}/accesses', PrismfsAccessController::class)->name('prismfs.drives.accesses');
-Route::get('downloads/revit/{channel}/{asset}', RevitDownloadController::class)
+Route::get('downloads/revit/{revitVersion}/{channel}/{asset}', [RevitDownloadController::class, 'show'])
+    ->whereIn('revitVersion', array_map('strval', array_keys(config('opal.clients.revit.supported_versions', []))))
     ->whereIn('channel', ['development', 'stable'])
     ->whereIn('asset', ['installer', 'package'])
     ->name('revit.download');
+Route::get('downloads/revit/{channel}/{asset}', [RevitDownloadController::class, 'legacy'])
+    ->whereIn('channel', ['development', 'stable'])
+    ->whereIn('asset', ['installer', 'package'])
+    ->name('revit.download.legacy');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'dashboard')->name('dashboard');

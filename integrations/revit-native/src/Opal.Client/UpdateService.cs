@@ -11,14 +11,14 @@ public sealed class UpdateService(ConfigStore config, string installedVersion)
     public async Task<UpdateCheck> CheckAsync(AppSettings settings, int revitVersion, CancellationToken cancellationToken = default)
     {
         using var api = new OpalApiClient(settings);
-        var release = await api.LatestReleaseAsync(settings.UpdateChannel, cancellationToken).ConfigureAwait(false);
+        var release = await api.LatestReleaseAsync(settings.UpdateChannel, revitVersion, cancellationToken).ConfigureAwait(false);
         var comparisonVersion = PendingVersion() is { } pending && Compare(pending, installedVersion) > 0
             ? pending
             : installedVersion;
         return new UpdateCheck(
             release,
             Compare(release.Version, comparisonVersion) > 0,
-            release.MinimumRevit <= revitVersion);
+            release.RevitVersion == revitVersion);
     }
 
     public async Task<StagedUpdate> StageAsync(AppSettings settings, ReleaseManifest release, CancellationToken cancellationToken = default)
@@ -83,7 +83,7 @@ public sealed class UpdateService(ConfigStore config, string installedVersion)
     {
         await using var stream = File.OpenRead(path);
         var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexStringLower(hash);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static void ExtractSafely(string archivePath, string destination)

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "default_year": 2027,
+  "versions": [
+    {
+      "year": 2025,
+      "api_version": "2025.4.60",
+      "revit_target_framework": "net8.0-windows7.0",
+      "client_target_framework": "net8.0",
+      "runtime": ".NET 8",
+      "verification": "ci"
+    },
+    {
+      "year": 2026,
+      "api_version": "2026.4.10",
+      "revit_target_framework": "net8.0-windows7.0",
+      "client_target_framework": "net8.0",
+      "runtime": ".NET 8",
+      "verification": "ci"
+    },
+    {
+      "year": 2027,
+      "api_version": "2027.2.0",
+      "revit_target_framework": "net10.0-windows7.0",
+      "client_target_framework": "net10.0",
+      "runtime": ".NET 10",
+      "verification": "host"
+    }
+  ]
+}

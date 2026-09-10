@@ -26,6 +26,11 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     Route::post('link', [LinkController::class, 'store'])->middleware('throttle:10,1')->name('api.link.store');
     Route::get('link/{code}', [LinkController::class, 'show'])->middleware('throttle:60,1')->name('api.link.show');
+    Route::get('client-releases/revit/{revitVersion}/{channel}', [ClientReleasesController::class, 'showVersion'])
+        ->whereIn('revitVersion', array_map('strval', array_keys(config('opal.clients.revit.supported_versions', []))))
+        ->whereIn('channel', ['development', 'stable'])
+        ->middleware('throttle:300,1')
+        ->name('api.client-releases.revit.version');
     Route::get('client-releases/revit/{channel}', [ClientReleasesController::class, 'show'])
         ->whereIn('channel', ['development', 'stable'])
         ->middleware('throttle:300,1')

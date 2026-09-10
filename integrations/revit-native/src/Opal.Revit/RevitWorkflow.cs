@@ -197,7 +197,7 @@ public static class RevitWorkflow
             }
             var expected = entry.GetProperty("sha256").GetString() ?? string.Empty;
             using var stream = System.IO.File.OpenRead(local);
-            var actual = Convert.ToHexStringLower(SHA256.HashData(stream));
+            var actual = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
             if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
             {
                 throw new System.IO.InvalidDataException($"A mounted OPAL texture does not match the library: {local}");

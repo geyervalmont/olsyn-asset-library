@@ -31,14 +31,35 @@ Check("config round trips account, server and dev mode", () =>
     Directory.Delete(root, recursive: true);
 });
 
+Check("Revit versions isolate updates but share settings", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "opal-client-tests", Guid.NewGuid().ToString("N"));
+    var first = new ConfigStore(Path.Combine(root, "revit", "2025"), root);
+    var second = new ConfigStore(Path.Combine(root, "revit", "2027"), root);
+    first.Save(new AppSettings { AccountEmail = "shared@example.com" });
+    Require(second.Load().AccountEmail == "shared@example.com");
+    Require(first.Root != second.Root);
+    Require(first.Path == second.Path);
+    Directory.Delete(root, recursive: true);
+});
+
+Check("legacy and matrix-aware clients update beside their bootstrap", () =>
+{
+    var matrixAssembly = Path.Combine(ClientPaths.RevitRoot("2027"), "versions", "0.2.0", "Opal.Revit.dll");
+    var legacyAssembly = Path.Combine(ClientPaths.SharedRoot, "versions", "0.1.0", "Opal.Revit.dll");
+    Require(ClientPaths.ActiveRevitRoot("2027", matrixAssembly) == ClientPaths.RevitRoot("2027"));
+    Require(ClientPaths.ActiveRevitRoot("2027", legacyAssembly) == ClientPaths.SharedRoot);
+});
+
 Check("release models deserialize OPAL manifest names", () =>
 {
     var json = """
-        {"version":"0.1.0.12","published_at":"2026-09-09T00:00:00Z","minimum_revit":2027,"commit":"abc","notes":"test","channel":"development","installer":{"name":"setup.exe","sha256":"aa","bytes":1,"url":"https://opal.test/i"},"package":{"name":"package.zip","sha256":"bb","bytes":2,"url":"https://opal.test/p"}}
+        {"version":"0.1.0.12","published_at":"2026-09-09T00:00:00Z","revit_version":2027,"minimum_revit":2027,"target_framework":"net10.0-windows7.0","runtime":".NET 10","verification":"host","commit":"abc","notes":"test","channel":"development","installer":{"name":"setup.exe","sha256":"aa","bytes":1,"url":"https://opal.test/i"},"package":{"name":"package.zip","sha256":"bb","bytes":2,"url":"https://opal.test/p"}}
         """;
     var release = System.Text.Json.JsonSerializer.Deserialize<ReleaseManifest>(json)!;
     Require(release.Version == "0.1.0.12");
     Require(release.Package.Name == "package.zip");
+    Require(release.RevitVersion == 2027);
     Require(release.MinimumRevit == 2027);
 });
 
@@ -48,7 +69,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("3 native client tests passed");
+Console.WriteLine("5 native client tests passed");
 return 0;
 
 void Check(string name, Action test)

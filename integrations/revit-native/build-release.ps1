@@ -14,12 +14,17 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repository = Resolve-Path (Join-Path $root "../..")
 $output = Join-Path $repository $OutputDirectory
 $stage = Join-Path $output "stage"
-$bootstrap = Join-Path $stage "bootstrap"
-$versionFiles = Join-Path $stage "version"
+$matrixPath = Join-Path $repository "apps/web/config/revit-versions.json"
+$matrix = Get-Content $matrixPath -Raw | ConvertFrom-Json
+$targets = @($matrix.versions)
 $certificate = $null
 
+if ($targets.Count -eq 0) {
+    throw "$matrixPath contains no build targets"
+}
+
 function Invoke-DotNet {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]] $Arguments)
+    param([string[]] $Arguments)
     & dotnet @Arguments
     if ($LASTEXITCODE -ne 0) { throw "dotnet failed with exit code $LASTEXITCODE" }
 }
@@ -44,8 +49,7 @@ function Sign-File {
 if (Test-Path $output) {
     Remove-Item $output -Recurse -Force
 }
-New-Item $bootstrap -ItemType Directory -Force | Out-Null
-New-Item $versionFiles -ItemType Directory -Force | Out-Null
+New-Item $stage -ItemType Directory -Force | Out-Null
 
 try {
     if ($SigningCertificateBase64) {
@@ -54,21 +58,57 @@ try {
         $script:signTool = Find-SignTool
     }
 
-    Invoke-DotNet @("run", "--project", (Join-Path $root "tests/Opal.Client.Tests/Opal.Client.Tests.csproj"), "-c", $Configuration, "-p:Version=$Version")
-    Invoke-DotNet @("publish", (Join-Path $root "src/Opal.Revit.Bootstrap/Opal.Revit.Bootstrap.csproj"), "-c", $Configuration, "-p:Version=$Version", "--no-self-contained", "-o", $bootstrap)
-    Invoke-DotNet @("publish", (Join-Path $root "src/Opal.Revit/Opal.Revit.csproj"), "-c", $Configuration, "-p:Version=$Version", "--no-self-contained", "-o", $versionFiles)
+    Invoke-DotNet -Arguments @(
+        "run",
+        "--project", (Join-Path $root "tests/Opal.Client.Tests/Opal.Client.Tests.csproj"),
+        "-c", $Configuration,
+        "-p:Version=$Version"
+    )
 
-    Get-ChildItem $bootstrap -Filter "*.dll" | ForEach-Object { Sign-File $_.FullName }
-    Get-ChildItem $versionFiles -Filter "*.dll" | ForEach-Object { Sign-File $_.FullName }
+    foreach ($target in $targets) {
+        $year = [string] $target.year
+        $yearStage = Join-Path $stage "revit/$year"
+        $bootstrap = Join-Path $yearStage "bootstrap"
+        $versionFiles = Join-Path $yearStage "versions/$Version"
+        New-Item $bootstrap -ItemType Directory -Force | Out-Null
+        New-Item $versionFiles -ItemType Directory -Force | Out-Null
 
-    $state = [ordered]@{
-        version = $Version
-        entryAssembly = "versions\$Version\Opal.Revit.dll"
+        $properties = @(
+            "-p:Version=$Version",
+            "-p:RevitYear=$year",
+            "-p:RevitApiVersion=$($target.api_version)",
+            "-p:RevitTargetFramework=$($target.revit_target_framework)",
+            "-p:OpalClientTargetFramework=$($target.client_target_framework)"
+        )
+
+        Invoke-DotNet -Arguments (@(
+            "publish", (Join-Path $root "src/Opal.Revit.Bootstrap/Opal.Revit.Bootstrap.csproj"),
+            "-c", $Configuration,
+            "--no-self-contained",
+            "-o", $bootstrap
+        ) + $properties)
+        Invoke-DotNet -Arguments (@(
+            "publish", (Join-Path $root "src/Opal.Revit/Opal.Revit.csproj"),
+            "-c", $Configuration,
+            "--no-self-contained",
+            "-o", $versionFiles
+        ) + $properties)
+
+        Get-ChildItem $bootstrap -Filter "*.dll" -Recurse | ForEach-Object { Sign-File $_.FullName }
+        Get-ChildItem $versionFiles -Filter "*.dll" -Recurse | ForEach-Object { Sign-File $_.FullName }
+
+        $state = [ordered]@{
+            version = $Version
+            entryAssembly = "versions\$Version\Opal.Revit.dll"
+        }
+        $state | ConvertTo-Json | Set-Content (Join-Path $yearStage "current.json") -Encoding utf8
+
+        $package = Join-Path $output "OPAL-Revit-$year-Package.zip"
+        Compress-Archive -Path (Join-Path $versionFiles "*") -DestinationPath $package -CompressionLevel Optimal
     }
-    $state | ConvertTo-Json | Set-Content (Join-Path $stage "current.json") -Encoding utf8
 
-    $package = Join-Path $output "OPAL-Revit-Package.zip"
-    Compress-Archive -Path (Join-Path $versionFiles "*") -DestinationPath $package -CompressionLevel Optimal
+    $targets.year | ForEach-Object { [string] $_ } |
+        Set-Content (Join-Path $stage "supported-versions.txt") -Encoding utf8
 
     $env:OPAL_VERSION = $Version
     $env:OPAL_ARTIFACT_ROOT = $stage
@@ -83,26 +123,40 @@ try {
 
     $installer = Join-Path $output "OPAL-Revit-Setup.exe"
     Sign-File $installer
+    $publishedAt = [DateTimeOffset]::UtcNow.ToString("o")
 
-    $manifest = [ordered]@{
-        version = $Version
-        published_at = [DateTimeOffset]::UtcNow.ToString("o")
-        minimum_revit = 2027
-        commit = $Commit
-        notes = "Native OPAL connector for Revit 2027 with account settings and verified automatic updates."
-        channel = $Channel
-        installer = [ordered]@{
-            name = "OPAL-Revit-Setup.exe"
-            sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-            bytes = (Get-Item $installer).Length
+    foreach ($target in $targets) {
+        $year = [int] $target.year
+        $package = Join-Path $output "OPAL-Revit-$year-Package.zip"
+        $manifest = [ordered]@{
+            version = $Version
+            published_at = $publishedAt
+            revit_version = $year
+            minimum_revit = $year
+            target_framework = [string] $target.revit_target_framework
+            runtime = [string] $target.runtime
+            verification = [string] $target.verification
+            commit = $Commit
+            notes = "Native OPAL connector for Revit $year. Feature code is shared across every supported Revit build."
+            channel = $Channel
+            installer = [ordered]@{
+                name = "OPAL-Revit-Setup.exe"
+                sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+                bytes = (Get-Item $installer).Length
+            }
+            package = [ordered]@{
+                name = "OPAL-Revit-$year-Package.zip"
+                sha256 = (Get-FileHash $package -Algorithm SHA256).Hash.ToLowerInvariant()
+                bytes = (Get-Item $package).Length
+            }
         }
-        package = [ordered]@{
-            name = "OPAL-Revit-Package.zip"
-            sha256 = (Get-FileHash $package -Algorithm SHA256).Hash.ToLowerInvariant()
-            bytes = (Get-Item $package).Length
+        $manifestPath = Join-Path $output "release-manifest-$year.json"
+        $manifest | ConvertTo-Json -Depth 5 | Set-Content $manifestPath -Encoding utf8
+
+        if ($year -eq [int] $matrix.default_year) {
+            Copy-Item $manifestPath (Join-Path $output "release-manifest.json")
         }
     }
-    $manifest | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $output "release-manifest.json") -Encoding utf8
 }
 finally {
     if ($certificate -and (Test-Path $certificate)) {

@@ -16,7 +16,8 @@ public sealed class ClientRuntime : IExternalEventHandler, IDisposable
     public ClientRuntime(string revitVersion)
     {
         RevitVersion = revitVersion;
-        Config = new ConfigStore();
+        var stateRoot = ClientPaths.ActiveRevitRoot(revitVersion, typeof(ClientRuntime).Assembly.Location);
+        Config = new ConfigStore(stateRoot, ClientPaths.SharedRoot);
         Settings = Config.Load();
         Status = new ClientStatus();
         externalEvent = ExternalEvent.Create(this);

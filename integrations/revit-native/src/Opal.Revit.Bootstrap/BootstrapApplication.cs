@@ -19,7 +19,9 @@ public sealed class BootstrapApplication : IExternalApplication
             var root = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Olsyn",
-                "OPAL");
+                "OPAL",
+                "revit",
+                application.ControlledApplication.VersionNumber);
             Directory.CreateDirectory(root);
             PromotePending(root);
 

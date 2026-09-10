@@ -4,7 +4,7 @@
 
 [Setup]
 AppId={{B80F8B2F-A85A-4C55-A1C0-94D0E6CB41D9}
-AppName=OPAL for Revit 2027
+AppName=OPAL for Revit
 AppVersion={#MyAppVersion}
 AppPublisher=Olsyn
 AppPublisherURL=https://opal.olsyn.com
@@ -24,39 +24,82 @@ WizardStyle=modern
 CloseApplications=yes
 CloseApplicationsFilter=Revit.exe
 RestartApplications=no
-UninstallDisplayName=OPAL for Revit 2027
+UninstallDisplayName=OPAL for Revit
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany=Olsyn
 VersionInfoDescription=OPAL native Revit connector
 
 [Files]
-Source: "{#ArtifactRoot}\bootstrap\Opal.Revit.Bootstrap.dll"; DestDir: "{app}\bootstrap"; Flags: ignoreversion
-Source: "{#ArtifactRoot}\version\*"; DestDir: "{app}\versions\{#MyAppVersion}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#ArtifactRoot}\current.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ArtifactRoot}\revit\*"; DestDir: "{app}\revit"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ArtifactRoot}\supported-versions.txt"; Flags: dontcopy
+Source: "{#ArtifactRoot}\supported-versions.txt"; DestDir: "{app}\revit"; Flags: ignoreversion
 
-[UninstallDelete]
-Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2027\OPAL.addin"
-Type: files; Name: "{app}\config.json"
+[InstallDelete]
+; Remove the pre-matrix 2027 layout after the replacement files are staged.
 Type: files; Name: "{app}\current.json"
 Type: files; Name: "{app}\pending.json"
-Type: files; Name: "{app}\client.log"
 Type: filesandordirs; Name: "{app}\updates"
 Type: filesandordirs; Name: "{app}\versions"
 Type: filesandordirs; Name: "{app}\bootstrap"
+
+[UninstallDelete]
+Type: files; Name: "{app}\config.json"
+Type: filesandordirs; Name: "{app}\revit"
 Type: dirifempty; Name: "{app}"
 
 [Code]
-procedure WriteRevitManifest;
+var
+  RevitPage: TInputOptionWizardPage;
+  RevitVersions: TArrayOfString;
+
+function IsRevitInstalled(Year: String): Boolean;
+begin
+  Result :=
+    FileExists(ExpandConstant('{autopf}\Autodesk\Revit ' + Year + '\Revit.exe')) or
+    DirExists(ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + Year));
+end;
+
+procedure InitializeWizard;
+var
+  I: Integer;
+  AnyDetected: Boolean;
+begin
+  ExtractTemporaryFile('supported-versions.txt');
+  if not LoadStringsFromFile(ExpandConstant('{tmp}\supported-versions.txt'), RevitVersions) then
+    RaiseException('The supported Revit version list is missing.');
+
+  RevitPage := CreateInputOptionPage(
+    wpSelectDir,
+    'Choose Revit versions',
+    'Select every Revit release that should load OPAL.',
+    'Installed versions are selected automatically. You can also select a custom installation.',
+    False,
+    True);
+
+  AnyDetected := False;
+  for I := 0 to GetArrayLength(RevitVersions) - 1 do
+  begin
+    RevitPage.Add('Revit ' + RevitVersions[I]);
+    RevitPage.Values[I] := IsRevitInstalled(RevitVersions[I]);
+    AnyDetected := AnyDetected or RevitPage.Values[I];
+  end;
+
+  if not AnyDetected then
+    for I := 0 to GetArrayLength(RevitVersions) - 1 do
+      RevitPage.Values[I] := True;
+end;
+
+procedure WriteRevitManifest(Year: String);
 var
   DirectoryName: String;
   ManifestPath: String;
   AssemblyPath: String;
   Contents: String;
 begin
-  DirectoryName := ExpandConstant('{userappdata}\Autodesk\Revit\Addins\2027');
+  DirectoryName := ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + Year);
   ForceDirectories(DirectoryName);
   ManifestPath := DirectoryName + '\OPAL.addin';
-  AssemblyPath := ExpandConstant('{app}\bootstrap\Opal.Revit.Bootstrap.dll');
+  AssemblyPath := ExpandConstant('{app}\revit\' + Year + '\bootstrap\Opal.Revit.Bootstrap.dll');
   StringChangeEx(AssemblyPath, '&', '&amp;', True);
   StringChangeEx(AssemblyPath, '<', '&lt;', True);
   StringChangeEx(AssemblyPath, '>', '&gt;', True);
@@ -75,7 +118,24 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  I: Integer;
 begin
   if CurStep = ssPostInstall then
-    WriteRevitManifest;
+    for I := 0 to GetArrayLength(RevitVersions) - 1 do
+      if RevitPage.Values[I] then
+        WriteRevitManifest(RevitVersions[I])
+      else
+        DeleteFile(ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + RevitVersions[I] + '\OPAL.addin'));
+end;
+
+function InitializeUninstall: Boolean;
+var
+  I: Integer;
+  InstalledVersions: TArrayOfString;
+begin
+  if LoadStringsFromFile(ExpandConstant('{app}\revit\supported-versions.txt'), InstalledVersions) then
+    for I := 0 to GetArrayLength(InstalledVersions) - 1 do
+      DeleteFile(ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + InstalledVersions[I] + '\OPAL.addin'));
+  Result := True;
 end;

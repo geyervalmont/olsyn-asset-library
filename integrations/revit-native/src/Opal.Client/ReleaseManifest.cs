@@ -11,7 +11,11 @@ public sealed record ReleaseAsset(
 public sealed record ReleaseManifest(
     [property: JsonPropertyName("version")] string Version,
     [property: JsonPropertyName("published_at")] DateTimeOffset PublishedAt,
+    [property: JsonPropertyName("revit_version")] int RevitVersion,
     [property: JsonPropertyName("minimum_revit")] int MinimumRevit,
+    [property: JsonPropertyName("target_framework")] string TargetFramework,
+    [property: JsonPropertyName("runtime")] string Runtime,
+    [property: JsonPropertyName("verification")] string Verification,
     [property: JsonPropertyName("commit")] string Commit,
     [property: JsonPropertyName("notes")] string Notes,
     [property: JsonPropertyName("channel")] string Channel,

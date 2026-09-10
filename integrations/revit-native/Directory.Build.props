@@ -1,6 +1,10 @@
 <Project>
   <PropertyGroup>
     <Version Condition="'$(Version)' == ''">0.1.0.0</Version>
+    <RevitYear Condition="'$(RevitYear)' == ''">2027</RevitYear>
+    <RevitApiVersion Condition="'$(RevitApiVersion)' == ''">2027.2.0</RevitApiVersion>
+    <RevitTargetFramework Condition="'$(RevitTargetFramework)' == ''">net10.0-windows7.0</RevitTargetFramework>
+    <OpalClientTargetFramework Condition="'$(OpalClientTargetFramework)' == ''">net10.0</OpalClientTargetFramework>
     <AssemblyVersion>$(Version)</AssemblyVersion>
     <FileVersion>$(Version)</FileVersion>
     <InformationalVersion>$(Version)+$(SourceRevisionId)</InformationalVersion>
@@ -10,5 +14,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <DefineConstants>$(DefineConstants);REVIT_$(RevitYear)</DefineConstants>
   </PropertyGroup>
 </Project>

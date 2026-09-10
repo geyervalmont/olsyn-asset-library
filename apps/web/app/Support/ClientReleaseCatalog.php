@@ -13,17 +13,22 @@ class ClientReleaseCatalog
     /**
      * @return array<string, mixed>
      */
-    public function latest(string $client, string $channel): array
+    public function latest(string $client, string $channel, ?int $revitVersion = null): array
     {
         $config = $this->config($client, $channel);
-        $cacheKey = "client-release.{$client}.{$channel}";
+        $manifestName = $revitVersion === null ? 'release-manifest.json' : "release-manifest-{$revitVersion}.json";
+        $cacheKey = "client-release.{$client}.{$channel}.".($revitVersion ?? 'legacy');
+
+        if ($revitVersion !== null) {
+            $this->assertSupportedVersion($client, $revitVersion);
+        }
 
         /** @var array<string, mixed> $manifest */
-        $manifest = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($config): array {
+        $manifest = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($config, $manifestName): array {
             $response = Http::acceptJson()->timeout(10)->retry(2, 200)->get($this->githubUrl(
                 $config['repository'],
                 $config['tag'],
-                'release-manifest.json',
+                $manifestName,
             ));
 
             try {
@@ -47,6 +52,15 @@ class ClientReleaseCatalog
             }
         }
 
+        if ($revitVersion !== null && (int) ($manifest['revit_version'] ?? 0) !== $revitVersion) {
+            throw new RuntimeException("The Revit {$revitVersion} release manifest targets the wrong host version.");
+        }
+
+        $downloadRoute = $revitVersion === null ? 'revit.download.legacy' : 'revit.download';
+        $downloadParameters = $revitVersion === null
+            ? ['channel' => $channel]
+            : ['revitVersion' => $revitVersion, 'channel' => $channel];
+
         return [
             ...Arr::except($manifest, ['installer', 'package']),
             'client' => $client,
@@ -54,26 +68,32 @@ class ClientReleaseCatalog
             'channel_label' => $config['label'],
             'installer' => [
                 ...$this->asset($manifest['installer'], 'installer'),
-                'url' => route('revit.download', ['channel' => $channel, 'asset' => 'installer']),
+                'url' => route($downloadRoute, [...$downloadParameters, 'asset' => 'installer']),
             ],
             'package' => [
                 ...$this->asset($manifest['package'], 'package'),
-                'url' => route('revit.download', ['channel' => $channel, 'asset' => 'package']),
+                'url' => route($downloadRoute, [...$downloadParameters, 'asset' => 'package']),
             ],
         ];
     }
 
-    public function downloadUrl(string $client, string $channel, string $asset): string
+    public function downloadUrl(string $client, string $channel, string $asset, ?int $revitVersion = null): string
     {
         abort_unless(in_array($asset, ['installer', 'package'], true), 404);
 
         $config = $this->config($client, $channel);
-        $release = $this->latest($client, $channel);
+        $release = $this->latest($client, $channel, $revitVersion);
         $name = $release[$asset]['name'] ?? null;
 
         abort_unless(is_string($name) && $name !== '', 503, 'The requested client download is unavailable.');
 
         return $this->githubUrl($config['repository'], $config['tag'], $name);
+    }
+
+    private function assertSupportedVersion(string $client, int $revitVersion): void
+    {
+        $versions = config("opal.clients.{$client}.supported_versions", []);
+        abort_unless(is_array($versions) && array_key_exists($revitVersion, $versions), 404);
     }
 
     /**

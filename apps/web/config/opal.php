@@ -4,6 +4,21 @@ use App\Jobs\BuildVariantPackage;
 use App\Jobs\DownscaleRepresentation;
 use App\Jobs\RenderPreview;
 
+$revitMatrix = json_decode(
+    (string) file_get_contents(__DIR__.'/revit-versions.json'),
+    true,
+    512,
+    JSON_THROW_ON_ERROR,
+);
+$supportedRevitVersions = [];
+
+foreach ($revitMatrix['versions'] as $target) {
+    $supportedRevitVersions[(int) $target['year']] = [
+        'runtime' => $target['runtime'],
+        'verification' => $target['verification'] === 'host' ? 'Tested in Revit' : 'Build verified',
+    ];
+}
+
 return [
 
     /*
@@ -134,6 +149,8 @@ return [
         'revit' => [
             'repository' => env('OPAL_REVIT_RELEASE_REPOSITORY', 'geyervalmont/olsyn-asset-library'),
             'default_channel' => env('OPAL_REVIT_RELEASE_CHANNEL', 'development'),
+            'default_version' => (int) $revitMatrix['default_year'],
+            'supported_versions' => $supportedRevitVersions,
             'channels' => [
                 'development' => [
                     'label' => 'Development',
