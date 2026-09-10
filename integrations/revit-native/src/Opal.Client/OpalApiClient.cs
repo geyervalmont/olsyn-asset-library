@@ -51,8 +51,8 @@ public sealed class OpalApiClient : IDisposable
     public Task<LinkPoll> PollLinkAsync(LinkStart link, CancellationToken cancellationToken = default) =>
         SendAsync<LinkPoll>(HttpMethod.Get, $"api/v1/link/{Uri.EscapeDataString(link.Code)}?secret={Uri.EscapeDataString(link.Secret)}", null, dataEnvelope: false, cancellationToken);
 
-    public Task<ReleaseManifest> LatestReleaseAsync(string channel, int revitVersion, CancellationToken cancellationToken = default) =>
-        SendAsync<ReleaseManifest>(HttpMethod.Get, $"api/v1/client-releases/revit/{revitVersion}/{Uri.EscapeDataString(channel)}", null, dataEnvelope: false, cancellationToken);
+    public Task<ReleaseManifest> LatestReleaseAsync(int revitVersion, CancellationToken cancellationToken = default) =>
+        SendAsync<ReleaseManifest>(HttpMethod.Get, $"api/v1/client-releases/revit/{revitVersion}", null, dataEnvelope: false, cancellationToken);
 
     public Task<JsonElement> MeAsync(CancellationToken cancellationToken = default) =>
         SendElementAsync(HttpMethod.Get, "api/v1/me", null, dataEnvelope: false, cancellationToken);

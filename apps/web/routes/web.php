@@ -17,15 +17,22 @@ if (app()->environment(['local', 'testing'])) {
 
 Route::get('prismfs/drives/{drive:slug}/manifest.yaml', PrismfsManifestController::class)->name('prismfs.drives.manifest');
 Route::post('prismfs/drives/{drive:slug}/accesses', PrismfsAccessController::class)->name('prismfs.drives.accesses');
-Route::get('downloads/revit/{revitVersion}/{channel}/{asset}', [RevitDownloadController::class, 'show'])
+Route::get('downloads/revit/{asset}', [RevitDownloadController::class, 'show'])
+    ->whereIn('asset', ['installer', 'package'])
+    ->name('revit.download');
+Route::get('downloads/revit/{revitVersion}/{asset}', [RevitDownloadController::class, 'showVersion'])
+    ->whereIn('revitVersion', array_map('strval', array_keys(config('opal.clients.revit.supported_versions', []))))
+    ->whereIn('asset', ['installer', 'package'])
+    ->name('revit.download.version');
+Route::get('downloads/revit/{revitVersion}/{channel}/{asset}', [RevitDownloadController::class, 'legacyVersionChannel'])
     ->whereIn('revitVersion', array_map('strval', array_keys(config('opal.clients.revit.supported_versions', []))))
     ->whereIn('channel', ['development', 'stable'])
     ->whereIn('asset', ['installer', 'package'])
-    ->name('revit.download');
-Route::get('downloads/revit/{channel}/{asset}', [RevitDownloadController::class, 'legacy'])
+    ->name('revit.download.legacy-version-channel');
+Route::get('downloads/revit/{channel}/{asset}', [RevitDownloadController::class, 'legacyChannel'])
     ->whereIn('channel', ['development', 'stable'])
     ->whereIn('asset', ['installer', 'package'])
-    ->name('revit.download.legacy');
+    ->name('revit.download.legacy-channel');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'dashboard')->name('dashboard');

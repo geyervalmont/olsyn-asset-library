@@ -21,7 +21,6 @@ Check("config round trips account, server and dev mode", () =>
         Token = "secret",
         AccountEmail = "dev@example.com",
         DeveloperMode = true,
-        UpdateChannel = "development",
     });
     var loaded = store.Load();
     Require(loaded.ServerUrl == "http://asset-library.test");
@@ -54,7 +53,7 @@ Check("legacy and matrix-aware clients update beside their bootstrap", () =>
 Check("release models deserialize OPAL manifest names", () =>
 {
     var json = """
-        {"version":"0.1.0.12","published_at":"2026-09-09T00:00:00Z","revit_version":2027,"minimum_revit":2027,"target_framework":"net10.0-windows7.0","runtime":".NET 10","verification":"host","commit":"abc","notes":"test","channel":"development","installer":{"name":"setup.exe","sha256":"aa","bytes":1,"url":"https://opal.test/i"},"package":{"name":"package.zip","sha256":"bb","bytes":2,"url":"https://opal.test/p"}}
+        {"version":"0.1.0.12","published_at":"2026-09-09T00:00:00Z","revit_version":2027,"minimum_revit":2027,"target_framework":"net10.0-windows7.0","runtime":".NET 10","verification":"host","commit":"abc","notes":"test","channel":"production","installer":{"name":"setup.exe","sha256":"aa","bytes":1,"url":"https://opal.test/i"},"package":{"name":"package.zip","sha256":"bb","bytes":2,"url":"https://opal.test/p"}}
         """;
     var release = System.Text.Json.JsonSerializer.Deserialize<ReleaseManifest>(json)!;
     Require(release.Version == "0.1.0.12");

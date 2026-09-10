@@ -11,7 +11,6 @@ public sealed class AppSettings
     public string AccountEmail { get; set; } = string.Empty;
     public string DriveSlug { get; set; } = "studio-share";
     public string MountPath { get; set; } = @"M:\";
-    public string UpdateChannel { get; set; } = "development";
     public bool AutoUpdate { get; set; } = true;
     public bool DeveloperMode { get; set; }
 

@@ -148,19 +148,10 @@ return [
     'clients' => [
         'revit' => [
             'repository' => env('OPAL_REVIT_RELEASE_REPOSITORY', 'geyervalmont/olsyn-asset-library'),
-            'default_channel' => env('OPAL_REVIT_RELEASE_CHANNEL', 'development'),
+            'tag' => env('OPAL_REVIT_RELEASE_TAG', 'revit-latest'),
+            'label' => 'Production',
             'default_version' => (int) $revitMatrix['default_year'],
             'supported_versions' => $supportedRevitVersions,
-            'channels' => [
-                'development' => [
-                    'label' => 'Development',
-                    'tag' => env('OPAL_REVIT_DEVELOPMENT_TAG', 'revit-development'),
-                ],
-                'stable' => [
-                    'label' => 'Stable',
-                    'tag' => env('OPAL_REVIT_STABLE_TAG', 'revit-stable'),
-                ],
-            ],
         ],
     ],
 

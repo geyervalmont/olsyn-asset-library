@@ -19,7 +19,6 @@ public sealed class SettingsWindow : Window
     private readonly TextBox mount = Input();
     private readonly CheckBox autoUpdate = new() { Content = "Download updates automatically", Margin = new Thickness(0, 8, 0, 8) };
     private readonly TextBox server = Input();
-    private readonly ComboBox channel = new() { ItemsSource = new[] { "development", "stable" }, MinWidth = 180, Margin = new Thickness(0, 4, 0, 12) };
     private readonly StackPanel developer = new() { Visibility = Visibility.Collapsed };
     private readonly Button accountAction = Button("Connect account");
     private readonly DispatcherTimer refresh;
@@ -43,7 +42,6 @@ public sealed class SettingsWindow : Window
         mount.Text = settings.MountPath;
         autoUpdate.IsChecked = settings.AutoUpdate;
         server.Text = settings.ServerUrl;
-        channel.SelectedItem = settings.UpdateChannel;
         developer.Visibility = settings.DeveloperMode ? Visibility.Visible : Visibility.Collapsed;
 
         var version = Text($"OPAL {BuildInfo.Version} · Revit {runtime.RevitVersion}", 12, FontWeights.Normal);
@@ -81,8 +79,6 @@ public sealed class SettingsWindow : Window
         developer.Children.Add(Text("Use these only for local or staging testing. HTTP is accepted so a local server can be used.", 12));
         developer.Children.Add(Label("OPAL server URL"));
         developer.Children.Add(server);
-        developer.Children.Add(Label("Update channel"));
-        developer.Children.Add(channel);
         body.Children.Add(developer);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 28, 0, 0) };
@@ -215,7 +211,7 @@ public sealed class SettingsWindow : Window
             }
             else if (!check.Available)
             {
-                MessageBox.Show("This is the latest OPAL version for the selected channel.", "OPAL update");
+                MessageBox.Show("This is the latest OPAL version.", "OPAL update");
             }
             else
             {
@@ -277,7 +273,6 @@ public sealed class SettingsWindow : Window
             runtime.Settings.DriveSlug = settings.DriveSlug;
             runtime.Settings.MountPath = settings.MountPath;
             runtime.Settings.AutoUpdate = settings.AutoUpdate;
-            runtime.Settings.UpdateChannel = settings.UpdateChannel;
             runtime.Settings.DeveloperMode = settings.DeveloperMode;
         }
     }
@@ -291,7 +286,6 @@ public sealed class SettingsWindow : Window
         DriveSlug = drive.Text.Trim(),
         MountPath = mount.Text.Trim(),
         AutoUpdate = autoUpdate.IsChecked == true,
-        UpdateChannel = channel.SelectedItem as string ?? "development",
         DeveloperMode = developer.Visibility == Visibility.Visible,
     };
 

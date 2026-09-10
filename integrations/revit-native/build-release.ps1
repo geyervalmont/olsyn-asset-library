@@ -4,7 +4,6 @@ param(
     [string] $Configuration = "Release",
     [string] $OutputDirectory = "artifacts/revit",
     [string] $Commit = "local",
-    [string] $Channel = "development",
     [string] $SigningCertificateBase64 = "",
     [string] $SigningPassword = ""
 )
@@ -138,7 +137,7 @@ try {
             verification = [string] $target.verification
             commit = $Commit
             notes = "Native OPAL connector for Revit $year. Feature code is shared across every supported Revit build."
-            channel = $Channel
+            channel = "production"
             installer = [ordered]@{
                 name = "OPAL-Revit-Setup.exe"
                 sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()

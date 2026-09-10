@@ -15,9 +15,8 @@ compiled against the exact API and runtime profile for each Revit year.
 
 The settings window shows the active account, server connection, document and
 update state. Choose **Change account** to disconnect and relink. Click the
-version line five times to reveal developer-only server URL and release-channel
-controls; this permits local HTTP endpoints without presenting them to normal
-users.
+version line five times to reveal the developer-only server URL control; this
+permits local HTTP endpoints without presenting them to normal users.
 
 ## Updates
 
@@ -33,8 +32,10 @@ layout. Existing 2027 clients can therefore take the automatic update safely;
 running the universal installer later migrates their bootstrap and state into
 the year-scoped layout.
 
-The development channel is rebuilt on every push to `main`. Production can be
-promoted separately to the `revit-stable` GitHub release tag.
+There is one production release stream. Every push to `main` rebuilds and
+publishes the `revit-latest` GitHub release; clients discover the latest package
+through the canonical OPAL endpoint for their Revit year. Old development and
+stable URLs remain server-side migration aliases, but are not user choices.
 
 ## Build
 

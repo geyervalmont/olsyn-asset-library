@@ -13,11 +13,11 @@ class ClientReleaseCatalog
     /**
      * @return array<string, mixed>
      */
-    public function latest(string $client, string $channel, ?int $revitVersion = null): array
+    public function latest(string $client, ?int $revitVersion = null): array
     {
-        $config = $this->config($client, $channel);
+        $config = $this->config($client);
         $manifestName = $revitVersion === null ? 'release-manifest.json' : "release-manifest-{$revitVersion}.json";
-        $cacheKey = "client-release.{$client}.{$channel}.".($revitVersion ?? 'legacy');
+        $cacheKey = "client-release.{$client}.".($revitVersion ?? 'default');
 
         if ($revitVersion !== null) {
             $this->assertSupportedVersion($client, $revitVersion);
@@ -56,16 +56,15 @@ class ClientReleaseCatalog
             throw new RuntimeException("The Revit {$revitVersion} release manifest targets the wrong host version.");
         }
 
-        $downloadRoute = $revitVersion === null ? 'revit.download.legacy' : 'revit.download';
+        $downloadRoute = $revitVersion === null ? 'revit.download' : 'revit.download.version';
         $downloadParameters = $revitVersion === null
-            ? ['channel' => $channel]
-            : ['revitVersion' => $revitVersion, 'channel' => $channel];
+            ? []
+            : ['revitVersion' => $revitVersion];
 
         return [
             ...Arr::except($manifest, ['installer', 'package']),
             'client' => $client,
-            'channel' => $channel,
-            'channel_label' => $config['label'],
+            'release_label' => $config['label'],
             'installer' => [
                 ...$this->asset($manifest['installer'], 'installer'),
                 'url' => route($downloadRoute, [...$downloadParameters, 'asset' => 'installer']),
@@ -77,12 +76,12 @@ class ClientReleaseCatalog
         ];
     }
 
-    public function downloadUrl(string $client, string $channel, string $asset, ?int $revitVersion = null): string
+    public function downloadUrl(string $client, string $asset, ?int $revitVersion = null): string
     {
         abort_unless(in_array($asset, ['installer', 'package'], true), 404);
 
-        $config = $this->config($client, $channel);
-        $release = $this->latest($client, $channel, $revitVersion);
+        $config = $this->config($client);
+        $release = $this->latest($client, $revitVersion);
         $name = $release[$asset]['name'] ?? null;
 
         abort_unless(is_string($name) && $name !== '', 503, 'The requested client download is unavailable.');
@@ -99,17 +98,15 @@ class ClientReleaseCatalog
     /**
      * @return array{repository: string, tag: string, label: string}
      */
-    private function config(string $client, string $channel): array
+    private function config(string $client): array
     {
         $clientConfig = config("opal.clients.{$client}");
-        $channelConfig = config("opal.clients.{$client}.channels.{$channel}");
-
-        abort_unless(is_array($clientConfig) && is_array($channelConfig), 404);
+        abort_unless(is_array($clientConfig), 404);
 
         return [
             'repository' => (string) $clientConfig['repository'],
-            'tag' => (string) $channelConfig['tag'],
-            'label' => (string) $channelConfig['label'],
+            'tag' => (string) $clientConfig['tag'],
+            'label' => (string) $clientConfig['label'],
         ];
     }
 

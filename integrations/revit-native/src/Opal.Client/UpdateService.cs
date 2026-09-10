@@ -11,7 +11,7 @@ public sealed class UpdateService(ConfigStore config, string installedVersion)
     public async Task<UpdateCheck> CheckAsync(AppSettings settings, int revitVersion, CancellationToken cancellationToken = default)
     {
         using var api = new OpalApiClient(settings);
-        var release = await api.LatestReleaseAsync(settings.UpdateChannel, revitVersion, cancellationToken).ConfigureAwait(false);
+        var release = await api.LatestReleaseAsync(revitVersion, cancellationToken).ConfigureAwait(false);
         var comparisonVersion = PendingVersion() is { } pending && Compare(pending, installedVersion) > 0
             ? pending
             : installedVersion;

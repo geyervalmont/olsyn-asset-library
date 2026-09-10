@@ -8,20 +8,30 @@ use RuntimeException;
 
 class ClientReleasesController
 {
-    public function show(string $channel, ClientReleaseCatalog $releases): JsonResponse
+    public function show(ClientReleaseCatalog $releases): JsonResponse
     {
-        return $this->response($releases, $channel);
+        return $this->response($releases);
     }
 
-    public function showVersion(int $revitVersion, string $channel, ClientReleaseCatalog $releases): JsonResponse
+    public function showVersion(int $revitVersion, ClientReleaseCatalog $releases): JsonResponse
     {
-        return $this->response($releases, $channel, $revitVersion);
+        return $this->response($releases, $revitVersion);
     }
 
-    private function response(ClientReleaseCatalog $releases, string $channel, ?int $revitVersion = null): JsonResponse
+    public function legacyChannel(string $channel, ClientReleaseCatalog $releases): JsonResponse
+    {
+        return $this->response($releases);
+    }
+
+    public function legacyVersionChannel(int $revitVersion, string $channel, ClientReleaseCatalog $releases): JsonResponse
+    {
+        return $this->response($releases, $revitVersion);
+    }
+
+    private function response(ClientReleaseCatalog $releases, ?int $revitVersion = null): JsonResponse
     {
         try {
-            $release = $releases->latest('revit', $channel, $revitVersion);
+            $release = $releases->latest('revit', $revitVersion);
         } catch (RuntimeException $exception) {
             return response()->json(['message' => $exception->getMessage()], 503);
         }

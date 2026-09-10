@@ -5,7 +5,8 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Revit extension')] class extends Component {
+new #[Title('Revit extension')] class extends Component
+{
     /**
      * @return array<string, mixed>|null
      */
@@ -13,10 +14,7 @@ new #[Title('Revit extension')] class extends Component {
     public function release(): ?array
     {
         try {
-            return app(ClientReleaseCatalog::class)->latest(
-                'revit',
-                (string) config('opal.clients.revit.default_channel', 'development'),
-            );
+            return app(ClientReleaseCatalog::class)->latest('revit');
         } catch (RuntimeException) {
             return null;
         }
@@ -43,7 +41,7 @@ new #[Title('Revit extension')] class extends Component {
                         <h3>{{ __('OPAL for Revit') }}</h3>
                         <p>
                             @if ($this->release)
-                                {{ __('Version :version · :channel channel', ['version' => $this->release['version'], 'channel' => $this->release['channel_label']]) }}
+                                {{ __('Version :version', ['version' => $this->release['version']]) }}
                             @else
                                 {{ __('The first native installer is being prepared.') }}
                             @endif
