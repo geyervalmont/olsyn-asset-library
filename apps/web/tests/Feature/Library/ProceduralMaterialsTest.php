@@ -114,6 +114,38 @@ test('the studio renders immediately and refreshes after a recipe control change
     expect($baker->bakes)->toBe(2);
 });
 
+test('older masonry recipes gain new rendering defaults without losing stored values', function () {
+    app()->instance(ProceduralBaker::class, new FakeProceduralBaker);
+    $material = Material::factory()->inHouse()->create();
+    $variant = app(AddVariant::class)->handle($material, ['colourway' => 'Clay']);
+    Definition::factory()->create([
+        'variant_id' => $variant,
+        'generator' => 'masonry',
+        'parameters' => [
+            'seed' => 7,
+            'output' => ['width_px' => 1024, 'height_px' => 1024, 'width_mm' => 480, 'height_mm' => 172],
+            'recipe' => [
+                'unit_width_mm' => 230,
+                'unit_height_mm' => 76,
+                'joint_mm' => 10,
+                'bond' => 'running',
+                'unit_colours' => ['#B2593E'],
+                'joint_colour' => '#CDCAC0',
+                'roughness' => 0.51,
+                'edge_depth_mm' => 3,
+                'tone_variation' => 0.12,
+            ],
+        ],
+    ]);
+
+    Livewire::actingAs($this->editor)
+        ->test('pages::materials.studio', ['materialCode' => $material->code, 'variantCode' => $variant->code])
+        ->assertSet('generator', 'masonry')
+        ->assertSet('recipe.roughness', 0.51)
+        ->assertSet('recipe.surface_detail', 0.22)
+        ->assertSet('previewStatus', 'ready');
+});
+
 test('a procedural job creates a traceable candidate without approving it', function () {
     app()->instance(ProceduralBaker::class, new FakeProceduralBaker);
     $material = Material::factory()->create();
@@ -192,6 +224,8 @@ test('studio rejects cropped pattern dimensions and suggests a complete repeat',
         ->set('name', 'Cropped running bond')
         ->set('category_id', (string) $masonry->getKey())
         ->call('chooseGenerator', 'masonry')
+        ->assertSet('recipe.surface_detail', 0.22)
+        ->assertSee('Face texture')
         ->set('width_mm', 500)
         ->call('save')
         ->assertHasErrors(['width_mm']);

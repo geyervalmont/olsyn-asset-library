@@ -368,7 +368,7 @@ new #[Title('Material Studio')] class extends Component
     private function recipePayload(): array
     {
         $booleans = ['stagger', 'basket'];
-        $numbers = ['roughness', 'variation', 'texture_depth', 'unit_width_mm', 'unit_height_mm', 'joint_mm', 'edge_depth_mm', 'tone_variation', 'board_width_mm', 'board_length_mm', 'grain_strength', 'chip_size_mm', 'density', 'chip_depth_mm', 'thread_mm', 'depth_mm'];
+        $numbers = ['roughness', 'variation', 'texture_depth', 'unit_width_mm', 'unit_height_mm', 'joint_mm', 'edge_depth_mm', 'surface_detail', 'tone_variation', 'board_width_mm', 'board_length_mm', 'grain_strength', 'chip_size_mm', 'density', 'chip_depth_mm', 'thread_mm', 'depth_mm'];
         $recipe = $this->recipe;
 
         foreach ($recipe as $key => $value) {
@@ -396,7 +396,8 @@ new #[Title('Material Studio')] class extends Component
         }
 
         $this->generator = $definition->generator;
-        $this->recipe = is_array($definition->parameters['recipe'] ?? null) ? $definition->parameters['recipe'] : ProceduralRecipes::defaults($this->generator);
+        $storedRecipe = is_array($definition->parameters['recipe'] ?? null) ? $definition->parameters['recipe'] : [];
+        $this->recipe = array_replace(ProceduralRecipes::defaults($this->generator), $storedRecipe);
         $output = is_array($definition->parameters['output'] ?? null) ? $definition->parameters['output'] : [];
         $this->resolution = (int) ($output['width_px'] ?? 1024);
         $this->width_mm = (float) ($output['width_mm'] ?? $variant->effectiveTileWidthMm() ?? 1000);
@@ -526,6 +527,7 @@ new #[Title('Material Studio')] class extends Component
                         <label class="ui-studio-select"><span>{{ __('Bond') }}</span><select wire:model.live="recipe.bond"><option value="stack">{{ __('Stack') }}</option><option value="running">{{ __('Running') }}</option><option value="quarter">{{ __('Quarter') }}</option></select></label>
                         <x-ui.studio-colour :label="__('Joint colour')" model="recipe.joint_colour" :value="$recipe['joint_colour']" id="joint-colour" />
                         <x-ui.studio-slider :label="__('Roughness')" model="recipe.roughness" :value="$recipe['roughness']" />
+                        <x-ui.studio-slider :label="__('Face texture')" model="recipe.surface_detail" :value="$recipe['surface_detail']" />
                         <x-ui.studio-slider :label="__('Tone variation')" model="recipe.tone_variation" :value="$recipe['tone_variation']" />
                     @elseif ($generator === 'timber')
                         <div class="ui-studio-measure-grid">
@@ -601,9 +603,17 @@ new #[Title('Material Studio')] class extends Component
                     </div>
                 @else
                     @php
+                        $reliefMm = match ($generator) {
+                            'masonry' => (float) ($recipe['edge_depth_mm'] ?? 0),
+                            'terrazzo' => (float) ($recipe['chip_depth_mm'] ?? 0),
+                            'textile' => (float) ($recipe['depth_mm'] ?? 0),
+                            'paint' => (float) ($recipe['texture_depth'] ?? 0),
+                            default => 0.75,
+                        };
                         $previewSet = ['preview' => [
                             'key' => 'studio-'.$previewRevision,
                             'tile_mm' => max($width_mm, $height_mm),
+                            'displacement_scale' => min(0.08, $reliefMm / max($width_mm, $height_mm) * 2.2),
                             'finish' => match ($generator) { 'paint' => 'matte', 'timber' => 'wood', 'textile' => 'textile', default => 'default' },
                             ...$previewMaps,
                         ]];
@@ -611,7 +621,7 @@ new #[Title('Material Studio')] class extends Component
                     <div
                         class="ui-viewer ui-studio-live-viewer"
                         wire:key="studio-preview-{{ $previewRevision }}"
-                        x-data="materialViewer(@js(['sets' => $previewSet, 'objectSizeMm' => max($width_mm, $height_mm), 'framing' => 1.28, 'verticalBias' => 0.04]))"
+                        x-data="materialViewer(@js(['sets' => $previewSet, 'objectSizeMm' => max($width_mm, $height_mm), 'shape' => 'panel', 'shapeKey' => 'material-studio', 'framing' => 1.28, 'verticalBias' => 0.04]))"
                         x-effect="show('preview')"
                         data-test="studio-live-preview"
                     >

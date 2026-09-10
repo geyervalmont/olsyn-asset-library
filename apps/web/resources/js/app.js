@@ -113,6 +113,7 @@ const MODEL_URL = '/models/shader-ball.glb';
 // studio_small_09 from Poly Haven, CC0.
 const HDRI_URL = '/hdri/studio.hdr';
 const CACHE_LIMIT = 16;
+const preferredShapes = new Map();
 
 /**
  * How a finish behaves beyond its maps. Categories carry this: a carpet needs
@@ -217,11 +218,11 @@ const stage = {
             const material = new THREE.MeshPhysicalMaterial({ color: 0xcfcbc1, roughness: 0.8, metalness: 0 });
             const shapes = {
                 ball: await loadShaderBall(material),
-                sphere: sitOnGround(new THREE.Mesh(new THREE.SphereGeometry(1.1, 64, 32), material)),
+                sphere: sitOnGround(new THREE.Mesh(new THREE.SphereGeometry(1.1, 128, 64), material)),
                 // A slab rather than a plane: the sample keeps a face while
                 // the view turns, which a single-sided plane does not.
-                panel: sitOnGround(new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 0.07), material)),
-                cube: sitOnGround(new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6, 32, 32, 32), material)),
+                panel: sitOnGround(new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 0.07, 128, 128, 2), material)),
+                cube: sitOnGround(new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6, 96, 96, 96), material)),
             };
 
             Object.values(shapes).forEach((shape) => shape.traverse((object) => {
@@ -400,6 +401,9 @@ const stage = {
                 material.normalMap = maps.normal ?? null;
                 material.bumpMap = maps.normal ? null : (maps.bump ?? maps.height ?? null);
                 material.bumpScale = 0.03;
+                material.displacementMap = set.displacement_scale > 0 ? (maps.height ?? null) : null;
+                material.displacementScale = material.displacementMap ? set.displacement_scale : 0;
+                material.displacementBias = material.displacementMap ? -set.displacement_scale * 0.08 : 0;
                 material.roughnessMap = maps.roughness ?? null;
                 material.metalnessMap = maps.metallic ?? null;
                 material.aoMap = maps.ao ?? null;
@@ -556,7 +560,8 @@ document.addEventListener('alpine:init', () => {
     window.Alpine.data('materialViewer', (config) => ({
         sets: config.sets ?? {},
         objectSizeMm: config.objectSizeMm ?? 1000,
-        shape: config.shape ?? 'ball',
+        shapeKey: config.shapeKey ?? null,
+        shape: (config.shapeKey ? preferredShapes.get(config.shapeKey) : null) ?? config.shape ?? 'ball',
         framing: config.framing ?? 1.08,
         verticalBias: config.verticalBias ?? 0,
         zoom: config.zoom !== false,
@@ -622,7 +627,13 @@ document.addEventListener('alpine:init', () => {
                 this.status = 'ready';
             });
 
-            this.$watch('shape', (value) => stage.setShape(value));
+            this.$watch('shape', (value) => {
+                stage.setShape(value);
+
+                if (this.shapeKey) {
+                    preferredShapes.set(this.shapeKey, value);
+                }
+            });
         },
 
         destroy() {
