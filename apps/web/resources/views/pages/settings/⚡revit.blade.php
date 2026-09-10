@@ -69,6 +69,9 @@ new #[Title('Revit extension')] class extends Component
                     @else
                         <x-ui.button variant="primary" disabled>{{ __('Download coming shortly') }}</x-ui.button>
                     @endif
+                    <x-ui.button href="{{ route('link') }}" variant="secondary" data-test="link-revit">
+                        {{ __('Enter a connection code') }}
+                    </x-ui.button>
                 </div>
             </x-ui.panel>
 

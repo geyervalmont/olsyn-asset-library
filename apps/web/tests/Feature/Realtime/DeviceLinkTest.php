@@ -40,6 +40,7 @@ test('a client links to an account with a device code and collects its token onc
     expect($this->user->tokens()->where('name', 'Revit on HARRISON-VM')->exists())->toBeTrue();
 
     $this->actingAs($this->user)->get('/settings/api-tokens')->assertOk()->assertSee('Revit on HARRISON-VM');
+    $this->actingAs($this->user)->get('/settings/revit')->assertOk()->assertSee('Enter a connection code');
 });
 
 test('a wrong secret is not found, an expired code is gone, and a used code cannot be claimed again', function () {

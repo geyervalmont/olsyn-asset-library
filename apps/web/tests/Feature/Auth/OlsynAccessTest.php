@@ -103,6 +103,24 @@ it('links only prebound identities and never upgrades an existing account by ema
     $this->assertAuthenticatedAs($user);
 });
 
+it('returns to a pending device link after OIDC authentication', function () {
+    $user = User::factory()->create(['workos_id' => 'workos-owner']);
+    $claims = ['sub' => 'workos-owner', 'email' => $user->email, 'name' => 'Owner', 'exp' => time() + 3600];
+    $mock = Mockery::mock(OlsynOidc::class);
+    $mock->shouldReceive('exchange')->andReturn($claims);
+    app()->instance(OlsynOidc::class, $mock);
+    Http::fake(['policy.example.test/*' => Http::response(policyResponse())]);
+
+    $this->get('/link?code=ABCD-EFGH')->assertRedirect('/login');
+
+    $flow = ['state' => 'expected', 'nonce' => 'nonce', 'verifier' => 'verifier', 'created_at' => time()];
+    $this->withSession(['olsyn.oidc' => $flow])
+        ->get('/auth/callback?code=code&state=expected')
+        ->assertRedirect(url('/link?code=ABCD-EFGH'));
+
+    $this->assertAuthenticatedAs($user);
+});
+
 it('validates signed ID token issuer audience expiry and nonce', function () {
     $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
     openssl_pkey_export($key, $private);

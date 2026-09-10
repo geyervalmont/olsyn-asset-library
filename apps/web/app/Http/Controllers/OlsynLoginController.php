@@ -57,6 +57,6 @@ class OlsynLoginController extends Controller
         // Absolute lifetime; activity does not prolong the WorkOS-authenticated session.
         $request->session()->put('olsyn.login_expires_at', min((int) $claims['exp'], time() + 28800));
 
-        return redirect()->route('dashboard');
+        return redirect()->intended(route('dashboard'));
     }
 }
