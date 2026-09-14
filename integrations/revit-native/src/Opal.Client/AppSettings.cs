@@ -5,7 +5,10 @@ namespace Opal.Client;
 
 public sealed class AppSettings
 {
-    public string ServerUrl { get; set; } = "https://opal.olsyn.com";
+    public const string ProductionServerUrl = "https://opal.olsyn.com";
+
+    public string ServerUrl { get; set; } = ProductionServerUrl;
+    public bool UseCustomServer { get; set; }
     public string Token { get; set; } = string.Empty;
     public string AccountName { get; set; } = string.Empty;
     public string AccountEmail { get; set; } = string.Empty;
@@ -16,6 +19,9 @@ public sealed class AppSettings
 
     [JsonIgnore]
     public bool IsLinked => !string.IsNullOrWhiteSpace(Token);
+
+    [JsonIgnore]
+    public string EffectiveServerUrl => UseCustomServer ? ServerUrl : ProductionServerUrl;
 }
 
 public sealed class ConfigStore
@@ -46,7 +52,21 @@ public sealed class ConfigStore
 
         try
         {
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Path), Json) ?? new AppSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Path), Json) ?? new AppSettings();
+            // Earlier builds stored an arbitrary server as the primary endpoint
+            // and had no explicit custom-server switch. Production is
+            // now authoritative, so a token minted by that old endpoint must
+            // not be presented to opal.olsyn.com.
+            if (!settings.UseCustomServer &&
+                !settings.ServerUrl.Equals(AppSettings.ProductionServerUrl, StringComparison.OrdinalIgnoreCase) &&
+                settings.IsLinked)
+            {
+                settings.Token = string.Empty;
+                settings.AccountName = string.Empty;
+                settings.AccountEmail = string.Empty;
+                Save(settings);
+            }
+            return settings;
         }
         catch (JsonException)
         {
@@ -81,12 +101,15 @@ public sealed class ConfigStore
             var imported = new AppSettings
             {
                 ServerUrl = Read(root, "api") ?? "https://opal.olsyn.com",
-                Token = Read(root, "token") ?? string.Empty,
                 DriveSlug = Read(root, "drive") ?? "studio-share",
                 MountPath = Read(root, "mount") ?? @"M:\",
-                AccountEmail = root.TryGetProperty("user", out var user) ? Read(user, "email") ?? string.Empty : string.Empty,
-                AccountName = root.TryGetProperty("user", out user) ? Read(user, "name") ?? string.Empty : string.Empty,
             };
+            if (imported.ServerUrl.Equals(AppSettings.ProductionServerUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                imported.Token = Read(root, "token") ?? string.Empty;
+                imported.AccountEmail = root.TryGetProperty("user", out var user) ? Read(user, "email") ?? string.Empty : string.Empty;
+                imported.AccountName = root.TryGetProperty("user", out user) ? Read(user, "name") ?? string.Empty : string.Empty;
+            }
             Save(imported);
             return imported;
         }

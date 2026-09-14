@@ -59,3 +59,10 @@ test('a wrong secret is not found, an expired code is gone, and a used code cann
     $this->getJson("/api/v1/link/{$stale['code']}?secret={$stale['secret']}")->assertStatus(410);
     Livewire::actingAs($this->user)->test('pages::link', ['code' => $stale['code']])->call('claim')->assertHasErrors('code');
 });
+
+test('a shared office address can start links for more than ten Revit clients', function () {
+    foreach (range(1, 12) as $machine) {
+        $this->postJson('/api/v1/link', ['client' => 'revit', 'machine' => 'DESIGN-'.$machine])
+            ->assertCreated();
+    }
+});

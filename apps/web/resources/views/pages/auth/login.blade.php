@@ -2,6 +2,21 @@
     <div class="flex flex-col gap-6">
         <x-auth-header :title="__('Log in to your account')" :description="__('Enter your email and password below to log in')" />
 
+        @php
+            $intended = session('url.intended');
+            $pendingCode = null;
+            if (is_string($intended) && parse_url($intended, PHP_URL_PATH) === '/link') {
+                parse_str((string) parse_url($intended, PHP_URL_QUERY), $pendingQuery);
+                $pendingCode = $pendingQuery['code'] ?? null;
+            }
+        @endphp
+        @if (is_string($pendingCode))
+            <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950" data-test="pending-device-link">
+                <strong class="block">Revit is waiting</strong>
+                <span>After signing in, you will return to connection code <code>{{ $pendingCode }}</code> to approve it.</span>
+            </div>
+        @endif
+
         <!-- Session Status -->
         <x-auth-session-status class="text-center" :status="session('status')" />
 

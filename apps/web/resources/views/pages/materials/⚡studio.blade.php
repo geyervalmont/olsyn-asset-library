@@ -2,10 +2,15 @@
 
 use App\Actions\Materials\AddVariant;
 use App\Actions\Materials\CreateMaterial;
+use App\Actions\Clients\IssueClientCommand;
+use App\Enums\CommandType;
 use App\Jobs\BakeProceduralMaterial;
 use App\Library\Procedural\ProceduralBaker;
 use App\Library\Procedural\ProceduralRecipes;
+use App\Library\Procedural\StudioPreviewStore;
 use App\Models\Category;
+use App\Models\ClientCommand;
+use App\Models\ClientSession;
 use App\Models\Definition;
 use App\Models\Material;
 use App\Models\Supplier;
@@ -15,6 +20,7 @@ use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Validator;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -68,12 +74,22 @@ new #[Title('Material Studio')] class extends Component
 
     public int $previewRevision = 0;
 
+    public bool $libraryDestination = false;
+
+    public int $userId;
+
+    public ?int $revitSessionId = null;
+
+    public ?int $revitCommandId = null;
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->can('materials.contribute'), 403);
+        $this->userId = (int) auth()->id();
 
         if ($this->materialCode !== '') {
             $this->mode = 'existing';
+            $this->libraryDestination = true;
         }
 
         $this->mode = in_array($this->mode, ['new', 'existing'], true) ? $this->mode : 'new';
@@ -199,6 +215,78 @@ new #[Title('Material Studio')] class extends Component
         $this->recipe = ProceduralRecipes::defaults($this->generator);
         $this->resetValidation();
         $this->refreshPreview(app(ProceduralBaker::class));
+    }
+
+    /** @return Collection<int, ClientSession> */
+    #[Computed]
+    public function revitSessions(): Collection
+    {
+        return ClientSession::query()->where('user_id', $this->userId)->live()->orderByDesc('last_seen_at')->get();
+    }
+
+    #[Computed]
+    public function revitCommand(): ?ClientCommand
+    {
+        return $this->revitCommandId === null
+            ? null
+            : ClientCommand::query()->with('session')->whereKey($this->revitCommandId)->where('issued_by', $this->userId)->first();
+    }
+
+    public function applyBlockedReason(): ?string
+    {
+        return $this->revitSessions->isEmpty()
+            ? __('No Revit connected. Open OPAL Settings in Revit and connect your account.')
+            : null;
+    }
+
+    public function applyInRevit(
+        ProceduralBaker $baker,
+        StudioPreviewStore $previews,
+        IssueClientCommand $issue,
+    ): void {
+        $this->validate($this->recipeRules());
+
+        if (! $this->validateRepeat()) {
+            return;
+        }
+
+        $session = $this->revitSessions->firstWhere('id', $this->revitSessionId) ?? $this->revitSessions->first();
+
+        if ($session === null) {
+            Flux::toast(variant: 'warning', text: $this->applyBlockedReason());
+
+            return;
+        }
+
+        if (! $baker->available()) {
+            Flux::toast(variant: 'danger', text: __('The material engine is unavailable.'));
+
+            return;
+        }
+
+        $user = auth()->user();
+        abort_unless($user instanceof \App\Models\User, 403);
+        $label = trim($this->name) !== '' ? trim($this->name) : $this->generators()[$this->generator].' draft';
+        $studio = $previews->put($user, $baker->bake($this->definitionPayload()), $label);
+        $command = $issue->handle($session, $user, CommandType::Apply, ['studio' => $studio]);
+        $this->revitSessionId = $session->id;
+        $this->revitCommandId = $command->id;
+        unset($this->revitCommand);
+
+        Flux::toast(variant: 'success', text: __('Sent this draft to :revit. It has not been added to the library.', ['revit' => $session->label()]));
+    }
+
+    #[On('echo-private:user.{userId},.command.acked')]
+    #[On('echo-private:user.{userId},.command.completed')]
+    public function revitCommandUpdated(): void
+    {
+        unset($this->revitCommand);
+    }
+
+    #[On('echo-private:user.{userId},.session.updated')]
+    public function revitSessionsUpdated(): void
+    {
+        unset($this->revitSessions);
     }
 
     public function preview(ProceduralBaker $baker): void
@@ -470,9 +558,9 @@ new #[Title('Material Studio')] class extends Component
 <section class="ui-material-studio">
     <div class="ui-material-studio__head">
         <div>
-            <x-ui.eyebrow>{{ __('Material authoring') }}</x-ui.eyebrow>
-            <h1>{{ __('Studio') }}</h1>
-            <p>{{ __('Tune a physically scaled recipe and see the production engine respond as you work.') }}</p>
+            <x-ui.eyebrow>{{ __('Design workspace') }}</x-ui.eyebrow>
+            <h1>{{ __('Material Studio') }}</h1>
+            <p>{{ __('Author a physically scaled finish, inspect every channel, then apply the draft directly to Revit or deliberately add it to the shared library.') }}</p>
         </div>
         <div class="ui-material-studio__head-actions">
             <span class="ui-studio-engine" data-status="{{ $previewStatus }}" aria-live="polite">
@@ -480,7 +568,7 @@ new #[Title('Material Studio')] class extends Component
                 <span wire:loading.remove>{{ $previewStatus === 'ready' ? __('Live preview') : ($previewStatus === 'waiting' ? __('Complete a valid repeat') : __('Preview unavailable')) }}</span>
                 <span wire:loading>{{ __('Updating material…') }}</span>
             </span>
-            <x-ui.button :href="route('materials.create')" variant="quiet" wire:navigate>{{ __('Import maps') }}</x-ui.button>
+            <x-ui.button :href="route('materials.create')" variant="quiet" wire:navigate>{{ __('Import an existing texture set') }}</x-ui.button>
         </div>
     </div>
 
@@ -582,11 +670,11 @@ new #[Title('Material Studio')] class extends Component
             <main class="ui-studio-canvas">
                 <div class="ui-studio-canvas__bar">
                     <div>
-                        <strong>{{ __('Live material') }}</strong>
+                        <strong>{{ __('Working material') }}</strong>
                         <span>{{ number_format($width_mm, 1) }} × {{ number_format($height_mm, 1) }} mm repeat</span>
                     </div>
                     <div class="ui-studio-canvas__tools">
-                        <span>{{ __('Drag to rotate · scroll to zoom') }}</span>
+                        <span>{{ __('Drag to orbit · scroll to inspect detail') }}</span>
                         <button type="button" wire:click="preview" data-test="preview-recipe">{{ __('Refresh') }}</button>
                     </div>
                 </div>
@@ -629,7 +717,7 @@ new #[Title('Material Studio')] class extends Component
                             <div class="ui-studio-view-tools__group">
                                 <span>{{ __('Preview on') }}</span>
                                 <div role="group" aria-label="{{ __('Preview geometry') }}">
-                                    @foreach (['ball' => __('Shader ball'), 'sphere' => __('Sphere'), 'panel' => __('Flat sample'), 'cube' => __('Cube')] as $shape => $label)
+                                    @foreach (['ball' => __('Sculpted ball'), 'sphere' => __('Sphere'), 'panel' => __('Flat sample'), 'cube' => __('Cube')] as $shape => $label)
                                         <button
                                             type="button"
                                             x-on:click="shape = '{{ $shape }}'; inspectSurface()"
@@ -668,7 +756,7 @@ new #[Title('Material Studio')] class extends Component
                 @endif
 
                 <div class="ui-studio-canvas__foot">
-                    <span><i></i>{{ __('Preview uses the same deterministic engine as the production bake') }}</span>
+                    <span><i></i>{{ __('Draft · nothing is stored in the material library') }}</span>
                     <code>seed {{ $seed }}</code>
                 </div>
                 <div class="ui-studio-loading" wire:loading.flex>
@@ -690,12 +778,14 @@ new #[Title('Material Studio')] class extends Component
                     </div>
                 </details>
 
-                <details open>
-                    <summary><span>03</span><strong>{{ __('Library destination') }}</strong><i></i></summary>
+                @if ($libraryDestination)
+                <details open data-test="studio-library-destination">
+                    <summary><span>03</span><strong>{{ __('Add to material library') }}</strong><i></i></summary>
                     <div class="ui-studio-details">
+                        <p class="ui-studio-hint">{{ __('This creates or updates a governed library record and queues a candidate for review. Use it only when this finish should be reusable by the wider team.') }}</p>
                         <div class="ui-segment ui-studio-mode" role="group" aria-label="{{ __('Recipe destination') }}">
-                            <button type="button" wire:click="$set('mode', 'new')" @class(['is-active' => $mode === 'new'])>{{ __('New') }}</button>
-                            <button type="button" wire:click="$set('mode', 'existing')" @class(['is-active' => $mode === 'existing'])>{{ __('Existing') }}</button>
+                            <button type="button" wire:click="$set('mode', 'new')" @class(['is-active' => $mode === 'new'])>{{ __('New material') }}</button>
+                            <button type="button" wire:click="$set('mode', 'existing')" @class(['is-active' => $mode === 'existing'])>{{ __('Improve existing') }}</button>
                         </div>
 
                         @if ($mode === 'new')
@@ -720,11 +810,43 @@ new #[Title('Material Studio')] class extends Component
                         @endif
                     </div>
                 </details>
+                @endif
 
                 <div class="ui-studio-publish">
-                    <div><span></span><p><strong>{{ __('Saved as a candidate') }}</strong>{{ __('Nothing is approved or published automatically.') }}</p></div>
-                    <x-ui.button type="submit" data-test="save-recipe">{{ __('Save recipe & bake') }}</x-ui.button>
-                    <x-ui.button :href="route('materials.index')" variant="ghost" size="sm" wire:navigate>{{ __('Cancel') }}</x-ui.button>
+                    <div class="ui-studio-publish__state"><span></span><p><strong>{{ __('Unsaved working draft') }}</strong>{{ __('Apply it without creating a library record.') }}</p></div>
+
+                    <x-ui.button
+                        type="button"
+                        wire:click="applyInRevit"
+                        variant="primary"
+                        data-test="studio-apply-revit"
+                        :disabled="$this->applyBlockedReason() !== null"
+                    >{{ __('Apply draft to selected Revit material') }}</x-ui.button>
+
+                    @if ($this->applyBlockedReason())
+                        <p class="ui-studio-action-note">{{ $this->applyBlockedReason() }}</p>
+                    @elseif ($this->revitSessions->count() > 1)
+                        <label class="ui-studio-select"><span>{{ __('Send to') }}</span><select wire:model.live="revitSessionId">@foreach ($this->revitSessions as $session)<option value="{{ $session->id }}">{{ $session->label() }}</option>@endforeach</select></label>
+                    @else
+                        <p class="ui-studio-action-note ui-studio-action-note--ready">{{ __('Ready: :session', ['session' => $this->revitSessions->first()->label()]) }}</p>
+                    @endif
+
+                    @if ($this->revitCommand)
+                        <p class="ui-studio-command" data-status="{{ $this->revitCommand->status->value }}">
+                            <span class="ui-status-light ui-status-light--{{ $this->revitCommand->status->value }}"></span>
+                            <strong>{{ $this->revitCommand->status->label() }}</strong>
+                            <span>{{ $this->revitCommand->message }}</span>
+                        </p>
+                    @endif
+
+                    <div class="ui-studio-publish__divider"><span>{{ __('Shared library') }}</span></div>
+                    @if ($libraryDestination)
+                        <x-ui.button type="submit" variant="secondary" data-test="save-recipe">{{ __('Bake candidate into library') }}</x-ui.button>
+                        <button type="button" class="ui-studio-text-action" wire:click="$set('libraryDestination', false)">{{ __('Keep as a draft instead') }}</button>
+                    @else
+                        <x-ui.button type="button" wire:click="$set('libraryDestination', true)" variant="quiet" data-test="open-library-destination">{{ __('Add this finish to the material library…') }}</x-ui.button>
+                    @endif
+                    <x-ui.button :href="route('materials.index')" variant="ghost" size="sm" wire:navigate>{{ __('Back to materials') }}</x-ui.button>
                 </div>
             </aside>
         </div>

@@ -32,6 +32,7 @@ use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -103,6 +104,14 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('material-embeddings', fn () => Limit::perMinute(max(1, (int) config('opal.embeddings.requests_per_minute', 60)))
             ->by((string) config('opal.embeddings.provider').':'.(string) config('opal.embeddings.model')));
+
+        // Offices share one public IP. Starting a link is limited by address,
+        // while polling is limited by the unguessable device code so several
+        // designers can connect at once without exhausting one shared bucket.
+        RateLimiter::for('device-link-start', fn (Request $request) => Limit::perMinute(30)
+            ->by((string) $request->ip()));
+        RateLimiter::for('device-link-poll', fn (Request $request) => Limit::perMinute(45)
+            ->by(strtoupper((string) $request->route('code'))));
 
         Livewire::addPersistentMiddleware([
             UseCurrentTenant::class,

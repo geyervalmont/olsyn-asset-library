@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
@@ -105,11 +104,10 @@ document.addEventListener('alpine:init', () => {
 /**
  * The material stage: one WebGL context for the whole app.
  *
- * A single canvas, shader ball and material move to whichever host is on
+ * A single canvas, sculpted sample and material move to whichever host is on
  * screen, so a library of thirty quick views costs one renderer, not thirty.
  * Pages swap texture maps; nothing else is rebuilt.
  */
-const MODEL_URL = '/models/shader-ball.glb';
 // studio_small_09 from Poly Haven, CC0.
 const HDRI_URL = '/hdri/studio.hdr';
 const CACHE_LIMIT = 16;
@@ -133,6 +131,167 @@ const FINISHES = {
     matte: { roughness: 0.92 },
     default: { roughness: 0.7 },
 };
+
+/**
+ * Project planar material maps from three axes and blend them by the surface
+ * normal. Curved samples no longer funnel every texel into a sphere pole, and
+ * the shader ball no longer exposes the UV islands in its source mesh.
+ */
+function enableSeamlessProjection(material) {
+    material.userData.opalProjection = { enabled: 1, scale: 1 };
+    material.customProgramCacheKey = () => 'opal-seamless-projection-v1';
+    material.onBeforeCompile = (shader) => {
+        const projection = material.userData.opalProjection;
+        shader.uniforms.opalProjectionEnabled = { value: projection.enabled };
+        shader.uniforms.opalProjectionScale = { value: projection.scale };
+        material.userData.opalShader = shader;
+
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>
+                varying vec3 vOpalWorldPosition;
+                varying vec3 vOpalWorldNormal;`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+                vOpalWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+                vOpalWorldNormal = normalize(mat3(modelMatrix) * objectNormal);`);
+
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+                varying vec3 vOpalWorldPosition;
+                varying vec3 vOpalWorldNormal;
+                uniform float opalProjectionEnabled;
+                uniform float opalProjectionScale;
+
+                vec3 opalBlendWeights(vec3 surfaceNormal) {
+                    vec3 weight = pow(abs(normalize(surfaceNormal)), vec3(8.0));
+                    return weight / max(weight.x + weight.y + weight.z, 0.0001);
+                }
+
+                vec4 opalSample(sampler2D textureSampler, vec3 position, vec3 surfaceNormal) {
+                    vec3 weight = opalBlendWeights(surfaceNormal);
+                    vec3 point = position * opalProjectionScale;
+                    vec2 uvX = point.zy * vec2(surfaceNormal.x < 0.0 ? -1.0 : 1.0, 1.0);
+                    vec2 uvY = point.xz * vec2(surfaceNormal.y < 0.0 ? -1.0 : 1.0, 1.0);
+                    vec2 uvZ = point.xy * vec2(surfaceNormal.z < 0.0 ? -1.0 : 1.0, 1.0);
+                    return texture2D(textureSampler, uvX) * weight.x
+                        + texture2D(textureSampler, uvY) * weight.y
+                        + texture2D(textureSampler, uvZ) * weight.z;
+                }
+
+                vec3 opalNormalSample(sampler2D textureSampler, vec3 position, vec3 surfaceNormal, vec2 strength) {
+                    vec3 n = normalize(surfaceNormal);
+                    vec3 weight = opalBlendWeights(n);
+                    vec3 point = position * opalProjectionScale;
+                    float signX = n.x < 0.0 ? -1.0 : 1.0;
+                    float signY = n.y < 0.0 ? -1.0 : 1.0;
+                    float signZ = n.z < 0.0 ? -1.0 : 1.0;
+                    vec3 normalX = texture2D(textureSampler, point.zy * vec2(signX, 1.0)).xyz * 2.0 - 1.0;
+                    vec3 normalY = texture2D(textureSampler, point.xz * vec2(signY, 1.0)).xyz * 2.0 - 1.0;
+                    vec3 normalZ = texture2D(textureSampler, point.xy * vec2(-signZ, 1.0)).xyz * 2.0 - 1.0;
+                    normalX.xy *= strength;
+                    normalY.xy *= strength;
+                    normalZ.xy *= strength;
+                    normalX = vec3(normalX.xy + n.zy, abs(normalX.z) * n.x).zyx;
+                    normalY = vec3(normalY.xy + n.xz, abs(normalY.z) * n.y).xzy;
+                    normalZ = vec3(normalZ.xy + n.xy, abs(normalZ.z) * n.z);
+                    return normalize(normalX * weight.x + normalY * weight.y + normalZ * weight.z);
+                }`)
+            .replace('#include <map_fragment>', `
+                #ifdef USE_MAP
+                    vec4 sampledDiffuseColor = opalProjectionEnabled > 0.5
+                        ? opalSample(map, vOpalWorldPosition, vOpalWorldNormal)
+                        : texture2D(map, vMapUv);
+                    diffuseColor *= sampledDiffuseColor;
+                #endif`)
+            .replace('#include <roughnessmap_fragment>', `
+                float roughnessFactor = roughness;
+                #ifdef USE_ROUGHNESSMAP
+                    vec4 texelRoughness = opalProjectionEnabled > 0.5
+                        ? opalSample(roughnessMap, vOpalWorldPosition, vOpalWorldNormal)
+                        : texture2D(roughnessMap, vRoughnessMapUv);
+                    roughnessFactor *= texelRoughness.g;
+                #endif`)
+            .replace('#include <metalnessmap_fragment>', `
+                float metalnessFactor = metalness;
+                #ifdef USE_METALNESSMAP
+                    vec4 texelMetalness = opalProjectionEnabled > 0.5
+                        ? opalSample(metalnessMap, vOpalWorldPosition, vOpalWorldNormal)
+                        : texture2D(metalnessMap, vMetalnessMapUv);
+                    metalnessFactor *= texelMetalness.b;
+                #endif`)
+            .replace('#include <bumpmap_pars_fragment>', `
+                #ifdef USE_BUMPMAP
+                    uniform sampler2D bumpMap;
+                    uniform float bumpScale;
+
+                    float opalHeight(vec3 position) {
+                        return opalSample(bumpMap, position, vOpalWorldNormal).r;
+                    }
+
+                    vec2 dHdxy_fwd() {
+                        if (opalProjectionEnabled > 0.5) {
+                            float centre = bumpScale * opalHeight(vOpalWorldPosition);
+                            return vec2(
+                                bumpScale * opalHeight(vOpalWorldPosition + dFdx(vOpalWorldPosition)) - centre,
+                                bumpScale * opalHeight(vOpalWorldPosition + dFdy(vOpalWorldPosition)) - centre
+                            );
+                        }
+                        vec2 dSTdx = dFdx(vBumpMapUv);
+                        vec2 dSTdy = dFdy(vBumpMapUv);
+                        float centre = bumpScale * texture2D(bumpMap, vBumpMapUv).x;
+                        return vec2(
+                            bumpScale * texture2D(bumpMap, vBumpMapUv + dSTdx).x - centre,
+                            bumpScale * texture2D(bumpMap, vBumpMapUv + dSTdy).x - centre
+                        );
+                    }
+
+                    vec3 perturbNormalArb(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection) {
+                        vec3 vSigmaX = normalize(dFdx(surf_pos.xyz));
+                        vec3 vSigmaY = normalize(dFdy(surf_pos.xyz));
+                        vec3 R1 = cross(vSigmaY, surf_norm);
+                        vec3 R2 = cross(surf_norm, vSigmaX);
+                        float fDet = dot(vSigmaX, R1) * faceDirection;
+                        vec3 vGrad = sign(fDet) * (dHdxy.x * R1 + dHdxy.y * R2);
+                        return normalize(abs(fDet) * surf_norm - vGrad);
+                    }
+                #endif`)
+            .replace('#include <normal_fragment_maps>', `
+                #ifdef USE_NORMALMAP_OBJECTSPACE
+                    normal = texture2D(normalMap, vNormalMapUv).xyz * 2.0 - 1.0;
+                    #ifdef FLIP_SIDED
+                        normal = -normal;
+                    #endif
+                    #ifdef DOUBLE_SIDED
+                        normal = normal * faceDirection;
+                    #endif
+                    normal = normalize(normalMatrix * normal);
+                #elif defined(USE_NORMALMAP_TANGENTSPACE)
+                    if (opalProjectionEnabled > 0.5) {
+                        normal = normalize(mat3(viewMatrix) * opalNormalSample(
+                            normalMap,
+                            vOpalWorldPosition,
+                            vOpalWorldNormal,
+                            normalScale
+                        ));
+                    } else {
+                        vec3 mapN = texture2D(normalMap, vNormalMapUv).xyz * 2.0 - 1.0;
+                        mapN.xy *= normalScale;
+                        normal = normalize(tbn * mapN);
+                    }
+                #elif defined(USE_BUMPMAP)
+                    normal = perturbNormalArb(-vViewPosition, normal, dHdxy_fwd(), faceDirection);
+                #endif`);
+    };
+}
+
+function setSeamlessProjection(material, enabled, scale) {
+    material.userData.opalProjection = { enabled: enabled ? 1 : 0, scale };
+    const shader = material.userData.opalShader;
+
+    if (shader) {
+        shader.uniforms.opalProjectionEnabled.value = enabled ? 1 : 0;
+        shader.uniforms.opalProjectionScale.value = scale;
+    }
+}
 
 const stage = {
     gl: null,
@@ -216,8 +375,9 @@ const stage = {
             scene.add(ground);
 
             const material = new THREE.MeshPhysicalMaterial({ color: 0xcfcbc1, roughness: 0.8, metalness: 0 });
+            enableSeamlessProjection(material);
             const shapes = {
-                ball: await loadShaderBall(material),
+                ball: createSculptedBall(material),
                 sphere: sitOnGround(new THREE.Mesh(new THREE.SphereGeometry(1.1, 128, 64), material)),
                 // A slab rather than a plane: the sample keeps a face while
                 // the view turns, which a single-sided plane does not.
@@ -237,6 +397,8 @@ const stage = {
             this.gl = {
                 canvas, renderer, scene, camera, controls, material, shapes, ground, sun,
                 shown: shapes.ball,
+                shapeName: 'ball',
+                surface: null,
                 loader: new THREE.TextureLoader(),
                 anisotropy: renderer.capabilities.getMaxAnisotropy(),
             };
@@ -375,6 +537,8 @@ const stage = {
         gl.scene.remove(gl.shown);
         gl.scene.add(next);
         gl.shown = next;
+        gl.shapeName = name;
+        this.applyProjection();
         this.frame_();
     },
 
@@ -397,13 +561,21 @@ const stage = {
                 const finish = FINISHES[set.finish] ?? FINISHES.default;
                 const material = gl.material;
 
+                const reliefMap = maps.height ?? maps.bump ?? null;
                 material.map = maps.base_color ?? null;
-                material.normalMap = maps.normal ?? null;
-                material.bumpMap = maps.normal ? null : (maps.bump ?? maps.height ?? null);
-                material.bumpScale = 0.03;
-                material.displacementMap = set.displacement_scale > 0 ? (maps.height ?? null) : null;
-                material.displacementScale = material.displacementMap ? set.displacement_scale : 0;
-                material.displacementBias = material.displacementMap ? -set.displacement_scale * 0.08 : 0;
+                // Generated sets carry a physically scaled height channel. It
+                // gives continuous relief under triplanar projection; a normal
+                // map remains the fallback for imported map-only materials.
+                material.normalMap = reliefMap ? null : (maps.normal ?? null);
+                material.bumpMap = reliefMap;
+                // Geometry displacement is expressed in object units, while
+                // bumpScale controls the slope reconstructed from a normalised
+                // height map. Reusing the tiny displacement number made deep
+                // masonry joints look painted on. Convert relative relief to a
+                // useful slope, with conservative limits for noisy scans.
+                material.bumpScale = reliefMap
+                    ? Math.max(0.06, Math.min(2, (set.displacement_scale ?? 0) * 100))
+                    : 0;
                 material.roughnessMap = maps.roughness ?? null;
                 material.metalnessMap = maps.metallic ?? null;
                 material.aoMap = maps.ao ?? null;
@@ -431,12 +603,37 @@ const stage = {
                 material.attenuationColor.set(0xffffff);
                 material.attenuationDistance = finish.transmission ? 1.4 : Infinity;
                 material.envMapIntensity = 1;
+                gl.surface = { set, maps, repeat: Math.max(1, objectSizeMm / Math.max(set.tile_mm || 1000, 1)) };
+                this.applyProjection();
                 material.needsUpdate = true;
 
                 this.shownKey = set.key;
                 resolve();
             }, 90);
         });
+    },
+
+    /** Curved samples use triplanar relief; only the flat sample displaces vertices. */
+    applyProjection() {
+        const gl = this.gl;
+
+        if (! gl || ! gl.surface) {
+            return;
+        }
+
+        const { set, maps, repeat } = gl.surface;
+        const planar = gl.shapeName === 'panel';
+        const bounds = new THREE.Box3().setFromObject(gl.shown).getSize(new THREE.Vector3());
+        const span = Math.max(bounds.x, bounds.y, bounds.z, 0.001);
+        setSeamlessProjection(gl.material, ! planar, repeat / span);
+
+        // UV displacement tears duplicated vertices apart at model seams and
+        // collapses into a singularity at sphere poles. A subdivided flat
+        // sample is the only geometry on which literal displacement is useful.
+        gl.material.displacementMap = planar && set.displacement_scale > 0 ? (maps.height ?? null) : null;
+        gl.material.displacementScale = gl.material.displacementMap ? set.displacement_scale : 0;
+        gl.material.displacementBias = gl.material.displacementMap ? -set.displacement_scale * 0.08 : 0;
+        gl.material.needsUpdate = true;
     },
 
     /** Textures for a set, loaded once and reused. */
@@ -494,36 +691,31 @@ const stage = {
 };
 
 /**
- * The shader ball, centred and scaled to the stage. Lights that ship inside
- * the file are dropped: the room environment does the lighting.
+ * One continuous sculpted surface for reading grazing light and relief. The
+ * previous imported shader ball was assembled from overlapping open shells;
+ * those gaps looked like broken texture seams on brick and board patterns.
  */
-async function loadShaderBall(material) {
-    const gltf = await new GLTFLoader().loadAsync(MODEL_URL);
-    const group = new THREE.Group();
-    const model = gltf.scene;
+function createSculptedBall(material) {
+    const geometry = new THREE.SphereGeometry(1.08, 160, 96);
+    const positions = geometry.attributes.position;
+    const normal = new THREE.Vector3();
 
-    model.traverse((object) => {
-        if (object.isMesh) {
-            object.material = material;
+    for (let index = 0; index < positions.count; index++) {
+        normal.fromBufferAttribute(positions, index).normalize();
+        const latitude = Math.asin(THREE.MathUtils.clamp(normal.y, -1, 1));
+        const longitude = Math.atan2(normal.z, normal.x);
+        const equator = Math.cos(latitude) ** 2;
+        const radius = 1.04
+            + Math.sin(longitude * 5 + Math.sin(latitude * 2) * 1.4) * equator * 0.065
+            + Math.sin(latitude * 6) * 0.035;
+        positions.setXYZ(index, normal.x * radius, normal.y * radius, normal.z * radius);
+    }
 
-            if (! object.geometry.attributes.tangent) {
-                object.geometry.computeTangents?.();
-            }
-        }
-    });
+    positions.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
 
-    [...model.children].filter((child) => child.isLight).forEach((light) => light.removeFromParent());
-
-    const box = new THREE.Box3().setFromObject(model);
-    const size = box.getSize(new THREE.Vector3());
-    const centre = box.getCenter(new THREE.Vector3());
-    const scale = 2.2 / Math.max(size.x, size.y, size.z, 0.001);
-
-    model.scale.setScalar(scale);
-    model.position.sub(centre.multiplyScalar(scale));
-    group.add(model);
-
-    return sitOnGround(group);
+    return sitOnGround(new THREE.Mesh(geometry, material));
 }
 
 /** Drop an object so its lowest point rests on y = 0. */
@@ -543,7 +735,7 @@ async function loadEnvironment(renderer) {
     pmrem.compileEquirectangularShader();
 
     try {
-        const hdr = await new RGBELoader().loadAsync(HDRI_URL);
+        const hdr = await new HDRLoader().loadAsync(HDRI_URL);
         const environment = pmrem.fromEquirectangular(hdr).texture;
         hdr.dispose();
 

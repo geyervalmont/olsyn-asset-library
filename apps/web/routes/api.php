@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\LinkController;
 use App\Http\Controllers\Api\MaterialsController;
 use App\Http\Controllers\Api\RealtimeController;
 use App\Http\Controllers\Api\SessionsController;
+use App\Http\Controllers\Api\StudioPreviewsController;
 use App\Http\Controllers\Api\VariantsController;
 use App\Http\Middleware\EnsureOlsynAccess;
 use Illuminate\Http\Request;
@@ -24,8 +25,8 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('v1')->group(function () {
-    Route::post('link', [LinkController::class, 'store'])->middleware('throttle:10,1')->name('api.link.store');
-    Route::get('link/{code}', [LinkController::class, 'show'])->middleware('throttle:60,1')->name('api.link.show');
+    Route::post('link', [LinkController::class, 'store'])->middleware('throttle:device-link-start')->name('api.link.store');
+    Route::get('link/{code}', [LinkController::class, 'show'])->middleware('throttle:device-link-poll')->name('api.link.show');
     Route::get('client-releases/revit', [ClientReleasesController::class, 'show'])
         ->middleware('throttle:300,1')
         ->name('api.client-releases.revit');
@@ -58,6 +59,10 @@ Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class])->gro
     Route::get('variants/{code}/paths', [DrivesController::class, 'variantPaths'])->name('api.variants.paths');
     Route::post('variants/{code}/identities', [IdentitiesController::class, 'store'])->name('api.variants.identities.store');
     Route::get('drives', [DrivesController::class, 'index'])->name('api.drives.index');
+    Route::get('studio-previews/{preview}/{role}', [StudioPreviewsController::class, 'show'])
+        ->whereUuid('preview')
+        ->where('role', '[a-z][a-z0-9_]*')
+        ->name('api.studio-previews.show');
 
     Route::get('realtime', RealtimeController::class)->name('api.realtime');
     Route::get('sessions', [SessionsController::class, 'index'])->name('api.sessions.index');

@@ -20,15 +20,17 @@ public sealed class OpalApiClient : IDisposable
     };
 
     private readonly HttpClient http;
+    private readonly Uri baseAddress;
 
     public OpalApiClient(AppSettings settings, HttpMessageHandler? handler = null)
     {
-        var server = settings.ServerUrl.Trim().TrimEnd('/');
-        if (!Uri.TryCreate(server + "/", UriKind.Absolute, out var baseAddress) ||
-            (baseAddress.Scheme != Uri.UriSchemeHttps && baseAddress.Scheme != Uri.UriSchemeHttp))
+        var server = settings.EffectiveServerUrl.Trim().TrimEnd('/');
+        if (!Uri.TryCreate(server + "/", UriKind.Absolute, out var parsedAddress) ||
+            (parsedAddress.Scheme != Uri.UriSchemeHttps && parsedAddress.Scheme != Uri.UriSchemeHttp))
         {
             throw new ArgumentException("OPAL server must be an absolute HTTP or HTTPS address.", nameof(settings));
         }
+        baseAddress = parsedAddress;
 
         http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: true);
         http.BaseAddress = baseAddress;
@@ -41,13 +43,20 @@ public sealed class OpalApiClient : IDisposable
         }
     }
 
-    public Task<LinkStart> StartLinkAsync(string machine, string revitVersion, CancellationToken cancellationToken = default) =>
-        SendAsync<LinkStart>(HttpMethod.Post, "api/v1/link", new
+    public async Task<LinkStart> StartLinkAsync(string machine, string revitVersion, CancellationToken cancellationToken = default)
+    {
+        var link = await SendAsync<LinkStart>(HttpMethod.Post, "api/v1/link", new
         {
             client = "revit",
             machine,
             app_version = $"{BuildInfo.Version} / Revit {revitVersion}",
-        }, dataEnvelope: false, cancellationToken);
+        }, dataEnvelope: false, cancellationToken).ConfigureAwait(false);
+
+        // The selected server is authoritative. A stale reverse-proxy APP_URL
+        // must never send a production link flow back to a development host.
+        var verifyUrl = new Uri(baseAddress, $"link?code={Uri.EscapeDataString(link.Code)}").ToString();
+        return link with { VerifyUrl = verifyUrl };
+    }
 
     public Task<LinkPoll> PollLinkAsync(LinkStart link, CancellationToken cancellationToken = default) =>
         SendAsync<LinkPoll>(HttpMethod.Get, $"api/v1/link/{Uri.EscapeDataString(link.Code)}?secret={Uri.EscapeDataString(link.Secret)}", null, dataEnvelope: false, cancellationToken);
@@ -169,6 +178,15 @@ public sealed class OpalApiClient : IDisposable
         catch (JsonException)
         {
             // Keep the HTTP reason when an intermediary returned non-JSON.
+        }
+
+        // HttpStatusCode.TooManyRequests is absent from .NET Framework 4.8.
+        if ((int)response.StatusCode == 429)
+        {
+            var wait = response.Headers.RetryAfter?.Delta;
+            message = wait is null
+                ? "OPAL is receiving too many connection attempts. Wait a moment, then try again."
+                : $"OPAL is receiving too many connection attempts. Try again in {Math.Max(1, (int)Math.Ceiling(wait.Value.TotalSeconds))} seconds.";
         }
 
         return new OpalApiException(response.StatusCode, message);

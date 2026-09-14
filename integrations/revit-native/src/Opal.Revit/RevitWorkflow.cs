@@ -127,12 +127,120 @@ public static class RevitWorkflow
         {
             throw new InvalidOperationException("No Revit material is selected. Select a material element or a face, then try again.");
         }
+
+        if (payload.TryGetProperty("studio", out var studio) && studio.ValueKind == JsonValueKind.Object)
+        {
+            return ApplyStudioDraft(host, settings, material, studio);
+        }
+
         var code = payload.GetProperty("variant").GetString()
             ?? throw new InvalidOperationException("The OPAL command has no variant code.");
         var quality = payload.TryGetProperty("quality", out var qualityElement) && qualityElement.ValueKind == JsonValueKind.String
             ? qualityElement.GetString()
             : null;
         return Apply(application, settings, material, code, quality);
+    }
+
+    private static ApplyResult ApplyStudioDraft(RevitMaterialHost host, AppSettings settings, RevitMaterial material, JsonElement studio)
+    {
+        var preview = studio.GetProperty("id").GetString() ?? string.Empty;
+        if (!Guid.TryParse(preview, out _))
+        {
+            throw new InvalidOperationException("The OPAL Studio draft has an invalid identifier.");
+        }
+
+        var requestedLabel = studio.TryGetProperty("label", out var labelElement) ? labelElement.GetString() : null;
+        var label = string.IsNullOrWhiteSpace(requestedLabel) ? "Studio material" : requestedLabel!;
+        var scale = studio.TryGetProperty("tile_width_mm", out var width) && width.ValueKind == JsonValueKind.Number
+            ? width.GetDouble()
+            : (double?)null;
+        var root = System.IO.Path.Combine(ClientPaths.SharedRoot, "studio-previews", preview);
+        System.IO.Directory.CreateDirectory(root);
+
+        using var api = new OpalApiClient(settings);
+        var entries = studio.GetProperty("maps").EnumerateArray().Select(item => item.Clone()).ToArray();
+        var localByRole = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in entries)
+        {
+            var role = entry.GetProperty("role").GetString() ?? string.Empty;
+            if (!new[] { "base_color", "normal", "bump", "height", "roughness", "glossiness" }.Contains(role, StringComparer.Ordinal))
+            {
+                continue;
+            }
+            var extension = entry.GetProperty("extension").GetString() ?? string.Empty;
+            if (extension.Length == 0 || extension.Any(character => !char.IsLetterOrDigit(character)))
+            {
+                throw new InvalidOperationException("The OPAL Studio draft contains an unsafe file extension.");
+            }
+            var url = entry.GetProperty("url").GetString() ?? string.Empty;
+            var expected = entry.GetProperty("sha256").GetString() ?? string.Empty;
+            var destination = System.IO.Path.Combine(root, role + "." + extension);
+            var temporary = destination + ".part";
+            using (var source = api.DownloadAsync(url).GetAwaiter().GetResult())
+            using (var output = new System.IO.FileStream(temporary, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.None))
+            {
+                source.CopyTo(output);
+            }
+            VerifySha256(temporary, expected, "A downloaded OPAL Studio texture failed verification.");
+            MoveReplace(temporary, destination);
+            localByRole[role] = destination;
+        }
+
+        var textures = new Dictionary<string, string>();
+        AddFirst(textures, "base_color", localByRole, "base_color");
+        AddFirst(textures, "bump", localByRole, "bump", "normal", "height");
+        AddFirst(textures, "glossiness", localByRole, "glossiness", "roughness");
+        if (textures.Count == 0)
+        {
+            throw new InvalidOperationException("The OPAL Studio draft has no texture maps Revit can use.");
+        }
+
+        host.Apply(material, textures, scale, new Dictionary<string, string>
+        {
+            ["Description"] = $"{label} [OPAL Studio draft]",
+            ["Model"] = "OPAL-STUDIO-DRAFT",
+            ["Manufacturer"] = "OPAL Studio",
+            ["Keywords"] = "opal, studio, draft",
+        });
+
+        return new ApplyResult(label, material.Name, "studio", "draft", textures.Count);
+    }
+
+    private static void AddFirst(
+        IDictionary<string, string> textures,
+        string slot,
+        IReadOnlyDictionary<string, string> roles,
+        params string[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (roles.TryGetValue(candidate, out var path))
+            {
+                textures[slot] = path;
+                return;
+            }
+        }
+    }
+
+    private static void VerifySha256(string path, string expected, string message)
+    {
+        using var stream = System.IO.File.OpenRead(path);
+        using var algorithm = SHA256.Create();
+        var actual = BitConverter.ToString(algorithm.ComputeHash(stream)).Replace("-", string.Empty).ToLowerInvariant();
+        if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new System.IO.InvalidDataException(message);
+        }
+    }
+
+    private static void MoveReplace(string source, string destination)
+    {
+        if (System.IO.File.Exists(destination))
+        {
+            System.IO.File.Replace(source, destination, null);
+            return;
+        }
+        System.IO.File.Move(source, destination);
     }
 
     private static object ResolveCommand(UIApplication application, AppSettings settings, JsonElement payload)

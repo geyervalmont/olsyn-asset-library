@@ -122,6 +122,14 @@ return [
         'auto_render' => (bool) env('OPAL_AUTO_RENDER_PREVIEWS', true),
     ],
 
+    // Draft maps applied from Studio are not library records. They live only
+    // long enough for the chosen Revit session to download them.
+    'studio_previews' => [
+        'disk' => env('OPAL_STUDIO_PREVIEWS_DISK', env('OPAL_FILES_DISK', env('FILESYSTEM_DISK', 'local'))),
+        'prefix' => env('OPAL_STUDIO_PREVIEWS_PREFIX', 'opal/studio-previews'),
+        'ttl_minutes' => (int) env('OPAL_STUDIO_PREVIEW_TTL_MINUTES', 60),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Realtime

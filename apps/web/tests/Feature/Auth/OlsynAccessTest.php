@@ -76,6 +76,7 @@ it('starts an OIDC flow with a fixed callback PKCE and unpredictable state', fun
     expect($query['code_challenge_method'])->toBe('S256')
         ->and($query['redirect_uri'])->toBe('https://opal.olsyn.com/auth/callback')
         ->and(strlen($query['state']))->toBe(64)->and(strlen($query['nonce']))->toBe(64);
+    expect(session('olsyn.oidc.return_to'))->toBeNull();
 });
 
 it('rejects missing mismatched expired and replayed callback state without exchanging tokens', function () {
@@ -112,6 +113,7 @@ it('returns to a pending device link after OIDC authentication', function () {
     Http::fake(['policy.example.test/*' => Http::response(policyResponse())]);
 
     $this->get('/link?code=ABCD-EFGH')->assertRedirect('/login');
+    $this->get('/login')->assertOk()->assertSee('data-test="pending-device-link"', false)->assertSee('ABCD-EFGH');
 
     $flow = ['state' => 'expected', 'nonce' => 'nonce', 'verifier' => 'verifier', 'created_at' => time()];
     $this->withSession(['olsyn.oidc' => $flow])

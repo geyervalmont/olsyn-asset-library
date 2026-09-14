@@ -17,7 +17,13 @@ class OlsynLoginController extends Controller
     {
         abort_unless(config('olsyn_access.enabled'), 404);
         abort_unless(config('olsyn_access.client_id'), 503);
-        $flow = ['state' => Str::random(64), 'nonce' => Str::random(64), 'verifier' => Str::random(96), 'created_at' => time()];
+        $flow = [
+            'state' => Str::random(64),
+            'nonce' => Str::random(64),
+            'verifier' => Str::random(96),
+            'created_at' => time(),
+            'return_to' => $this->safeReturnTo($request),
+        ];
         $request->session()->put('olsyn.oidc', $flow);
         $query = ['client_id' => config('olsyn_access.client_id'), 'redirect_uri' => config('olsyn_access.redirect_uri'),
             'response_type' => 'code', 'scope' => 'openid profile email', 'state' => $flow['state'], 'nonce' => $flow['nonce'],
@@ -57,6 +63,30 @@ class OlsynLoginController extends Controller
         // Absolute lifetime; activity does not prolong the WorkOS-authenticated session.
         $request->session()->put('olsyn.login_expires_at', min((int) $claims['exp'], time() + 28800));
 
+        if (is_string($flow['return_to'] ?? null)) {
+            return redirect()->to($flow['return_to']);
+        }
+
         return redirect()->intended(route('dashboard'));
+    }
+
+    private function safeReturnTo(Request $request): ?string
+    {
+        $candidate = $request->query('return_to', $request->session()->get('url.intended'));
+        if (! is_string($candidate) || $candidate === '') {
+            return null;
+        }
+
+        $parts = parse_url($candidate);
+        if ($parts === false || (isset($parts['host']) && ! hash_equals(strtolower($request->getHost()), strtolower($parts['host'])))) {
+            return null;
+        }
+
+        $path = $parts['path'] ?? '/';
+        if (! str_starts_with($path, '/') || str_starts_with($path, '//')) {
+            return null;
+        }
+
+        return $path.(isset($parts['query']) ? '?'.$parts['query'] : '');
     }
 }

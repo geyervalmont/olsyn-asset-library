@@ -2919,7 +2919,7 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-material-studio {
-    max-width: 1580px;
+    max-width: 1680px;
     margin: 0 auto;
 }
 
@@ -2942,9 +2942,11 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-material-studio__head p {
+    max-width: 78ch;
     margin: 0;
     color: var(--ui-muted);
-    font-size: 12px;
+    font-size: 14px;
+    line-height: 1.55;
 }
 
 .ui-material-studio__head-actions {
@@ -2960,7 +2962,7 @@ h1.ui-reveal.is-revealed em::after {
     padding: 7px 10px;
     color: var(--ui-muted);
     font-family: var(--ui-font-mono);
-    font-size: 8.5px;
+    font-size: 10px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     background: rgba(255, 255, 255, 0.45);
@@ -2987,8 +2989,8 @@ h1.ui-reveal.is-revealed em::after {
     overflow: hidden;
     background: color-mix(in srgb, var(--ui-surface), transparent 12%);
     border: 1px solid var(--ui-line-strong);
-    border-radius: 10px;
-    box-shadow: 0 18px 60px -48px rgba(44, 53, 77, 0.6);
+    border-radius: 12px;
+    box-shadow: 0 24px 80px -50px rgba(44, 53, 77, 0.65);
 }
 
 .ui-studio-recipes {
@@ -3003,8 +3005,8 @@ h1.ui-reveal.is-revealed em::after {
     grid-template-columns: 30px 1fr;
     gap: 1px 9px;
     align-items: center;
-    min-height: 62px;
-    padding: 10px 14px;
+    min-height: 72px;
+    padding: 12px 16px;
     color: var(--ui-muted);
     text-align: left;
     background: transparent;
@@ -3021,8 +3023,8 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-recipes button > span {
     grid-row: span 2;
     display: grid;
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     place-items: center;
     color: var(--ui-periwinkle-deep);
     font-family: var(--ui-font-display);
@@ -3035,14 +3037,14 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-recipes strong {
     align-self: end;
     color: inherit;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 650;
 }
 
 .ui-studio-recipes small {
     align-self: start;
     color: var(--ui-faint);
-    font-size: 9px;
+    font-size: 10.5px;
 }
 
 .ui-studio-recipes button:hover,
@@ -3063,8 +3065,13 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-layout {
     display: grid;
-    grid-template-columns: minmax(280px, 0.78fr) minmax(480px, 1.65fr) minmax(260px, 0.7fr);
-    min-height: 680px;
+    grid-template-areas:
+        'recipe canvas'
+        'output canvas';
+    grid-template-columns: minmax(350px, 420px) minmax(560px, 1fr);
+    grid-template-rows: auto 1fr;
+    align-items: start;
+    min-height: 760px;
 }
 
 .ui-studio-properties {
@@ -3073,12 +3080,15 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-studio-properties--recipe {
-    padding: 20px;
+    grid-area: recipe;
+    padding: 24px;
     border-right: 1px solid var(--ui-line);
 }
 
 .ui-studio-properties--output {
-    border-left: 1px solid var(--ui-line);
+    grid-area: output;
+    border-top: 1px solid var(--ui-line);
+    border-right: 1px solid var(--ui-line);
 }
 
 .ui-studio-section-head,
@@ -3100,14 +3110,14 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-properties summary > span {
     color: var(--ui-faint);
     font-family: var(--ui-font-mono);
-    font-size: 8px;
+    font-size: 9.5px;
     letter-spacing: 0.08em;
 }
 
 .ui-studio-section-head h2 {
     margin: 0;
     color: var(--ui-ink);
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 650;
 }
 
@@ -3116,7 +3126,7 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-canvas__tools button {
     padding: 4px 7px;
     color: var(--ui-periwinkle-deep);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 650;
     background: transparent;
     border: 0;
@@ -3151,14 +3161,14 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-select > span,
 .ui-studio-seed > span:first-child {
     color: var(--ui-slate);
-    font-size: 10.5px;
+    font-size: 12px;
     font-weight: 600;
 }
 
 .ui-studio-control__label > span {
     color: var(--ui-faint);
     font-family: var(--ui-font-mono);
-    font-size: 9px;
+    font-size: 10.5px;
 }
 
 .ui-studio-control__range {
@@ -3180,11 +3190,11 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-palette__item > input,
 .ui-studio-seed input {
     width: 100%;
-    height: 30px;
-    padding: 5px 7px;
+    height: 36px;
+    padding: 7px 9px;
     color: var(--ui-ink);
     font-family: var(--ui-font-mono);
-    font-size: 9px;
+    font-size: 11px;
     background: rgba(255, 255, 255, 0.52);
     border: 1px solid var(--ui-line);
     border-radius: var(--ui-radius-control);
@@ -3235,7 +3245,7 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-colour__value strong {
     color: var(--ui-ink);
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .ui-studio-colour__value input {
@@ -3243,7 +3253,7 @@ h1.ui-reveal.is-revealed em::after {
     padding: 4px 0;
     color: var(--ui-periwinkle-deep);
     font-family: var(--ui-font-mono);
-    font-size: 10px;
+    font-size: 11px;
     text-transform: uppercase;
     background: transparent;
     border: 0;
@@ -3281,12 +3291,12 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-measure em {
     position: absolute;
-    top: 8px;
+    top: 10px;
     right: 7px;
     color: var(--ui-faint);
     font-family: var(--ui-font-mono);
     font-style: normal;
-    font-size: 8px;
+    font-size: 9px;
     pointer-events: none;
 }
 
@@ -3296,10 +3306,10 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-select select {
     width: 100%;
-    height: 34px;
+    height: 38px;
     padding: 5px 26px 5px 8px;
     color: var(--ui-ink);
-    font-size: 10px;
+    font-size: 11.5px;
     background: rgba(255, 255, 255, 0.52);
     border: 1px solid var(--ui-line);
     border-radius: var(--ui-radius-control);
@@ -3348,7 +3358,7 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-studio-switch strong {
-    font-size: 10.5px;
+    font-size: 12px;
     font-weight: 600;
 }
 
@@ -3373,29 +3383,29 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-palette__head strong {
     color: var(--ui-ink);
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .ui-studio-palette__head small {
     color: var(--ui-faint);
-    font-size: 9px;
+    font-size: 10.5px;
     line-height: 1.35;
 }
 
 .ui-studio-palette__swatches {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 7px;
+    gap: 9px;
 }
 
 .ui-studio-palette__item {
     position: relative;
     display: grid;
-    grid-template-columns: 42px 1fr 18px;
-    gap: 5px;
+    grid-template-columns: 50px 1fr 24px;
+    gap: 7px;
     align-items: center;
     min-width: 0;
-    padding: 4px;
+    padding: 6px;
     background: rgba(255, 255, 255, 0.38);
     border: 1px solid var(--ui-line);
     border-radius: 6px;
@@ -3404,7 +3414,7 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-palette__item label span {
     position: relative;
     display: block;
-    height: 34px;
+    height: 42px;
     overflow: hidden;
     color: white;
     background: var(--studio-swatch);
@@ -3418,14 +3428,14 @@ h1.ui-reveal.is-revealed em::after {
     bottom: 3px;
     z-index: 1;
     font-family: var(--ui-font-mono);
-    font-size: 7px;
+    font-size: 9px;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 .ui-studio-palette__item > input {
     min-width: 0;
     padding-inline: 4px;
-    font-size: 8px;
+    font-size: 10px;
     text-transform: uppercase;
     border: 0;
     background: transparent;
@@ -3454,12 +3464,13 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-studio-canvas {
+    grid-area: canvas;
     position: sticky;
     top: 12px;
     display: grid;
-    grid-template-rows: auto minmax(540px, 1fr) auto;
+    grid-template-rows: auto minmax(650px, 1fr) auto;
     min-width: 0;
-    min-height: 680px;
+    min-height: 760px;
     overflow: hidden;
     background:
         radial-gradient(circle at 50% 18%, rgba(143, 167, 201, 0.17), transparent 58%),
@@ -3472,10 +3483,10 @@ h1.ui-reveal.is-revealed em::after {
     gap: 10px;
     align-items: center;
     justify-content: space-between;
-    padding: 11px 13px;
+    padding: 13px 16px;
     color: var(--ui-muted);
     font-family: var(--ui-font-mono);
-    font-size: 8px;
+    font-size: 9.5px;
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
@@ -3491,7 +3502,7 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-canvas__bar strong {
     color: var(--ui-ink);
-    font-size: 10px;
+    font-size: 12px;
 }
 
 .ui-studio-canvas__tools {
@@ -3512,8 +3523,8 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-live-viewer {
     display: grid;
-    grid-template-rows: auto minmax(500px, 1fr);
-    min-height: 540px;
+    grid-template-rows: auto minmax(610px, 1fr);
+    min-height: 650px;
     background: transparent;
     border: 0;
     border-radius: 0;
@@ -3521,22 +3532,22 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-live-viewer .ui-viewer__stage,
 .ui-studio-live-viewer canvas {
-    min-height: 500px;
+    min-height: 610px;
 }
 
 .ui-studio-view-tools {
     position: relative;
     z-index: 6;
     display: grid;
-    gap: 6px;
-    padding: 8px 10px;
+    gap: 8px;
+    padding: 10px 13px;
     background: color-mix(in srgb, var(--ui-paper), transparent 6%);
     border-bottom: 1px solid var(--ui-line);
 }
 
 .ui-studio-view-tools__group {
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 72px minmax(0, 1fr);
     gap: 8px;
     align-items: center;
     min-width: 0;
@@ -3545,7 +3556,7 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-view-tools__group > span {
     color: var(--ui-faint);
     font-family: var(--ui-font-mono);
-    font-size: 7.5px;
+    font-size: 9px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
 }
@@ -3567,11 +3578,11 @@ h1.ui-reveal.is-revealed em::after {
     gap: 5px;
     align-items: center;
     flex: 0 0 auto;
-    min-height: 27px;
-    padding: 4px 8px;
+    min-height: 32px;
+    padding: 6px 10px;
     color: var(--ui-muted);
     font-family: var(--ui-font-mono);
-    font-size: 8px;
+    font-size: 10px;
     letter-spacing: 0.025em;
     background: rgba(255, 255, 255, 0.34);
     border: 1px solid transparent;
@@ -3597,8 +3608,8 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-studio-view-tools__group--maps button img {
-    width: 17px;
-    height: 17px;
+    width: 20px;
+    height: 20px;
     object-fit: cover;
     background: var(--ui-paper-deep);
     border: 1px solid var(--ui-line);
@@ -3689,7 +3700,7 @@ h1.ui-reveal.is-revealed em::after {
     grid-template-columns: 20px 1fr auto;
     gap: 7px;
     align-items: center;
-    padding: 15px 16px;
+    padding: 17px 20px;
     list-style: none;
     color: var(--ui-ink);
     cursor: pointer;
@@ -3700,7 +3711,7 @@ h1.ui-reveal.is-revealed em::after {
 }
 
 .ui-studio-properties summary strong {
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .ui-studio-properties summary i::before {
@@ -3716,7 +3727,7 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-details {
     display: grid;
     gap: 13px;
-    padding: 2px 16px 17px;
+    padding: 2px 20px 20px;
 }
 
 .ui-studio-mode {
@@ -3736,7 +3747,7 @@ h1.ui-reveal.is-revealed em::after {
 .ui-studio-hint {
     margin: 0;
     color: var(--ui-faint);
-    font-size: 9px;
+    font-size: 10.5px;
     line-height: 1.5;
 }
 
@@ -3756,18 +3767,18 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-publish {
     display: grid;
-    gap: 8px;
-    padding: 16px;
+    gap: 10px;
+    padding: 20px;
 }
 
-.ui-studio-publish > div {
+.ui-studio-publish__state {
     display: grid;
     grid-template-columns: 7px 1fr;
     gap: 8px;
     margin-bottom: 3px;
 }
 
-.ui-studio-publish > div > span {
+.ui-studio-publish__state > span {
     width: 7px;
     height: 7px;
     margin-top: 3px;
@@ -3780,18 +3791,73 @@ h1.ui-reveal.is-revealed em::after {
     gap: 2px;
     margin: 0;
     color: var(--ui-faint);
-    font-size: 9px;
+    font-size: 10.5px;
     line-height: 1.45;
 }
 
 .ui-studio-publish p strong {
     color: var(--ui-slate);
-    font-size: 10px;
+    font-size: 11.5px;
 }
 
 .ui-studio-publish > .ui-button {
     justify-content: center;
     width: 100%;
+}
+
+.ui-studio-action-note {
+    padding: 9px 10px;
+    color: var(--ui-muted) !important;
+    background: rgba(74, 77, 92, 0.045);
+    border-radius: var(--ui-radius-control);
+}
+
+.ui-studio-action-note--ready {
+    color: var(--ui-pass) !important;
+}
+
+.ui-studio-command {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 6px !important;
+    align-items: center;
+    padding: 9px 10px;
+    background: var(--ui-surface-raised);
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-control);
+}
+
+.ui-studio-publish__divider {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 7px 0 0;
+    color: var(--ui-faint);
+    font-family: var(--ui-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.ui-studio-publish__divider::before,
+.ui-studio-publish__divider::after {
+    flex: 1;
+    height: 1px;
+    content: '';
+    background: var(--ui-line);
+}
+
+.ui-studio-text-action {
+    padding: 4px;
+    color: var(--ui-muted);
+    font-size: 10.5px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.ui-studio-text-action:hover {
+    color: var(--ui-ink);
 }
 
 .ui-input[type='file'] {
@@ -5114,24 +5180,7 @@ h1.ui-reveal.is-revealed em::after {
 
 @media (max-width: 1250px) {
     .ui-studio-layout {
-        grid-template-columns: minmax(280px, 0.72fr) minmax(440px, 1.28fr);
-    }
-
-    .ui-studio-properties--output {
-        grid-column: 1 / -1;
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        border-top: 1px solid var(--ui-line);
-        border-left: 0;
-    }
-
-    .ui-studio-properties--output details {
-        border-right: 1px solid var(--ui-line);
-        border-bottom: 0;
-    }
-
-    .ui-studio-publish {
-        align-content: center;
+        grid-template-columns: minmax(330px, 380px) minmax(500px, 1fr);
     }
 }
 
@@ -5155,27 +5204,29 @@ h1.ui-reveal.is-revealed em::after {
     }
 
     .ui-studio-layout {
+        grid-template-areas:
+            'canvas'
+            'recipe'
+            'output';
         grid-template-columns: 1fr;
+        grid-template-rows: auto;
     }
 
     .ui-studio-canvas {
         position: relative;
         top: auto;
-        order: 1;
         min-height: 560px;
         border-bottom: 1px solid var(--ui-line);
     }
 
     .ui-studio-properties--recipe {
-        order: 2;
         border-right: 0;
         border-bottom: 1px solid var(--ui-line);
     }
 
     .ui-studio-properties--output {
-        grid-column: auto;
-        grid-template-columns: 1fr;
-        order: 3;
+        display: block;
+        border-right: 0;
     }
 
     .ui-studio-properties--output details {

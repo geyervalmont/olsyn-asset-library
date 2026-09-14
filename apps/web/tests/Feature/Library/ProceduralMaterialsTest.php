@@ -5,11 +5,14 @@ use App\Actions\Materials\AddVariant;
 use App\Enums\ReviewState;
 use App\Enums\Role;
 use App\Jobs\BakeProceduralMaterial;
+use App\Jobs\PurgeStudioPreview;
 use App\Library\Procedural\ProceduralAsset;
 use App\Library\Procedural\ProceduralBake;
 use App\Library\Procedural\ProceduralBaker;
 use App\Library\Procedural\ToolboxProceduralBaker;
 use App\Models\Category;
+use App\Models\ClientCommand;
+use App\Models\ClientSession;
 use App\Models\Definition;
 use App\Models\Material;
 use App\Models\Tenant;
@@ -112,6 +115,55 @@ test('the studio renders immediately and refreshes after a recipe control change
         ->assertSet('recipe.roughness', 0.21);
 
     expect($baker->bakes)->toBe(2);
+});
+
+test('a studio draft applies to revit without creating a library record', function () {
+    Queue::fake();
+    $baker = new FakeProceduralBaker;
+    app()->instance(ProceduralBaker::class, $baker);
+    $session = ClientSession::create([
+        'user_id' => $this->editor->id,
+        'platform' => 'revit',
+        'machine' => 'DESIGN-01',
+        'app_version' => '2027',
+        'document' => 'Lobby.rvt',
+        'last_seen_at' => now(),
+    ]);
+    $materialCount = Material::count();
+
+    Livewire::actingAs($this->editor)
+        ->test('pages::materials.studio')
+        ->assertSee('data-test="studio-apply-revit"', false)
+        ->assertSee('data-test="open-library-destination"', false)
+        ->assertDontSee('data-test="studio-library-destination"', false)
+        ->set('name', 'Lobby terrazzo study')
+        ->set('revitSessionId', $session->id)
+        ->call('applyInRevit')
+        ->assertHasNoErrors()
+        ->assertSet('revitCommandId', fn (?int $id): bool => $id !== null);
+
+    $command = ClientCommand::query()->sole();
+    $studio = $command->payload['studio'];
+
+    expect(Material::count())->toBe($materialCount)
+        ->and($command->client_session_id)->toBe($session->id)
+        ->and($studio['label'])->toBe('Lobby terrazzo study')
+        ->and($studio['maps'])->toHaveCount(6)
+        ->and(collect($studio['maps'])->pluck('role')->all())->toContain('glossiness')
+        ->and($command->payload)->not->toHaveKey('variant');
+
+    Queue::assertPushed(PurgeStudioPreview::class, fn (PurgeStudioPreview $job): bool => $job->preview === $studio['id']);
+
+    $baseColour = collect($studio['maps'])->firstWhere('role', 'base_color');
+    $token = $this->editor->createToken('revit')->plainTextToken;
+    $this->app['auth']->forgetGuards();
+    $this->withToken($token)->get($baseColour['url'])->assertOk()->assertHeader('Content-Type', 'image/png');
+
+    $other = User::factory()->withTenant($this->tenant, Role::Editor)->create();
+    $otherToken = $other->createToken('revit')->plainTextToken;
+    $this->flushHeaders();
+    $this->app['auth']->forgetGuards();
+    $this->withToken($otherToken)->get($baseColour['url'])->assertNotFound();
 });
 
 test('older masonry recipes gain new rendering defaults without losing stored values', function () {

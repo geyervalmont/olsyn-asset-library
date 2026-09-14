@@ -18,15 +18,39 @@ Check("config round trips account, server and dev mode", () =>
     store.Save(new AppSettings
     {
         ServerUrl = "http://asset-library.test",
+        UseCustomServer = true,
         Token = "secret",
         AccountEmail = "dev@example.com",
         DeveloperMode = true,
     });
     var loaded = store.Load();
     Require(loaded.ServerUrl == "http://asset-library.test");
+    Require(loaded.EffectiveServerUrl == "http://asset-library.test");
     Require(loaded.Token == "secret");
     Require(loaded.AccountEmail == "dev@example.com");
     Require(loaded.DeveloperMode);
+    Directory.Delete(root, recursive: true);
+});
+
+Check("production is authoritative until a custom server is explicitly selected", () =>
+{
+    var settings = new AppSettings { ServerUrl = "https://asset-library.test" };
+    Require(settings.EffectiveServerUrl == AppSettings.ProductionServerUrl);
+    settings.UseCustomServer = true;
+    Require(settings.EffectiveServerUrl == "https://asset-library.test");
+});
+
+Check("an old development token is not migrated into production", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "opal-client-tests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    File.WriteAllText(Path.Combine(root, "config.json"), """
+        {"serverUrl":"https://asset-library.test","token":"development-secret","accountName":"Designer","accountEmail":"designer@example.test"}
+        """);
+    var loaded = new ConfigStore(root).Load();
+    Require(loaded.EffectiveServerUrl == AppSettings.ProductionServerUrl);
+    Require(!loaded.IsLinked);
+    Require(loaded.AccountEmail == string.Empty);
     Directory.Delete(root, recursive: true);
 });
 
@@ -68,7 +92,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("5 native client tests passed");
+Console.WriteLine("7 native client tests passed");
 return 0;
 
 void Check(string name, Action test)

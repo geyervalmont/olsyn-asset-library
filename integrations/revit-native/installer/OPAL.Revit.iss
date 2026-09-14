@@ -41,6 +41,9 @@ Type: files; Name: "{app}\pending.json"
 Type: filesandordirs; Name: "{app}\updates"
 Type: filesandordirs; Name: "{app}\versions"
 Type: filesandordirs; Name: "{app}\bootstrap"
+; The old pyRevit prototype creates a second OPAL ribbon with its own account
+; state. The native installer is the one supported distribution from here on.
+Type: filesandordirs; Name: "{userappdata}\pyRevit\Extensions\OPAL.extension"
 
 [UninstallDelete]
 Type: files; Name: "{app}\config.json"

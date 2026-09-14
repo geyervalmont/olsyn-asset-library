@@ -13,14 +13,19 @@ public sealed class SettingsWindow : Window
     private readonly CancellationTokenSource lifetime = new();
     private readonly TextBlock account = Text(string.Empty, 16, FontWeights.SemiBold);
     private readonly TextBlock connection = Text(string.Empty);
+    private readonly TextBlock endpoint = Text(string.Empty);
     private readonly TextBlock document = Text(string.Empty);
+    private readonly TextBlock driveStatus = Text(string.Empty);
+    private readonly TextBlock activity = Text(string.Empty);
     private readonly TextBlock update = Text(string.Empty);
     private readonly TextBox drive = Input();
     private readonly TextBox mount = Input();
     private readonly CheckBox autoUpdate = new() { Content = "Download updates automatically", Margin = new Thickness(0, 8, 0, 8) };
     private readonly TextBox server = Input();
     private readonly StackPanel developer = new() { Visibility = Visibility.Collapsed };
+    private readonly CheckBox customServer = new() { Content = "Use a custom server", Margin = new Thickness(0, 8, 0, 8) };
     private readonly Button accountAction = Button("Connect account");
+    private readonly Button disconnectAction = Button("Disconnect");
     private readonly DispatcherTimer refresh;
     private int versionClicks;
     private bool linking;
@@ -42,6 +47,8 @@ public sealed class SettingsWindow : Window
         mount.Text = settings.MountPath;
         autoUpdate.IsChecked = settings.AutoUpdate;
         server.Text = settings.ServerUrl;
+        customServer.IsChecked = settings.UseCustomServer;
+        server.IsEnabled = settings.UseCustomServer;
         developer.Visibility = settings.DeveloperMode ? Visibility.Visible : Visibility.Collapsed;
 
         var version = Text($"OPAL {BuildInfo.Version} · Revit {runtime.RevitVersion}", 12, FontWeights.Normal);
@@ -55,12 +62,19 @@ public sealed class SettingsWindow : Window
         body.Children.Add(Section("Account"));
         body.Children.Add(account);
         body.Children.Add(connection);
-        accountAction.Margin = new Thickness(0, 12, 0, 0);
+        var accountActions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
         accountAction.Click += AccountAction;
-        body.Children.Add(accountAction);
+        disconnectAction.Margin = new Thickness(8, 0, 0, 0);
+        disconnectAction.Click += DisconnectAccount;
+        accountActions.Children.Add(accountAction);
+        accountActions.Children.Add(disconnectAction);
+        body.Children.Add(accountActions);
 
         body.Children.Add(Section("Status"));
+        body.Children.Add(endpoint);
         body.Children.Add(document);
+        body.Children.Add(driveStatus);
+        body.Children.Add(activity);
         body.Children.Add(update);
 
         body.Children.Add(Section("Material files"));
@@ -76,8 +90,11 @@ public sealed class SettingsWindow : Window
         body.Children.Add(check);
 
         developer.Children.Add(Section("Developer settings"));
-        developer.Children.Add(Text("Use these only for local or staging testing. HTTP is accepted so a local server can be used.", 12));
-        developer.Children.Add(Label("OPAL server URL"));
+        developer.Children.Add(Text("Production always connects to opal.olsyn.com. Select a custom server only for local or staging testing.", 12));
+        customServer.Checked += (_, _) => server.IsEnabled = true;
+        customServer.Unchecked += (_, _) => server.IsEnabled = false;
+        developer.Children.Add(customServer);
+        developer.Children.Add(Label("Custom OPAL server URL"));
         developer.Children.Add(server);
         body.Children.Add(developer);
 
@@ -115,8 +132,18 @@ public sealed class SettingsWindow : Window
                 : "Connect in your browser to let Revit receive materials from OPAL.";
             connection.Foreground = runtime.Status.Connected ? Brushes.SeaGreen : Brushes.DimGray;
             accountAction.Content = settings.IsLinked ? "Change account" : "Connect account";
+            disconnectAction.Visibility = settings.IsLinked ? Visibility.Visible : Visibility.Collapsed;
         }
+        endpoint.Text = $"Server: {settings.EffectiveServerUrl}";
+        endpoint.Foreground = settings.UseCustomServer ? Brushes.DarkGoldenrod : Brushes.DimGray;
         document.Text = string.IsNullOrWhiteSpace(runtime.Status.Document) ? "No Revit document is active" : $"Document: {runtime.Status.Document}";
+        driveStatus.Text = System.IO.Directory.Exists(settings.MountPath)
+            ? $"Material drive: {settings.MountPath} is available"
+            : $"Material drive: {settings.MountPath} is not available";
+        driveStatus.Foreground = System.IO.Directory.Exists(settings.MountPath) ? Brushes.SeaGreen : Brushes.DarkGoldenrod;
+        activity.Text = string.IsNullOrWhiteSpace(runtime.Status.LastCommand)
+            ? "No material commands handled in this Revit session"
+            : $"Last command: {runtime.Status.LastCommand}{(string.IsNullOrWhiteSpace(runtime.Status.LastError) ? string.Empty : $" — {runtime.Status.LastError}")}";
         if (!checkingUpdate)
         {
             update.Text = runtime.Status.StagedVersion is not null
@@ -152,7 +179,7 @@ public sealed class SettingsWindow : Window
         linking = true;
         try
         {
-            SaveFields(restart: false);
+            SaveFields();
             using var api = new OpalApiClient(runtime.Settings);
             var link = await api.StartLinkAsync(Environment.MachineName, runtime.RevitVersion, lifetime.Token);
             Clipboard.SetText(link.Code);
@@ -197,13 +224,29 @@ public sealed class SettingsWindow : Window
         }
     }
 
+    private void DisconnectAccount(object sender, RoutedEventArgs eventArgs)
+    {
+        var choice = MessageBox.Show(
+            $"Disconnect {runtime.Settings.AccountEmail} from this Revit installation?",
+            "Disconnect OPAL account",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (choice != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        runtime.Disconnect();
+        Refresh();
+    }
+
     private async Task CheckUpdate(Button button)
     {
         button.IsEnabled = false;
         checkingUpdate = true;
         try
         {
-            SaveFields(restart: false);
+            SaveFields();
             var check = await runtime.CheckForUpdateAsync(lifetime.Token);
             if (!check.Compatible)
             {
@@ -241,7 +284,7 @@ public sealed class SettingsWindow : Window
     {
         try
         {
-            SaveFields(restart: true);
+            SaveFields();
             DialogResult = true;
         }
         catch (Exception exception)
@@ -250,44 +293,52 @@ public sealed class SettingsWindow : Window
         }
     }
 
-    private void SaveFields(bool restart)
+    private void SaveFields()
     {
         var settings = CopyFields();
-        if (!Uri.TryCreate(settings.ServerUrl, UriKind.Absolute, out var uri) ||
+        if (!Uri.TryCreate(settings.EffectiveServerUrl, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
         {
             throw new InvalidOperationException("The OPAL server must be a complete HTTP or HTTPS URL.");
         }
-        if (uri.Scheme == Uri.UriSchemeHttp && !settings.DeveloperMode)
+        if (settings.UseCustomServer && uri.Scheme == Uri.UriSchemeHttp && !settings.DeveloperMode)
         {
             throw new InvalidOperationException("HTTP servers are available only in developer mode.");
         }
-        if (restart)
+
+        if (!settings.EffectiveServerUrl.Equals(runtime.Settings.EffectiveServerUrl, StringComparison.OrdinalIgnoreCase))
         {
-            runtime.Save(settings);
+            // Tokens belong to one server. Carrying a development token into
+            // production (or the reverse) produces a confusing half-linked state.
+            settings.Token = string.Empty;
+            settings.AccountName = string.Empty;
+            settings.AccountEmail = string.Empty;
         }
-        else
-        {
-            runtime.Config.Save(settings);
-            runtime.Settings.ServerUrl = settings.ServerUrl;
-            runtime.Settings.DriveSlug = settings.DriveSlug;
-            runtime.Settings.MountPath = settings.MountPath;
-            runtime.Settings.AutoUpdate = settings.AutoUpdate;
-            runtime.Settings.DeveloperMode = settings.DeveloperMode;
-        }
+
+        runtime.Save(settings);
     }
 
-    private AppSettings CopyFields() => new()
+    private AppSettings CopyFields()
     {
-        ServerUrl = server.Text.Trim().TrimEnd('/'),
-        Token = runtime.Settings.Token,
-        AccountName = runtime.Settings.AccountName,
-        AccountEmail = runtime.Settings.AccountEmail,
-        DriveSlug = drive.Text.Trim(),
-        MountPath = mount.Text.Trim(),
-        AutoUpdate = autoUpdate.IsChecked == true,
-        DeveloperMode = developer.Visibility == Visibility.Visible,
-    };
+        var serverUrl = server.Text.Trim().TrimEnd('/');
+        if (serverUrl.IndexOf("://", StringComparison.Ordinal) < 0)
+        {
+            serverUrl = "https://" + serverUrl;
+        }
+
+        return new AppSettings
+        {
+            ServerUrl = serverUrl,
+            UseCustomServer = customServer.IsChecked == true,
+            Token = runtime.Settings.Token,
+            AccountName = runtime.Settings.AccountName,
+            AccountEmail = runtime.Settings.AccountEmail,
+            DriveSlug = drive.Text.Trim(),
+            MountPath = mount.Text.Trim(),
+            AutoUpdate = autoUpdate.IsChecked == true,
+            DeveloperMode = developer.Visibility == Visibility.Visible,
+        };
+    }
 
     private void RevealDeveloper()
     {

@@ -13,10 +13,11 @@ compiled against the exact API and runtime profile for each Revit year.
    the short-code flow in the browser.
 4. Set the mounted OPAL drive path, then use **Apply Selected** or **Sync**.
 
-The settings window shows the active account, server connection, document and
-update state. Choose **Change account** to disconnect and relink. Click the
-version line five times to reveal the developer-only server URL control; this
-permits local HTTP endpoints without presenting them to normal users.
+The settings window is the single place for account connection and disconnection,
+endpoint, document, drive health, recent activity and update state. Production
+always means `https://opal.olsyn.com`. Click the version line five times to reveal
+the developer controls, then explicitly enable a custom endpoint for local or
+staging testing. Changing endpoints clears the previous server's token.
 
 ## Updates
 
