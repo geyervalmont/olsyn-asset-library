@@ -57,12 +57,17 @@ try {
         $script:signTool = Find-SignTool
     }
 
-    Invoke-DotNet -Arguments @(
-        "run",
-        "--project", (Join-Path $root "tests/Opal.Client.Tests/Opal.Client.Tests.csproj"),
-        "-c", $Configuration,
-        "-p:Version=$Version"
-    )
+    foreach ($framework in @("net10.0", "net48")) {
+        Invoke-DotNet -Arguments @(
+            "run",
+            "--project", (Join-Path $root "tests/Opal.Client.Tests/Opal.Client.Tests.csproj"),
+            "--framework", $framework,
+            "-c", $Configuration,
+            "-p:Version=$Version",
+            "-p:TestTargetFramework=$framework",
+            "-p:OpalClientTargetFramework=$framework"
+        )
+    }
 
     foreach ($target in $targets) {
         $year = [string] $target.year

@@ -45,7 +45,7 @@ public sealed class ApplySelectedCommand : IExternalCommand
                 return Result.Cancelled;
             }
 
-            var result = RevitWorkflow.Apply(commandData.Application, Runtime.Current.Settings, material, picker.VariantCode, picker.Quality);
+            var result = RevitWorkflow.Apply(commandData.Application, Runtime.Current.Settings, material, picker.VariantCode!, picker.Quality);
             TaskDialog.Show("OPAL", $"Applied {result.Variant} to {result.MaterialName}.\n\n{result.TextureCount} texture slots updated at {result.Quality}.");
             return Result.Succeeded;
         }

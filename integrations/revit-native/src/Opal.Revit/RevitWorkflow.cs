@@ -197,7 +197,8 @@ public static class RevitWorkflow
             }
             var expected = entry.GetProperty("sha256").GetString() ?? string.Empty;
             using var stream = System.IO.File.OpenRead(local);
-            var actual = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            using var algorithm = SHA256.Create();
+            var actual = BitConverter.ToString(algorithm.ComputeHash(stream)).Replace("-", string.Empty).ToLowerInvariant();
             if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
             {
                 throw new System.IO.InvalidDataException($"A mounted OPAL texture does not match the library: {local}");
@@ -206,15 +207,15 @@ public static class RevitWorkflow
 
         var byRole = entries.ToDictionary(entry => entry.GetProperty("role").GetString() ?? string.Empty, StringComparer.OrdinalIgnoreCase);
         var textures = new Dictionary<string, string>();
-        foreach (var (slot, roles) in SlotRoles)
+        foreach (var slotRoles in SlotRoles)
         {
-            foreach (var role in roles)
+            foreach (var role in slotRoles.Value)
             {
                 if (!byRole.TryGetValue(role, out var entry))
                 {
                     continue;
                 }
-                textures[slot] = LocalPath(mount, entry.GetProperty("path").GetString() ?? string.Empty);
+                textures[slotRoles.Key] = LocalPath(mount, entry.GetProperty("path").GetString() ?? string.Empty);
                 break;
             }
         }
@@ -230,11 +231,11 @@ public static class RevitWorkflow
     private static int Pixels(string quality)
     {
         var slug = quality.ToLowerInvariant();
-        if (slug.EndsWith('k') && int.TryParse(slug[..^1], out var thousands))
+        if (slug.EndsWith("k", StringComparison.Ordinal) && int.TryParse(slug.Substring(0, slug.Length - 1), out var thousands))
         {
             return thousands * 1024;
         }
-        if (slug.EndsWith("px") && int.TryParse(slug[..^2], out var pixels))
+        if (slug.EndsWith("px", StringComparison.Ordinal) && int.TryParse(slug.Substring(0, slug.Length - 2), out var pixels))
         {
             return pixels;
         }
@@ -341,8 +342,9 @@ public sealed class RevitMaterialHost
             try
             {
                 var editable = scope.Start(appearanceId);
-                foreach (var (slot, path) in textures)
+                foreach (var texture in textures)
                 {
+                    var slot = texture.Key;
                     var property = Find(editable, SlotNames[slot]);
                     if (property is null)
                     {
@@ -362,7 +364,7 @@ public sealed class RevitMaterialHost
                     {
                         continue;
                     }
-                    source.Value = path;
+                    source.Value = texture.Value;
                     if (scaleMm is not null)
                     {
                         SetScale(bitmap, BitmapScaleX, scaleMm.Value);
@@ -395,12 +397,12 @@ public sealed class RevitMaterialHost
         using (var transaction = new Transaction(Document, $"OPAL identity on {material.Name}"))
         {
             transaction.Start();
-            foreach (var (name, value) in parameters)
+            foreach (var parameterValue in parameters)
             {
-                var parameter = Parameter(element, name);
+                var parameter = Parameter(element, parameterValue.Key);
                 if (parameter is not null && !parameter.IsReadOnly)
                 {
-                    parameter.Set(value);
+                    parameter.Set(parameterValue.Value);
                 }
             }
             transaction.Commit();
@@ -415,7 +417,7 @@ public sealed class RevitMaterialHost
             var value = Parameter(material, name)?.AsString();
             if (!string.IsNullOrWhiteSpace(value))
             {
-                references.Add(value);
+                references.Add(value!);
             }
         }
         references.Add(material.Name);
@@ -429,7 +431,11 @@ public sealed class RevitMaterialHost
         {
             return parameter;
         }
-        foreach (var id in ParameterIds.GetValueOrDefault(name, []))
+        if (!ParameterIds.TryGetValue(name, out var parameterIds))
+        {
+            return null;
+        }
+        foreach (var id in parameterIds)
         {
             parameter = element.get_Parameter(id);
             if (parameter is not null)

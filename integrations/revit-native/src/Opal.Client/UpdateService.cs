@@ -30,10 +30,10 @@ public sealed class UpdateService(ConfigStore config, string installedVersion)
 
         var archive = Path.Combine(updates, $"{release.Version}.zip.part");
         using (var api = new OpalApiClient(settings))
-        await using (var source = await api.DownloadAsync(release.Package.Url, cancellationToken).ConfigureAwait(false))
-        await using (var destination = new FileStream(archive, FileMode.Create, FileAccess.Write, FileShare.None))
+        using (var source = await api.DownloadAsync(release.Package.Url, cancellationToken).ConfigureAwait(false))
+        using (var destination = new FileStream(archive, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            await source.CopyToAsync(destination, 81920, cancellationToken).ConfigureAwait(false);
         }
 
         var actual = await Sha256Async(archive, cancellationToken).ConfigureAwait(false);
@@ -81,9 +81,14 @@ public sealed class UpdateService(ConfigStore config, string installedVersion)
 
     private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
     {
-        await using var stream = File.OpenRead(path);
+        using var stream = File.OpenRead(path);
+#if NETFRAMEWORK
+        using var algorithm = SHA256.Create();
+        var hash = await Task.Run(() => algorithm.ComputeHash(stream), cancellationToken).ConfigureAwait(false);
+#else
         var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+#endif
+        return BitConverter.ToString(hash).Replace("-", string.Empty).ToLowerInvariant();
     }
 
     private static void ExtractSafely(string archivePath, string destination)
@@ -103,7 +108,11 @@ public sealed class UpdateService(ConfigStore config, string installedVersion)
                 continue;
             }
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-            entry.ExtractToFile(output, overwrite: true);
+            if (File.Exists(output))
+            {
+                File.Delete(output);
+            }
+            entry.ExtractToFile(output);
         }
     }
 
@@ -111,7 +120,17 @@ public sealed class UpdateService(ConfigStore config, string installedVersion)
     {
         var temporary = path + ".new";
         File.WriteAllText(temporary, contents);
-        File.Move(temporary, path, true);
+        MoveReplace(temporary, path);
+    }
+
+    private static void MoveReplace(string source, string destination)
+    {
+        if (File.Exists(destination))
+        {
+            File.Replace(source, destination, null);
+            return;
+        }
+        File.Move(source, destination);
     }
 
     private string? PendingVersion()

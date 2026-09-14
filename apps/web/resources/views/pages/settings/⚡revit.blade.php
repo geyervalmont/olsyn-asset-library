@@ -102,7 +102,7 @@ new #[Title('Revit extension')] class extends Component
             </x-ui.panel>
 
             <p class="ui-modal__note">
-                {{ __('Revit 2025–2027 on supported Windows versions is required. Revit LT does not load add-ins. Revit 2027 is host-tested; 2025 and 2026 are compiled against their exact Autodesk APIs and remain beta until tested in those hosts.') }}
+                {{ __('Revit 2024–2027 on supported Windows versions is required. Revit LT does not load add-ins. Revit 2027 is host-tested; 2024, 2025 and 2026 are compiled against their exact Autodesk APIs and remain beta until tested in those hosts.') }}
             </p>
         </div>
     </x-pages::settings.layout>

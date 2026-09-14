@@ -37,6 +37,7 @@ test('the native Revit installer is downloadable from settings', function () {
         ->get(route('revit.edit'))
         ->assertOk()
         ->assertSee('OPAL for Revit')
+        ->assertSee('Revit 2024')
         ->assertSee('Revit 2025')
         ->assertSee('Revit 2026')
         ->assertSee('Revit 2027')
@@ -63,28 +64,28 @@ test('clients discover updates through OPAL and downloads stay on an OPAL addres
 
 test('each Revit host discovers only its exact update package', function () {
     $manifest = $this->releaseManifest;
-    $manifest['revit_version'] = 2025;
-    $manifest['minimum_revit'] = 2025;
-    $manifest['target_framework'] = 'net8.0-windows7.0';
-    $manifest['runtime'] = '.NET 8';
+    $manifest['revit_version'] = 2024;
+    $manifest['minimum_revit'] = 2024;
+    $manifest['target_framework'] = 'net48';
+    $manifest['runtime'] = '.NET Framework 4.8';
     $manifest['verification'] = 'ci';
-    $manifest['package']['name'] = 'OPAL-Revit-2025-Package.zip';
+    $manifest['package']['name'] = 'OPAL-Revit-2024-Package.zip';
     $this->releaseManifest = $manifest;
 
-    $release = $this->getJson('/api/v1/client-releases/revit/2025')
+    $release = $this->getJson('/api/v1/client-releases/revit/2024')
         ->assertOk()
-        ->assertJsonPath('revit_version', 2025)
+        ->assertJsonPath('revit_version', 2024)
         ->json();
 
     expect($release['package']['url'])->toBe(route('revit.download.version', [
-        'revitVersion' => 2025,
+        'revitVersion' => 2024,
         'asset' => 'package',
     ]));
 
-    $this->get('/downloads/revit/2025/package')
-        ->assertRedirect('https://github.com/geyervalmont/olsyn-asset-library/releases/download/revit-latest/OPAL-Revit-2025-Package.zip');
+    $this->get('/downloads/revit/2024/package')
+        ->assertRedirect('https://github.com/geyervalmont/olsyn-asset-library/releases/download/revit-latest/OPAL-Revit-2024-Package.zip');
 
-    $this->getJson('/api/v1/client-releases/revit/2024')->assertNotFound();
+    $this->getJson('/api/v1/client-releases/revit/2023')->assertNotFound();
 });
 
 test('old release channel addresses migrate to the single production release', function () {

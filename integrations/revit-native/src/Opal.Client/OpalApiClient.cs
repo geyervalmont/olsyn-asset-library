@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -120,7 +121,7 @@ public sealed class OpalApiClient : IDisposable
             throw error;
         }
 
-        return new ResponseStream(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), response);
+        return new ResponseStream(await ReadStreamAsync(response.Content, cancellationToken).ConfigureAwait(false), response);
     }
 
     public void Dispose() => http.Dispose();
@@ -151,7 +152,7 @@ public sealed class OpalApiClient : IDisposable
         }
 
         using var document = await JsonDocument.ParseAsync(
-            await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false),
+            await ReadStreamAsync(response.Content, cancellationToken).ConfigureAwait(false),
             cancellationToken: cancellationToken).ConfigureAwait(false);
         var root = document.RootElement;
         return (dataEnvelope && root.TryGetProperty("data", out var data) ? data : root).Clone();
@@ -162,7 +163,7 @@ public sealed class OpalApiClient : IDisposable
         var message = response.ReasonPhrase ?? "OPAL request failed";
         try
         {
-            var json = JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            var json = JsonNode.Parse(await ReadStringAsync(response.Content, cancellationToken).ConfigureAwait(false));
             message = json?["message"]?.GetValue<string>() ?? message;
         }
         catch (JsonException)
@@ -171,6 +172,26 @@ public sealed class OpalApiClient : IDisposable
         }
 
         return new OpalApiException(response.StatusCode, message);
+    }
+
+    private static Task<Stream> ReadStreamAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+#if NETFRAMEWORK
+        cancellationToken.ThrowIfCancellationRequested();
+        return content.ReadAsStreamAsync();
+#else
+        return content.ReadAsStreamAsync(cancellationToken);
+#endif
+    }
+
+    private static Task<string> ReadStringAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+#if NETFRAMEWORK
+        cancellationToken.ThrowIfCancellationRequested();
+        return content.ReadAsStringAsync();
+#else
+        return content.ReadAsStringAsync(cancellationToken);
+#endif
     }
 
     private sealed class ResponseStream(Stream inner, HttpResponseMessage response) : Stream
@@ -185,7 +206,11 @@ public sealed class OpalApiClient : IDisposable
         public override long Seek(long offset, SeekOrigin origin) => inner.Seek(offset, origin);
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            inner.ReadAsync(buffer, offset, count, cancellationToken);
+#if !NETFRAMEWORK
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => await inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+#endif
         protected override void Dispose(bool disposing)
         {
             if (disposing)

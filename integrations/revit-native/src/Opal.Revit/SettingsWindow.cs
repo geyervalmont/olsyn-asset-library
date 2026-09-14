@@ -173,7 +173,7 @@ public sealed class SettingsWindow : Window
                 }
 
                 var linked = CopyFields();
-                linked.Token = result.Token;
+                linked.Token = result.Token!;
                 linked.AccountName = result.User?.Name ?? string.Empty;
                 linked.AccountEmail = result.User?.Email ?? string.Empty;
                 runtime.Save(linked);

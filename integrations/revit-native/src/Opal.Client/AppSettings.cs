@@ -59,7 +59,7 @@ public sealed class ConfigStore
         Directory.CreateDirectory(SettingsRoot);
         var temporary = Path + ".new";
         File.WriteAllText(temporary, JsonSerializer.Serialize(settings, Json));
-        File.Move(temporary, Path, true);
+        MoveReplace(temporary, Path);
     }
 
     private AppSettings? ImportLegacy()
@@ -100,6 +100,16 @@ public sealed class ConfigStore
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    private static void MoveReplace(string source, string destination)
+    {
+        if (File.Exists(destination))
+        {
+            File.Replace(source, destination, null);
+            return;
+        }
+        File.Move(source, destination);
+    }
 }
 
 public static class ClientPaths

@@ -1,0 +1,10 @@
+<Project>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Compile Include="$(MSBuildThisFileDirectory)src/Shared/NetFrameworkCompatibility.cs" Link="NetFrameworkCompatibility.cs" />
+    <PackageReference Include="System.Net.Http.Json" Version="10.0.12" />
+    <PackageReference Include="System.Text.Json" Version="10.0.12" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+</Project>

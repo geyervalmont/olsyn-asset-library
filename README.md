@@ -17,7 +17,7 @@ legacy prototype, current state, and delivery sequence. The
 apps/web/                       Laravel 13 + Livewire control plane
 services/prismfs/               Rust workspace for the filesystem data plane
 integrations/revit/             legacy pyRevit extension and Unix test harness
-integrations/revit-native/      native Revit 2027 client, installer and updater
+integrations/revit-native/      native Revit 2024–2027 client, installer and updater
 infrastructure/local/           Local RustFS object storage and the VM bridge
 deploy/                         Kubernetes manifests and systemd units for PrismFS
 docs/architecture/              System design

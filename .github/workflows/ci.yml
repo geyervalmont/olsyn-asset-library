@@ -145,7 +145,7 @@ jobs:
             gh release upload $tag @manifests --clobber
             if ($LASTEXITCODE -ne 0) { throw "Could not publish the Revit release manifest" }
             gh release edit $tag `
-              --title "OPAL for Revit 2025–2027" `
+              --title "OPAL for Revit 2024–2027" `
               --notes "Automatically built from ${env:GITHUB_SHA}. Download through OPAL → Settings → Revit extension." `
               --prerelease=false `
               --latest
@@ -153,7 +153,7 @@ jobs:
           else {
             gh release create $tag @binaries `
               --target "${env:GITHUB_SHA}" `
-              --title "OPAL for Revit 2025–2027" `
+              --title "OPAL for Revit 2024–2027" `
               --notes "Automatically built from ${env:GITHUB_SHA}. Download through OPAL → Settings → Revit extension." `
               --latest
             if ($LASTEXITCODE -ne 0) { throw "Could not create the Revit production release" }

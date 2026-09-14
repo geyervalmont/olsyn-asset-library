@@ -3,6 +3,14 @@
   "default_year": 2027,
   "versions": [
     {
+      "year": 2024,
+      "api_version": "2024.3.60",
+      "revit_target_framework": "net48",
+      "client_target_framework": "net48",
+      "runtime": ".NET Framework 4.8",
+      "verification": "ci"
+    },
+    {
       "year": 2025,
       "api_version": "2025.4.60",
       "revit_target_framework": "net8.0-windows7.0",

@@ -1,6 +1,6 @@
 # OPAL for Revit
 
-The native OPAL connector targets Revit 2025, 2026 and 2027 and does not require
+The native OPAL connector targets Revit 2024, 2025, 2026 and 2027 and does not require
 pyRevit or a separately installed .NET runtime. One shared feature codebase is
 compiled against the exact API and runtime profile for each Revit year.
 
@@ -39,13 +39,14 @@ stable URLs remain server-side migration aliases, but are not user choices.
 
 ## Build
 
-On Windows with the .NET 8 and .NET 10 SDKs and Inno Setup 6:
+On Windows with the .NET 8 and .NET 10 SDKs, .NET Framework 4.8 targeting pack,
+and Inno Setup 6:
 
 ```powershell
 ./build-release.ps1 -Version 0.1.0.1 -OutputDirectory artifacts/revit
 ```
 
-This runs the portable client tests, compiles every row in
+This runs the portable client tests on modern .NET and .NET Framework 4.8, compiles every row in
 `../../apps/web/config/revit-versions.json`,
 and emits one universal installer plus an exact update package and manifest per
 Revit year. CI can optionally Authenticode-sign the DLLs and installer by
@@ -63,6 +64,7 @@ into a version-specific project. Each build also defines `REVIT_<year>` (for
 example `REVIT_2027`) for the rare API call that genuinely needs a compile-time
 compatibility branch.
 
-Revit 2027 is verified in a real host. The 2025 and 2026 outputs are compiled
-against their exact API reference packages and are marked beta until they have
-also passed a host smoke test.
+Revit 2027 is verified in a real host. The 2024, 2025 and 2026 outputs are
+compiled against their exact API reference packages and are marked beta until
+they have also passed a host smoke test. Revit 2024 uses its native .NET
+Framework 4.8 runtime; later versions use the runtime declared in the matrix.
