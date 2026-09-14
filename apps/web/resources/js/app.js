@@ -378,6 +378,7 @@ const stage = {
             enableSeamlessProjection(material);
             const shapes = {
                 ball: createSculptedBall(material),
+                shader: createShaderBall(material),
                 sphere: sitOnGround(new THREE.Mesh(new THREE.SphereGeometry(1.1, 128, 64), material)),
                 // A slab rather than a plane: the sample keeps a face while
                 // the view turns, which a single-sided plane does not.
@@ -708,6 +709,49 @@ function createSculptedBall(material) {
         const radius = 1.04
             + Math.sin(longitude * 5 + Math.sin(latitude * 2) * 1.4) * equator * 0.065
             + Math.sin(latitude * 6) * 0.035;
+        positions.setXYZ(index, normal.x * radius, normal.y * radius, normal.z * radius);
+    }
+
+    positions.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+
+    return sitOnGround(new THREE.Mesh(geometry, material));
+}
+
+/**
+ * A closed technical shader ball with convex lobes, recessed dimples and
+ * crisp reference grooves. It exercises grazing highlights and relief without
+ * bringing back the overlapping, open shells in the old imported model.
+ */
+function createShaderBall(material) {
+    const geometry = new THREE.SphereGeometry(1.08, 192, 128);
+    const positions = geometry.attributes.position;
+    const normal = new THREE.Vector3();
+    const features = [
+        { direction: new THREE.Vector3(0.58, 0.44, 0.68).normalize(), spread: 0.22, depth: 0.115 },
+        { direction: new THREE.Vector3(-0.62, 0.32, 0.72).normalize(), spread: 0.18, depth: -0.14 },
+        { direction: new THREE.Vector3(0.48, -0.42, 0.77).normalize(), spread: 0.15, depth: -0.105 },
+        { direction: new THREE.Vector3(-0.5, -0.5, 0.7).normalize(), spread: 0.2, depth: 0.085 },
+    ];
+
+    for (let index = 0; index < positions.count; index++) {
+        normal.fromBufferAttribute(positions, index).normalize();
+        const longitude = Math.atan2(normal.z, normal.x);
+        const latitude = Math.asin(THREE.MathUtils.clamp(normal.y, -1, 1));
+        const body = Math.cos(latitude) ** 2;
+        let radius = 1.035 + Math.sin(longitude * 3 - 0.45) * body * 0.028;
+
+        // A narrow equatorial and meridian datum reads immediately under a
+        // patterned material, while the smooth falloff keeps the mesh closed.
+        radius -= Math.exp(-((normal.y / 0.052) ** 2)) * 0.045;
+        radius -= Math.exp(-((normal.x / 0.058) ** 2)) * body * 0.032;
+
+        for (const feature of features) {
+            const angularDistance = 1 - THREE.MathUtils.clamp(normal.dot(feature.direction), -1, 1);
+            radius += feature.depth * Math.exp(-angularDistance / (feature.spread ** 2));
+        }
+
         positions.setXYZ(index, normal.x * radius, normal.y * radius, normal.z * radius);
     }
 

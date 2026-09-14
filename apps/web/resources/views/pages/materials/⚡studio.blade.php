@@ -717,7 +717,7 @@ new #[Title('Material Studio')] class extends Component
                             <div class="ui-studio-view-tools__group">
                                 <span>{{ __('Preview on') }}</span>
                                 <div role="group" aria-label="{{ __('Preview geometry') }}">
-                                    @foreach (['ball' => __('Sculpted ball'), 'sphere' => __('Sphere'), 'panel' => __('Flat sample'), 'cube' => __('Cube')] as $shape => $label)
+                                    @foreach (['ball' => __('Sculpted ball'), 'shader' => __('Shader ball'), 'sphere' => __('Sphere'), 'panel' => __('Flat sample'), 'cube' => __('Cube')] as $shape => $label)
                                         <button
                                             type="button"
                                             x-on:click="shape = '{{ $shape }}'; inspectSurface()"

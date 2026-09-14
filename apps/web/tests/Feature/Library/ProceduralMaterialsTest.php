@@ -105,6 +105,7 @@ test('the studio renders immediately and refreshes after a recipe control change
         ->test('pages::materials.studio')
         ->assertSet('previewStatus', 'ready')
         ->assertSee('data-test="studio-live-preview"', false)
+        ->assertSee('data-test="studio-shape-shader"', false)
         ->assertSee('data-test="studio-shape-sphere"', false)
         ->assertSee('data-test="studio-shape-panel"', false)
         ->assertSee('data-test="studio-map-normal"', false)
