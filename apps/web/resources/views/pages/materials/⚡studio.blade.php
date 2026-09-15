@@ -235,7 +235,7 @@ new #[Title('Material Studio')] class extends Component
     public function applyBlockedReason(): ?string
     {
         return $this->revitSessions->isEmpty()
-            ? __('No Revit connected. Open OPAL Settings in Revit and connect your account.')
+            ? __('No live Revit session for this account. In Revit, open OPAL → Settings and connect the same account.')
             : null;
     }
 
@@ -244,6 +244,12 @@ new #[Title('Material Studio')] class extends Component
         StudioPreviewStore $previews,
         IssueClientCommand $issue,
     ): void {
+        if ($this->revitSessions->isEmpty()) {
+            Flux::toast(variant: 'warning', text: $this->applyBlockedReason());
+
+            return;
+        }
+
         $this->validate($this->recipeRules());
 
         if (! $this->validateRepeat()) {
@@ -820,11 +826,12 @@ new #[Title('Material Studio')] class extends Component
                         wire:click="applyInRevit"
                         variant="primary"
                         data-test="studio-apply-revit"
-                        :disabled="$this->applyBlockedReason() !== null"
+                        aria-disabled="{{ $this->applyBlockedReason() !== null ? 'true' : 'false' }}"
+                        title="{{ $this->applyBlockedReason() ?? __('Apply this working draft in Revit') }}"
                     >{{ __('Apply draft to selected Revit material') }}</x-ui.button>
 
                     @if ($this->applyBlockedReason())
-                        <p class="ui-studio-action-note">{{ $this->applyBlockedReason() }}</p>
+                        <p class="ui-studio-action-note ui-studio-action-note--blocked">{{ $this->applyBlockedReason() }}</p>
                     @elseif ($this->revitSessions->count() > 1)
                         <label class="ui-studio-select"><span>{{ __('Send to') }}</span><select wire:model.live="revitSessionId">@foreach ($this->revitSessions as $session)<option value="{{ $session->id }}">{{ $session->label() }}</option>@endforeach</select></label>
                     @else

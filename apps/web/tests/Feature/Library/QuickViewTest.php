@@ -98,11 +98,11 @@ test('the quick view applies the colourway it is given and reports the command',
 });
 
 test('the quick view says why it cannot apply, and refuses to', function () {
-    // No Revit connected.
+    // No live Revit session for this account.
     Livewire::actingAs($this->viewer)
         ->test('pages::materials.index')
         ->call('openQuick', $this->material->code)
-        ->assertSee('No Revit connected')
+        ->assertSee('No live Revit session for this account')
         ->call('applyInRevit', $this->ashen->id);
     expect(ClientCommand::count())->toBe(0);
 

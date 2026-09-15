@@ -120,16 +120,39 @@ begin
   SaveStringToFile(ManifestPath, Contents, False);
 end;
 
+procedure DisableLegacyPyRevitExtension;
+var
+  CandidatePaths: TArrayOfString;
+  I: Integer;
+  ResultCode: Integer;
+begin
+  { The prototype was often registered from a source checkout, so deleting the
+    copied bundle is not sufficient. Disable it by name wherever the pyRevit
+    CLI is installed. This is intentionally best-effort: pyRevit is optional. }
+  SetArrayLength(CandidatePaths, 4);
+  CandidatePaths[0] := ExpandConstant('{userappdata}\pyRevit-Master\bin\pyrevit.exe');
+  CandidatePaths[1] := ExpandConstant('{localappdata}\pyRevit-Master\bin\pyrevit.exe');
+  CandidatePaths[2] := ExpandConstant('{localappdata}\Programs\pyRevit CLI\pyrevit.exe');
+  CandidatePaths[3] := ExpandConstant('{pf}\pyRevit CLI\pyrevit.exe');
+
+  for I := 0 to GetArrayLength(CandidatePaths) - 1 do
+    if FileExists(CandidatePaths[I]) then
+      Exec(CandidatePaths[I], 'extensions disable OPAL', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   I: Integer;
 begin
   if CurStep = ssPostInstall then
+  begin
+    DisableLegacyPyRevitExtension;
     for I := 0 to GetArrayLength(RevitVersions) - 1 do
       if RevitPage.Values[I] then
         WriteRevitManifest(RevitVersions[I])
       else
         DeleteFile(ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + RevitVersions[I] + '\OPAL.addin'));
+  end;
 end;
 
 function InitializeUninstall: Boolean;

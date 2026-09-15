@@ -123,7 +123,8 @@
                     type="button"
                     class="ui-button ui-button--primary ui-button--md ui-modal__apply"
                     x-on:click="$wire.applyInRevit(chosen.id)"
-                    @disabled($blocked !== null)
+                    aria-disabled="{{ $blocked !== null ? 'true' : 'false' }}"
+                    title="{{ $blocked ?? __('Apply the selected colourway in Revit') }}"
                     data-test="quick-apply"
                 >
                     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>
@@ -133,7 +134,7 @@
             </div>
 
             @if ($blocked)
-                <p class="ui-modal__note" data-test="quick-blocked">{{ $blocked }}</p>
+                <p class="ui-modal__note ui-modal__note--blocked" data-test="quick-blocked">{{ $blocked }}</p>
             @elseif ($sessions->count() > 1)
                 <label class="ui-modal__note">
                     {{ __('Send to') }}

@@ -265,8 +265,12 @@ Scramble from the routes and resources and rendered with Stoplight Elements at
 
 ## Revit extension and the Unix proxy (implemented)
 
-`integrations/revit` holds the pyRevit extension and everything it needs. The
-logic is split so Revit is the last layer, not the first:
+`integrations/revit-native` is the supported, self-contained Revit connector.
+One C# feature codebase is compiled against the Revit 2024–2027 API matrix and
+shipped by a universal installer; it owns account connection, updates, material
+application, and audits. `integrations/revit` is the retired pyRevit prototype
+and remains only as a regression fixture for its Revit-independent workflow.
+The logic is split so Revit is the last layer, not the first:
 
 - `opal_client` (IronPython 2.7 and CPython 3) talks to the API, maps drive
   paths onto a mount or UNC root, checks presence and SHA-256 of every file,

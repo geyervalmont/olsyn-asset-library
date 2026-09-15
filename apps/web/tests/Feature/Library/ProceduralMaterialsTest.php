@@ -167,6 +167,18 @@ test('a studio draft applies to revit without creating a library record', functi
     $this->withToken($otherToken)->get($baseColour['url'])->assertNotFound();
 });
 
+test('a disconnected studio apply remains responsive and explains the account requirement', function () {
+    Livewire::actingAs($this->editor)
+        ->test('pages::materials.studio')
+        ->assertSee('No live Revit session for this account')
+        ->assertSeeHtml('aria-disabled="true"')
+        ->call('applyInRevit')
+        ->assertHasNoErrors()
+        ->assertSet('revitCommandId', null);
+
+    expect(ClientCommand::count())->toBe(0);
+});
+
 test('older masonry recipes gain new rendering defaults without losing stored values', function () {
     app()->instance(ProceduralBaker::class, new FakeProceduralBaker);
     $material = Material::factory()->inHouse()->create();

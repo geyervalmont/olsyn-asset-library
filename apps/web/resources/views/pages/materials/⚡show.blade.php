@@ -190,7 +190,7 @@ new class extends Component {
     public function applyBlockedReason(): ?string
     {
         if ($this->revitSessions->isEmpty()) {
-            return __('No Revit connected. Open OPAL → Connect in Revit.');
+            return __('No live Revit session for this account. In Revit, open OPAL → Settings and connect the same account.');
         }
 
         return $this->material->current_version_id === null
@@ -413,7 +413,8 @@ new class extends Component {
                     type="button"
                     class="ui-button ui-button--primary ui-button--sm ui-revit__apply"
                     x-on:click="$wire.applyInRevit(chosen.id)"
-                    @disabled($this->applyBlockedReason() !== null)
+                    aria-disabled="{{ $this->applyBlockedReason() !== null ? 'true' : 'false' }}"
+                    title="{{ $this->applyBlockedReason() ?? __('Apply the selected colourway in Revit') }}"
                     data-test="apply-in-revit-button"
                 >
                     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>

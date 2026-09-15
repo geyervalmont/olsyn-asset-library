@@ -11,7 +11,7 @@ compiled against the exact API and runtime profile for each Revit year.
    select additional versions when Revit uses a custom installation path.
 3. In Revit, open **OPAL → Settings**, choose **Connect account**, and complete
    the short-code flow in the browser.
-4. Set the mounted OPAL drive path, then use **Apply Selected** or **Sync**.
+4. Set the mounted OPAL drive path, then use **Apply Material** or **Audit Materials**.
 
 The settings window is the single place for account connection and disconnection,
 endpoint, document, drive health, recent activity and update state. Production
@@ -37,6 +37,8 @@ There is one production release stream. Every push to `main` rebuilds and
 publishes the `revit-latest` GitHub release; clients discover the latest package
 through the canonical OPAL endpoint for their Revit year. Old development and
 stable URLs remain server-side migration aliases, but are not user choices.
+The old pyRevit prototype is not packaged or distributed. The native installer
+also disables an installed prototype so two OPAL ribbons cannot coexist.
 
 ## Build
 

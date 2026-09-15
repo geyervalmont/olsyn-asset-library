@@ -157,7 +157,7 @@ new #[Title('Library')] class extends Component {
     public function applyBlockedReason(): ?string
     {
         if ($this->revitSessions->isEmpty()) {
-            return __('No Revit connected. Open OPAL → Connect in Revit.');
+            return __('No live Revit session for this account. In Revit, open OPAL → Settings and connect the same account.');
         }
 
         return $this->quickMaterial?->current_version_id === null
