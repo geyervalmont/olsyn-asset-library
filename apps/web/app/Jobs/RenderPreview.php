@@ -140,7 +140,7 @@ class RenderPreview extends TrackedJob
         );
 
         if (config('opal.embeddings.enabled')) {
-            EmbedMaterial::forMaterial($variant->material);
+            EmbedVariantVisual::forVariant($variant);
         }
 
         return ['representation_id' => $representation->getKey(), 'file_id' => $output->getKey(), 'maps' => array_keys($maps), 'render_ms' => round($renderMs, 1)];

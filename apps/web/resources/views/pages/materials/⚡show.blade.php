@@ -15,7 +15,9 @@ use App\Enums\Visibility;
 use App\Jobs\BuildVariantPackage;
 use App\Jobs\DownscaleRepresentation;
 use App\Jobs\EmbedMaterial;
+use App\Jobs\EmbedVariantVisual;
 use App\Jobs\RenderPreview;
+use App\Library\Embeddings\VariantVisualEmbeddingDocuments;
 use App\Library\Previews\MaterialPreviews;
 use App\Models\ClientCommand;
 use App\Models\ClientSession;
@@ -318,7 +320,19 @@ new class extends Component
         abort_unless(auth()->user()?->can('materials.contribute'), 403);
 
         $run = EmbedMaterial::forMaterial($this->material, auth()->user(), force: true);
-        Flux::toast(variant: 'success', text: __('Queued a fresh similarity index (run :run).', ['run' => substr($run->uuid, 0, 8)]));
+        $visuals = 0;
+
+        foreach ($this->material->variants as $variant) {
+            if (app(VariantVisualEmbeddingDocuments::class)->for($variant)->image !== null) {
+                EmbedVariantVisual::forVariant($variant, auth()->user(), force: true);
+                $visuals++;
+            }
+        }
+
+        Flux::toast(variant: 'success', text: __('Queued type similarity and :count visual index(es) (run :run).', [
+            'count' => $visuals,
+            'run' => substr($run->uuid, 0, 8),
+        ]));
     }
 
     public function publish(CutVersion $cut, PublishVersion $publish): void
@@ -402,7 +416,14 @@ new class extends Component
             <x-ui.badge :tone="match ($material->status->value) { 'active' => 'success', 'archived' => 'neutral', default => 'warning' }" dot>{{ $material->status->label() }}</x-ui.badge>
             <x-ui.badge tone="info" data-test="current-version">{{ $material->currentVersion ? 'v'.$material->currentVersion->number : __('Unpublished') }}</x-ui.badge>
             @if (config('opal.embeddings.enabled'))
-                <x-ui.button href="{{ route('materials.index', ['similar' => $material->code]) }}" variant="quiet" size="sm" data-test="find-similar">{{ __('Find similar') }}</x-ui.button>
+                <x-ui.button href="{{ route('materials.index', ['similar' => $material->code, 'similarity' => 'semantic']) }}" variant="quiet" size="sm" data-test="find-similar">{{ __('Same type') }}</x-ui.button>
+                <x-ui.button
+                    href="{{ route('materials.index', ['similar' => $this->card['variants'][$this->card['active']]['code'] ?? '', 'similarity' => 'appearance']) }}"
+                    x-bind:href="'{{ route('materials.index', ['similarity' => 'appearance']) }}&similar=' + encodeURIComponent(chosen?.code || '')"
+                    variant="quiet"
+                    size="sm"
+                    data-test="find-lookalikes"
+                >{{ __('Looks like this') }}</x-ui.button>
             @endif
             @can('materials.contribute')
                 <x-ui.button href="{{ route('materials.create', ['mode' => 'existing', 'material' => $material->code, 'variant' => $this->variants->first()?->code]) }}" variant="quiet" size="sm" data-test="improve-material" wire:navigate>{{ __('Import improvement') }}</x-ui.button>

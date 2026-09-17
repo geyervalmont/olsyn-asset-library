@@ -8,9 +8,11 @@ use App\Enums\ReviewState;
 use App\Enums\Role;
 use App\Enums\Visibility;
 use App\Jobs\EmbedMaterial;
+use App\Jobs\EmbedVariantVisual;
 use App\Library\Embeddings\EmbeddingInput;
 use App\Library\Embeddings\EmbeddingProvider;
 use App\Library\Embeddings\MaterialSimilarity;
+use App\Library\Embeddings\VariantVisualEmbeddingDocuments;
 use App\Library\FileStore;
 use App\Models\Category;
 use App\Models\Embedding;
@@ -27,6 +29,9 @@ final class FakeMaterialEmbeddingProvider implements EmbeddingProvider
 {
     /** @var list<EmbeddingInput> */
     public array $inputs = [];
+
+    /** @var array<string, array{float, float}> */
+    public array $imageVectors = [];
 
     public function name(): string
     {
@@ -46,7 +51,14 @@ final class FakeMaterialEmbeddingProvider implements EmbeddingProvider
     public function embed(EmbeddingInput $input): array
     {
         $this->inputs[] = $input;
-        $text = strtolower($input->text);
+
+        if ($input->image !== null) {
+            [$x, $y] = $this->imageVectors[hash('sha256', $input->image)] ?? [0.5, 0.5];
+
+            return [$x, $y, ...array_fill(0, 1022, 0.0)];
+        }
+
+        $text = strtolower($input->text ?? '');
 
         [$x, $y] = match (true) {
             str_contains($text, 'material: walnut') => [0.95, 0.05],
@@ -84,45 +96,68 @@ beforeEach(function () {
     $this->carpet = Material::factory()->inHouse()->create(['name' => 'Carpet tile', 'category_id' => $carpet, 'description' => 'Soft blue textile flooring']);
     $this->secret = Material::factory()->inHouse()->create(['name' => 'Secret oak', 'category_id' => $timber, 'visibility' => Visibility::Restricted]);
 
+    $this->variants = [];
+
     foreach ([$this->oak, $this->walnut, $this->carpet, $this->secret] as $material) {
-        app(AddVariant::class)->handle($material, ['colourway' => $material->name]);
+        $this->variants[$material->getKey()] = app(AddVariant::class)->handle($material, ['colourway' => $material->name]);
     }
 
-    $png = imagecreatetruecolor(256, 256);
-    ob_start();
-    imagepng($png);
-    $preview = app(FileStore::class)->store((string) ob_get_clean(), 'oak-preview.png', 'image/png');
-    $representation = app(CreateRepresentation::class)->handle(
-        $this->oak->variants()->firstOrFail(),
-        'preview',
-        'preview',
-        ['render' => $preview],
-        Representation::KIND_IMAGE,
-    );
-    app(ReviewRepresentation::class)->handle($representation, ReviewState::Approved);
+    foreach ([
+        [$this->oak, 32, [1.0, 0.0]],
+        [$this->walnut, 48, [0.95, 0.05]],
+        [$this->carpet, 180, [0.0, 1.0]],
+        [$this->secret, 40, [1.0, 0.0]],
+    ] as [$material, $grey, $vector]) {
+        $image = imagecreatetruecolor(256, 256);
+        imagefilledrectangle($image, 0, 0, 255, 255, imagecolorallocate($image, $grey, $grey, $grey));
+        ob_start();
+        imagepng($image);
+        $png = (string) ob_get_clean();
+        $this->provider->imageVectors[hash('sha256', $png)] = $vector;
+        $preview = app(FileStore::class)->store($png, $material->slug.'-preview.png', 'image/png');
+        $representation = app(CreateRepresentation::class)->handle(
+            $this->variants[$material->getKey()],
+            'preview',
+            'preview',
+            ['render' => $preview],
+            Representation::KIND_IMAGE,
+        );
+        app(ReviewRepresentation::class)->handle($representation, ReviewState::Approved);
+    }
 
     foreach ([$this->oak, $this->walnut, $this->carpet, $this->secret] as $material) {
         EmbedMaterial::forMaterialHere($material);
+        EmbedVariantVisual::forVariantHere($this->variants[$material->getKey()]);
     }
 });
 
 afterEach(fn () => Tenant::forgetCurrent());
 
-test('materials are indexed from metadata and an approved rendered preview', function () {
+test('type and appearance are indexed as independent vectors', function () {
     $embedding = Embedding::query()->whereMorphedTo('embeddable', $this->oak)->sole();
+    $visual = Embedding::query()
+        ->whereMorphedTo('embeddable', $this->variants[$this->oak->getKey()])
+        ->where('kind', VariantVisualEmbeddingDocuments::KIND)
+        ->sole();
 
-    expect(Embedding::query()->count())->toBe(4)
+    expect(Embedding::query()->count())->toBe(8)
         ->and($embedding->provider)->toBe('fake')
         ->and($embedding->model)->toBe('material-test-v1')
         ->and($embedding->dimensions)->toBe(1024)
         ->and($embedding->source_text)->toContain('Material: Natural Oak', 'Category: Timber')
-        ->and($embedding->image_file_id)->not->toBeNull()
-        ->and($this->provider->inputs[0]->image)->not->toBeNull()
+        ->and($embedding->source_text)->not->toContain('Variants:')
+        ->and($embedding->image_file_id)->toBeNull()
+        ->and($visual->source_text)->toBe('')
+        ->and($visual->image_file_id)->not->toBeNull()
+        ->and($this->provider->inputs[0]->image)->toBeNull()
+        ->and($this->provider->inputs[1]->text)->toBeNull()
+        ->and($this->provider->inputs[1]->image)->not->toBeNull()
         ->and(EmbedMaterial::isCurrent($this->oak))->toBeTrue();
 
     EmbedMaterial::forMaterialHere($this->oak);
-    expect($this->provider->inputs)->toHaveCount(4)
-        ->and(Embedding::query()->count())->toBe(4);
+    EmbedVariantVisual::forVariantHere($this->variants[$this->oak->getKey()]);
+    expect($this->provider->inputs)->toHaveCount(8)
+        ->and(Embedding::query()->count())->toBe(8);
 });
 
 test('semantic and material similarity ranking respect visibility', function () {
@@ -140,6 +175,16 @@ test('semantic and material similarity ranking respect visibility', function () 
         ->and($semantic)->not->toContain('Secret oak');
 });
 
+test('appearance similarity returns only visually close variants', function () {
+    $results = app(MaterialSimilarity::class)
+        ->toAppearance(Material::query()->visibleTo($this->viewer), $this->variants[$this->oak->getKey()])
+        ->get();
+
+    expect($results->pluck('name')->all())->toBe(['Walnut veneer'])
+        ->and((int) $results->first()->getAttribute('matched_variant_id'))
+        ->toBe($this->variants[$this->walnut->getKey()]->getKey());
+});
+
 test('the web library and API expose both similarity paths', function () {
     Livewire::actingAs($this->viewer)
         ->test('pages::materials.index')
@@ -148,7 +193,7 @@ test('the web library and API expose both similarity paths', function () {
         ->set('search', 'warm natural timber')
         ->assertSeeInOrder(['Natural Oak', 'Walnut veneer', 'Carpet tile'])
         ->set('similar', $this->oak->code)
-        ->assertSee('Materials similar to Natural Oak')
+        ->assertSee('Same type as Natural Oak')
         ->assertDontSee('Secret oak');
 
     Sanctum::actingAs($this->viewer);
@@ -163,6 +208,20 @@ test('the web library and API expose both similarity paths', function () {
         ->assertJsonPath('data.0.name', 'Walnut veneer')
         ->assertJsonMissing(['name' => 'Natural Oak'])
         ->assertJsonMissing(['name' => 'Secret oak']);
+
+    Livewire::actingAs($this->viewer)
+        ->test('pages::materials.index')
+        ->set('similarity', 'appearance')
+        ->set('similar', $this->variants[$this->oak->getKey()]->code)
+        ->assertSee('Looks like Natural Oak · Natural Oak')
+        ->assertSee('Walnut veneer')
+        ->assertDontSee('Carpet tile');
+
+    $this->getJson('/api/v1/materials?similarity=appearance&similar_to='.$this->variants[$this->oak->getKey()]->code)
+        ->assertOk()
+        ->assertJsonPath('data.0.name', 'Walnut veneer')
+        ->assertJsonPath('data.0.matched_variant.code', $this->variants[$this->walnut->getKey()]->code)
+        ->assertJsonMissing(['name' => 'Carpet tile']);
 });
 
 test('the embedding command skips current material vectors', function () {
@@ -170,5 +229,5 @@ test('the embedding command skips current material vectors', function () {
         ->expectsOutputToContain('Current')
         ->assertSuccessful();
 
-    expect($this->provider->inputs)->toHaveCount(4);
+    expect($this->provider->inputs)->toHaveCount(8);
 });

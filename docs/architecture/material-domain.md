@@ -432,27 +432,32 @@ metalness for anodised aluminium.
   `websearch_to_tsquery`, `word_similarity` and a contains fallback.
 - Dominant colour per variant (hex and LAB) supports colour filters and
   nearest-colour queries.
-- Multimodal embeddings live in a polymorphic `embeddings` table on pgvector.
-  A material document combines stable catalogue metadata, descriptions, tags,
-  variant attributes and the best approved rendered preview. AWS Bedrock's
-  Titan Multimodal model places that text and image in one 1,024-dimensional
-  space, so the same index supports natural-language queries and “find
-  materials like this” from a material record.
+- Embeddings live in a polymorphic `embeddings` table on pgvector, with two
+  deliberately independent profiles in Titan's shared 1,024-dimensional
+  space. `material_similarity` is text-only and describes material type, use,
+  installation and specifications. `variant_visual` is image-only and indexes
+  one deterministic rendered preview per colourway. Text cannot dilute visual
+  similarity and appearance cannot pull an unrelated type into semantic
+  results.
 - The embedding provider is an application contract rather than a model call
   embedded in the UI. Each vector records its provider, model, source text,
   preview file, source digest and profile; a model/profile change creates an
   explicit backfill instead of silently mixing incompatible vectors. The
   table is polymorphic so furniture and other future asset types can reuse the
   same infrastructure.
-- `EmbedMaterial` is a tracked, retryable, rate-limited job on the
-  `embeddings` queue. Creation, variant changes and preview renders enqueue a
-  refresh; `opal:embeddings:index --stale` supplies resumable backfills and
-  runs nightly to repair missed or changed records. Operators can also force a
-  refresh from the material record.
+- `EmbedMaterial` and `EmbedVariantVisual` are tracked, retryable, rate-limited
+  jobs on the `embeddings` queue. Preview renders refresh their exact variant's
+  visual vector. `opal:embeddings:index --scope=semantic|visual|all --stale`
+  supplies resumable backfills; variants without a rendered preview are
+  reported and excluded rather than silently receiving a text substitute.
 - `/materials` offers **Keywords** for exact/fuzzy lookup and **Meaning** for
-  semantic text search. Every material record and quick view links to a
-  visibility-aware similarity result. The API accepts `mode=semantic&q=...`
-  or `similar_to={material-code}` and returns a cosine similarity score.
+  semantic text search. **Same type** compares text-only material meaning;
+  **Looks like this** compares the selected variant's image-only vector and
+  shows only the closest qualifying colourway from each result. The API accepts
+  `mode=semantic&q=...`, `similar_to={material-code}&similarity=semantic`, or
+  `similar_to={variant-code}&similarity=appearance` and returns a cosine score
+  plus `matched_variant` for appearance results. Weak appearance matches are
+  omitted by `OPAL_APPEARANCE_MIN_SIMILARITY`.
   Authorization is applied to the material query before ranking, so an
   inaccessible material is never disclosed by vector retrieval.
 - The vectors are also the reusable input for future clustering, duplicate

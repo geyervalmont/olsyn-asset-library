@@ -41,7 +41,8 @@ masonry bonds, staggered board cycles, or weave repeats that would create a seam
 
 ## Repair loop
 
-1. Find the material from keyword, semantic or similar-material search.
+1. Find the material with keywords, semantic meaning, **Same type**, or the
+   image-only **Looks like this** search for a selected colourway.
 2. Open the record and inspect raw maps and the lit surface.
 3. Choose **Upload maps** for replacement/generated images or **Edit recipe**
    for procedural sources.

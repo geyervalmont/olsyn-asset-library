@@ -3,6 +3,7 @@
 use App\Jobs\BuildVariantPackage;
 use App\Jobs\DownscaleRepresentation;
 use App\Jobs\EmbedMaterial;
+use App\Jobs\EmbedVariantVisual;
 use App\Jobs\RenderPreview;
 
 $revitMatrix = json_decode(
@@ -92,6 +93,7 @@ return [
         'build_variant_package' => BuildVariantPackage::class,
         'downscale_representation' => DownscaleRepresentation::class,
         'embed_material' => EmbedMaterial::class,
+        'embed_variant_visual' => EmbedVariantVisual::class,
         'render_preview' => RenderPreview::class,
     ],
 
@@ -113,6 +115,9 @@ return [
         'dimensions' => (int) env('OPAL_EMBEDDINGS_DIMENSIONS', 1024),
         'region' => env('OPAL_EMBEDDINGS_REGION', env('AWS_DEFAULT_REGION', 'ap-southeast-2')),
         'requests_per_minute' => (int) env('OPAL_EMBEDDINGS_REQUESTS_PER_MINUTE', 60),
+        // Appearance results below this cosine score are omitted rather than
+        // pretending every indexed colourway is a lookalike.
+        'appearance_min_similarity' => (float) env('OPAL_APPEARANCE_MIN_SIMILARITY', 0.55),
     ],
 
     /*

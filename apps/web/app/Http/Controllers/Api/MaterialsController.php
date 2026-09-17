@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Resources\MaterialResource;
 use App\Library\Embeddings\MaterialSimilarity;
 use App\Models\Material;
+use App\Models\Variant;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -22,6 +23,7 @@ class MaterialsController
             'q' => ['nullable', 'string', 'max:200'],
             'mode' => ['nullable', 'in:keyword,semantic'],
             'similar_to' => ['nullable', 'string', 'max:96'],
+            'similarity' => ['nullable', 'in:semantic,appearance'],
             'category' => ['nullable', 'string', 'max:8'],
             'supplier' => ['nullable', 'string', 'max:32'],
             'status' => ['nullable', 'in:draft,active,archived'],
@@ -36,9 +38,16 @@ class MaterialsController
 
         if (isset($validated['similar_to'])) {
             abort_unless(config('opal.embeddings.enabled'), 503, 'Material similarity is not enabled.');
-            $source = Material::resolveCode($validated['similar_to']);
-            abort_if($source === null || ! $source->isVisibleTo($request->user()), 404);
-            $query = app(MaterialSimilarity::class)->toMaterial($query, $source);
+
+            if (($validated['similarity'] ?? 'semantic') === 'appearance') {
+                $source = Variant::resolveCode($validated['similar_to']);
+                abort_if($source === null || ! $source->material->isVisibleTo($request->user()), 404);
+                $query = app(MaterialSimilarity::class)->toAppearance($query, $source);
+            } else {
+                $source = Material::resolveCode($validated['similar_to']);
+                abort_if($source === null || ! $source->isVisibleTo($request->user()), 404);
+                $query = app(MaterialSimilarity::class)->toMaterial($query, $source);
+            }
         } elseif (($validated['mode'] ?? 'keyword') === 'semantic' && trim((string) ($validated['q'] ?? '')) !== '') {
             abort_unless(config('opal.embeddings.enabled'), 503, 'Semantic search is not enabled.');
             $query = app(MaterialSimilarity::class)->toText($query, (string) $validated['q']);

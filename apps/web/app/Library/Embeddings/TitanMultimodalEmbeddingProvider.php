@@ -43,9 +43,12 @@ final class TitanMultimodalEmbeddingProvider implements EmbeddingProvider
     public function embed(EmbeddingInput $input): array
     {
         $payload = [
-            'inputText' => $input->text,
             'embeddingConfig' => ['outputEmbeddingLength' => $this->dimensions()],
         ];
+
+        if ($input->text !== null && trim($input->text) !== '') {
+            $payload['inputText'] = $input->text;
+        }
 
         if ($input->image !== null) {
             if (strlen($input->image) > 25 * 1024 * 1024) {
@@ -53,6 +56,10 @@ final class TitanMultimodalEmbeddingProvider implements EmbeddingProvider
             }
 
             $payload['inputImage'] = base64_encode($input->image);
+        }
+
+        if (! isset($payload['inputText'], $payload['inputImage'])) {
+            throw new RuntimeException('An embedding requires text, an image, or both.');
         }
 
         try {

@@ -9,6 +9,7 @@ use App\Models\ClientCommand;
 use App\Models\ClientSession;
 use App\Models\Material;
 use App\Models\Supplier;
+use App\Models\Variant;
 use Flux\Flux;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -41,6 +42,9 @@ new #[Title('Library')] class extends Component {
     public string $similar = '';
 
     #[Url]
+    public string $similarity = 'semantic';
+
+    #[Url]
     public string $view = 'swatches';
 
     #[Url]
@@ -64,6 +68,7 @@ new #[Title('Library')] class extends Component {
         abort_unless(auth()->user()?->can('materials.view'), 403);
 
         $this->mode = in_array($this->mode, ['keyword', 'semantic'], true) ? $this->mode : 'keyword';
+        $this->similarity = in_array($this->similarity, ['semantic', 'appearance'], true) ? $this->similarity : 'semantic';
         $this->view = in_array($this->view, ['swatches', 'table'], true) ? $this->view : 'swatches';
         $this->sort = in_array($this->sort, ['name', 'newest', 'variants'], true) ? $this->sort : 'name';
         $this->userId = (int) auth()->id();
@@ -235,12 +240,13 @@ new #[Title('Library')] class extends Component {
     public function clearSimilarity(): void
     {
         $this->similar = '';
+        $this->similarity = 'semantic';
         $this->resetPage();
     }
 
     public function clearFilters(): void
     {
-        $this->reset('search', 'category', 'supplier', 'status', 'similar');
+        $this->reset('search', 'category', 'supplier', 'status', 'similar', 'similarity');
         $this->resetPage();
     }
 
@@ -280,7 +286,9 @@ new #[Title('Library')] class extends Component {
             ->when($this->status === '', fn ($query) => $query->where('status', '!=', 'archived'))
             ->when($this->status !== '' && $this->status !== 'all', fn ($query) => $query->where('status', $this->status));
 
-        if ($this->similarMaterial !== null && config('opal.embeddings.enabled')) {
+        if ($this->similarVariant !== null && config('opal.embeddings.enabled')) {
+            $query = app(MaterialSimilarity::class)->toAppearance($query, $this->similarVariant);
+        } elseif ($this->similarMaterial !== null && config('opal.embeddings.enabled')) {
             $query = app(MaterialSimilarity::class)->toMaterial($query, $this->similarMaterial);
         } elseif ($this->mode === 'semantic' && trim($this->search) !== '' && config('opal.embeddings.enabled')) {
             $query = app(MaterialSimilarity::class)->toText($query, $this->search);
@@ -302,13 +310,25 @@ new #[Title('Library')] class extends Component {
     #[Computed]
     public function similarMaterial(): ?Material
     {
-        if ($this->similar === '') {
+        if ($this->similar === '' || $this->similarity !== 'semantic') {
             return null;
         }
 
         $material = Material::resolveCode($this->similar);
 
         return $material !== null && $material->isVisibleTo(auth()->user()) ? $material : null;
+    }
+
+    #[Computed]
+    public function similarVariant(): ?Variant
+    {
+        if ($this->similar === '' || $this->similarity !== 'appearance') {
+            return null;
+        }
+
+        $variant = Variant::resolveCode($this->similar);
+
+        return $variant !== null && $variant->material->isVisibleTo(auth()->user()) ? $variant : null;
     }
 
     /**
@@ -326,6 +346,21 @@ new #[Title('Library')] class extends Component {
     #[Computed]
     public function chips(): array
     {
+        if ($this->similarVariant !== null) {
+            $matchedIds = $this->materials->getCollection()
+                ->pluck('matched_variant_id')
+                ->filter()
+                ->map(fn (mixed $id): int => (int) $id)
+                ->all();
+
+            return Variant::query()
+                ->whereIn('id', $matchedIds)
+                ->get()
+                ->groupBy('material_id')
+                ->map(fn (Collection $variants): Collection => $variants->values())
+                ->all();
+        }
+
         return app(MaterialPreviews::class)->chipsFor($this->materials->getCollection());
     }
 
@@ -443,12 +478,17 @@ new #[Title('Library')] class extends Component {
         @endif
     </div>
 
-    @if ($this->similarMaterial)
+    @if ($this->similarVariant || $this->similarMaterial)
         <x-ui.panel tone="paper" style="margin-bottom: 12px" data-test="similar-source">
             <div class="ui-panel__heading">
                 <div>
-                    <h3>{{ __('Materials similar to :name', ['name' => $this->similarMaterial->name]) }}</h3>
-                    <p>{{ __('Ranked from the material description and rendered appearance. Your category, supplier and status filters still apply.') }}</p>
+                    @if ($this->similarVariant)
+                        <h3>{{ __('Looks like :material · :variant', ['material' => $this->similarVariant->material->name, 'variant' => $this->similarVariant->name]) }}</h3>
+                        <p>{{ __('Ranked only from rendered appearance. Each result shows the closest matching colourway; unrelated variants are excluded.') }}</p>
+                    @else
+                        <h3>{{ __('Same type as :name', ['name' => $this->similarMaterial->name]) }}</h3>
+                        <p>{{ __('Ranked from material type, use, installation and specifications—not visual appearance. Your filters still apply.') }}</p>
+                    @endif
                 </div>
                 <x-ui.button wire:click="clearSimilarity" variant="quiet" size="sm">{{ __('Clear similarity') }}</x-ui.button>
             </div>
@@ -477,7 +517,13 @@ new #[Title('Library')] class extends Component {
                     </thead>
                     <tbody>
                         @foreach ($this->materials as $material)
-                            @php $preview = $this->previews[$material->id] ?? null; $chips = $this->chips[$material->id] ?? collect(); @endphp
+                            @php
+                                $matchedVariantId = (int) $material->getAttribute('matched_variant_id');
+                                $preview = $matchedVariantId > 0
+                                    ? ($this->variantFiles[$matchedVariantId] ?? $this->previews[$material->id] ?? null)
+                                    : ($this->previews[$material->id] ?? null);
+                                $chips = $this->chips[$material->id] ?? collect();
+                            @endphp
                             <tr wire:key="row-{{ $material->id }}" data-test="material-row">
                                 <td>
                                     <a class="ui-table__material" href="{{ route('materials.show', $material) }}" x-data="quickLink" x-on:click="quickOpen($event, @js($material->code))" style="text-decoration: none">

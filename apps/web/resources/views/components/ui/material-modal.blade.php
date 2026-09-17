@@ -116,7 +116,13 @@
             <div class="ui-modal__actions">
                 <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.show', $material) }}" wire:navigate data-test="quick-open-record">{{ __('Full record') }}</a>
                 @if (config('opal.embeddings.enabled'))
-                    <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.index', ['similar' => $material->code]) }}" data-test="quick-find-similar">{{ __('Find similar') }}</a>
+                    <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.index', ['similar' => $material->code, 'similarity' => 'semantic']) }}" data-test="quick-find-similar">{{ __('Same type') }}</a>
+                    <a
+                        class="ui-button ui-button--quiet ui-button--md"
+                        href="{{ route('materials.index', ['similar' => $card['variants'][$card['active']]['code'] ?? '', 'similarity' => 'appearance']) }}"
+                        x-bind:href="'{{ route('materials.index', ['similarity' => 'appearance']) }}&similar=' + encodeURIComponent(chosen?.code || '')"
+                        data-test="quick-find-lookalikes"
+                    >{{ __('Looks like this') }}</a>
                 @endif
 
                 <button

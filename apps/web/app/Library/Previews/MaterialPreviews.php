@@ -129,6 +129,7 @@ class MaterialPreviews
             ->whereIn('representations.variant_id', $variants->pluck('id')->all())
             ->where('map_roles.slug', self::PREVIEW_ROLE)
             ->whereIn('representations.review_state', [ReviewState::Approved->value, ReviewState::Candidate->value])
+            ->orderByDesc('representations.id')
             ->get(['representations.variant_id', 'representation_files.file_id', 'map_roles.slug', 'representations.review_state']);
 
         $chosen = [];

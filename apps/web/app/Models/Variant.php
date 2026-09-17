@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use LogicException;
 
@@ -233,5 +234,15 @@ class Variant extends Model
     public function packages(): HasMany
     {
         return $this->hasMany(Package::class)->orderByDesc('revision');
+    }
+
+    /**
+     * Replaceable image-only vectors generated from this colourway.
+     *
+     * @return MorphMany<Embedding, $this>
+     */
+    public function embeddings(): MorphMany
+    {
+        return $this->morphMany(Embedding::class, 'embeddable');
     }
 }

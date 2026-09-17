@@ -16,6 +16,10 @@ class MaterialResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $matchedVariant = $this->relationLoaded('variants')
+            ? $this->variants->firstWhere('id', (int) $this->getAttribute('matched_variant_id'))
+            : null;
+
         return [
             'code' => $this->code,
             'name' => $this->name,
@@ -32,6 +36,7 @@ class MaterialResource extends JsonResource
             'visibility' => $this->visibility->value,
             'current_version' => $this->currentVersion?->number,
             'similarity' => $this->getAttribute('similarity_score') === null ? null : round((float) $this->getAttribute('similarity_score'), 4),
+            'matched_variant' => $matchedVariant === null ? null : new VariantResource($matchedVariant),
             'variants' => VariantResource::collection($this->whenLoaded('variants')),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
