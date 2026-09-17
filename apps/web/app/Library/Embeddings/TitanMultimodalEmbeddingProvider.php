@@ -58,7 +58,7 @@ final class TitanMultimodalEmbeddingProvider implements EmbeddingProvider
             $payload['inputImage'] = base64_encode($input->image);
         }
 
-        if (! isset($payload['inputText'], $payload['inputImage'])) {
+        if (! isset($payload['inputText']) && ! isset($payload['inputImage'])) {
             throw new RuntimeException('An embedding requires text, an image, or both.');
         }
 
