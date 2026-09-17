@@ -19,6 +19,7 @@ use App\Jobs\EmbedVariantVisual;
 use App\Jobs\RenderPreview;
 use App\Library\Embeddings\VariantVisualEmbeddingDocuments;
 use App\Library\Previews\MaterialPreviews;
+use App\Library\QrCodes\MaterialQrCodes;
 use App\Models\ClientCommand;
 use App\Models\ClientSession;
 use App\Models\Drive;
@@ -92,6 +93,17 @@ new class extends Component
         $chips = $this->variants->take(24);
 
         return $previews->cardData($this->material, $chips, $previews->variantFilesFor($chips), $this->preview);
+    }
+
+    /**
+     * @return list<array{label: string, detail: string, image: string, download: string, target: string}>
+     */
+    #[Computed]
+    public function qrOptions(): array
+    {
+        abort_unless(auth()->user()?->can('materials.publish'), 403);
+
+        return app(MaterialQrCodes::class)->options($this->material, $this->variants);
     }
 
     /**
@@ -399,7 +411,7 @@ new class extends Component
     }
 }; ?>
 
-<section x-data="swatchCard(@js($this->card))">
+<section x-data="swatchCard(@js($this->card), @js(auth()->user()?->can('materials.publish') ? $this->qrOptions : []))">
     <div class="ui-record-head">
         <div>
             <x-ui.eyebrow>{{ $material->category->name }}</x-ui.eyebrow>
@@ -433,6 +445,7 @@ new class extends Component
                 @endif
             @endcan
             @can('materials.publish')
+                <x-ui.button type="button" x-on:click="openQr()" variant="quiet" size="sm" data-test="open-material-qr">{{ __('QR code') }}</x-ui.button>
                 <x-ui.button wire:click="publish" variant="secondary" size="sm" data-test="publish">{{ __('Publish new version') }}</x-ui.button>
             @endcan
             <div class="ui-revit" data-test="apply-in-revit">
@@ -462,6 +475,58 @@ new class extends Component
             </div>
         </div>
     </div>
+
+    @can('materials.publish')
+        <div
+            class="ui-modal"
+            x-show="qrOpen"
+            x-cloak
+            x-on:keydown.escape.window="closeQr()"
+            data-test="material-qr-modal"
+        >
+            <button type="button" class="ui-modal__scrim" x-on:click="closeQr()" tabindex="-1" aria-label="{{ __('Close') }}"></button>
+
+            <div class="ui-modal__panel ui-qr" role="dialog" aria-modal="true" aria-labelledby="material-qr-title" tabindex="-1" x-on:click.stop>
+                <header class="ui-modal__head">
+                    <div>
+                        <x-ui.eyebrow>{{ __('Public material link') }}</x-ui.eyebrow>
+                        <h2 id="material-qr-title">{{ __('QR code') }}</h2>
+                        <p class="ui-modal__code"><code x-text="qrOption?.detail ?? ''">{{ $material->code }}</code></p>
+                    </div>
+                    <button type="button" class="ui-modal__close" x-on:click="closeQr()" aria-label="{{ __('Close') }}">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
+                    </button>
+                </header>
+
+                <div class="ui-modal__body ui-qr__body">
+                    <div class="ui-qr__image">
+                        <img x-bind:src="qrOption?.image ?? ''" alt="{{ __('Scannable material QR code') }}" width="768" height="768" />
+                    </div>
+
+                    <div class="ui-qr__controls">
+                        <x-ui.field :label="__('QR destination')" for="materialQrVariant">
+                            <select id="materialQrVariant" class="ui-select" x-model.number="qrSelection" data-test="material-qr-destination">
+                                <template x-for="(option, index) in qrOptions" x-bind:key="option.image">
+                                    <option x-bind:value="index" x-text="option.label"></option>
+                                </template>
+                            </select>
+                        </x-ui.field>
+                        <p>{{ __('Choose the whole material or pin the label to one colourway. The signed link is public and does not require an OPAL account.') }}</p>
+                    </div>
+                </div>
+
+                <footer class="ui-modal__foot">
+                    <div class="ui-modal__actions ui-qr__actions">
+                        <x-ui.button type="button" x-on:click="copyQrLink()" variant="quiet" data-test="copy-material-qr-link">
+                            <span x-text="qrCopied ? '{{ __('Copied') }}' : '{{ __('Copy public link') }}'">{{ __('Copy public link') }}</span>
+                        </x-ui.button>
+                        <a class="ui-button ui-button--quiet ui-button--md" x-bind:href="qrOption?.target ?? '#'" target="_blank" rel="noopener">{{ __('Preview public page') }}</a>
+                        <a class="ui-button ui-button--primary ui-button--md" x-bind:href="qrOption?.download ?? '#'" data-test="download-material-qr">{{ __('Download SVG') }}</a>
+                    </div>
+                </footer>
+            </div>
+        </div>
+    @endcan
 
     <div class="ui-bento" style="margin-bottom: 12px">
         <x-ui.panel class="ui-bento__wide ui-swatch-card--hero" :padding="false" data-test="material-hero">

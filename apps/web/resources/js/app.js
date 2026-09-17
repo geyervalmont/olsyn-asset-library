@@ -21,7 +21,7 @@ document.addEventListener('alpine:init', () => {
      * A material swatch: lifts and tilts toward the pointer, and previews
      * whichever colourway the pointer rests on.
      */
-    window.Alpine.data('swatchCard', (config) => ({
+    window.Alpine.data('swatchCard', (config, qrOptions = []) => ({
         variants: config.variants ?? [],
         // The committed choice: what apply acts on, and what shows at rest.
         selected: config.active ?? 0,
@@ -31,6 +31,10 @@ document.addEventListener('alpine:init', () => {
         tilt: '',
         hovering: false,
         reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        qrOpen: false,
+        qrOptions,
+        qrSelection: 0,
+        qrCopied: false,
 
         /** What the preview shows: the hovered colourway, else the chosen one. */
         get current() {
@@ -40,6 +44,31 @@ document.addEventListener('alpine:init', () => {
         /** The chosen colourway, whatever the pointer is doing. */
         get chosen() {
             return this.variants[this.selected] ?? null;
+        },
+
+        get qrOption() {
+            return this.qrOptions[this.qrSelection] ?? this.qrOptions[0] ?? null;
+        },
+
+        openQr() {
+            this.qrSelection = 0;
+            this.qrCopied = false;
+            this.qrOpen = true;
+        },
+
+        closeQr() {
+            this.qrOpen = false;
+            this.qrCopied = false;
+        },
+
+        async copyQrLink() {
+            if (! this.qrOption?.target || ! navigator.clipboard) {
+                return;
+            }
+
+            await navigator.clipboard.writeText(this.qrOption.target);
+            this.qrCopied = true;
+            window.setTimeout(() => { this.qrCopied = false; }, 1800);
         },
 
         move(event) {

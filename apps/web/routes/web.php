@@ -6,10 +6,19 @@ use App\Http\Controllers\Files\FileController;
 use App\Http\Controllers\OlsynLoginController;
 use App\Http\Controllers\Prismfs\PrismfsAccessController;
 use App\Http\Controllers\Prismfs\PrismfsManifestController;
+use App\Http\Controllers\PublicMaterialController;
+use App\Http\Controllers\PublicMaterialPreviewController;
+use App\Http\Controllers\PublicMaterialQrCodeController;
 use App\Http\Controllers\Tenants\SwitchTenantController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => auth()->check() ? redirect()->route('materials.index') : view('welcome'))->name('home');
+
+Route::middleware(['signed', 'throttle:120,1'])->group(function () {
+    Route::get('m/{material}/qr.svg', PublicMaterialQrCodeController::class)->name('materials.public.qr');
+    Route::get('m/{material}/preview/{variant}', PublicMaterialPreviewController::class)->name('materials.public.preview');
+    Route::get('m/{material}', PublicMaterialController::class)->name('materials.public');
+});
 
 if (app()->environment(['local', 'testing'])) {
     Route::view('ui', 'ui.index')->name('ui.index');

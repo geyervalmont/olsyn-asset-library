@@ -35,6 +35,8 @@ class FileAccess extends Model
 
     public const CHANNEL_PRISMFS = 'prismfs';
 
+    public const CHANNEL_PUBLIC_QR = 'public_qr';
+
     /**
      * @return array<string, string>
      */

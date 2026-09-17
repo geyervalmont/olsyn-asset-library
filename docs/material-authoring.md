@@ -54,6 +54,22 @@ masonry bonds, staggered board cycles, or weave repeats that would create a seam
 Archived historical imports are hidden from the default material list but remain
 available through the status filter. No catalog rows are deleted by this view.
 
+## Public QR sharing
+
+Publishers can open **QR code** on a material record and generate either a
+material-level code or one pinned to a colourway. Both the SVG image and its
+destination use permanent signed URLs, so the QR can be printed, downloaded,
+and opened without an OPAL account. The database IDs in those URLs remain stable
+if a material or colourway is recoded, while the signature prevents someone from
+changing the selected record in the URL.
+
+The public page is deliberately presentation-only. It shows catalog metadata
+and an approved rendered preview; raw maps, canonical USDZ packages, provenance,
+review controls, and consumer actions remain behind authenticated access. Public
+preview reads are recorded in the file-access audit trail. Public pages are also
+marked `noindex` so possession of the shared link, rather than search indexing,
+controls discovery.
+
 ## Clean-room boundary
 
 The workflow takes inspiration from the category of browser material editors,

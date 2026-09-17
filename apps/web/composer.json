@@ -9,6 +9,7 @@
     ],
     "license": "MIT",
     "require": {
+        "bacon/bacon-qr-code": "^3.1",
         "php": "^8.3",
         "dedoc/scramble": "^0.13.42",
         "firebase/php-jwt": "^7.0",
