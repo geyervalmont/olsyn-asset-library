@@ -224,9 +224,9 @@ class Variant extends Model
     }
 
     /**
-     * Every USDZ built for this variant, newest revision first. Rows are never
-     * edited, so the head of this list is the current package and the rest are
-     * the history of what was shipped before it.
+     * Every canonical USDZ built for this variant, newest revision first.
+     * Authoring representations feed this boundary; published versions and
+     * every consumer cache point back to one of these immutable rows.
      *
      * @return HasMany<Package, $this>
      */

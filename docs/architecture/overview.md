@@ -24,9 +24,10 @@ file delivery. Each has one owner.
                                 logs / metrics / traces
 ```
 
-Laravel owns product and tenant concepts: materials, representations, views,
-permissions, approval state, and management workflows. Object storage owns the
-bytes. PrismFS projects metadata and policy into a read-oriented filesystem
+Laravel owns product and tenant concepts: materials, package-pinned versions,
+views, permissions, approval state, and management workflows. Object storage
+owns the bytes. An immutable USDZ package is the published material-content
+truth; target files are reproducible caches of that package. PrismFS projects metadata and policy into a read-oriented filesystem
 namespace. Samba is the SMB server; FUSE is PrismFS's first adapter to the Linux
 filesystem interface consumed by Samba.
 
@@ -35,9 +36,10 @@ node and, for a file, an object reference. That keeps tenant-specific views,
 flattened Revit layouts, aliases, and future application-specific projections
 independent of object layout.
 
-Processing and conversion workers remain separate from PrismFS. They may create
-thumbnails, Revit representations, MDL files, or other derivatives and publish
-their metadata through the control plane.
+Processing and conversion workers remain separate from PrismFS. They build the
+canonical USDZ from approved authoring inputs, then create keyed Revit,
+Omniverse, thumbnail, or other derivatives. Only cache files derived from the
+package pinned by the current version enter the drive manifest.
 
 ## Current PrismFS boundary
 
@@ -66,9 +68,11 @@ intended delivery boundary unless a later architectural decision changes it.
 ```text
 Laravel records and decisions
         |
-        +---- references ----> immutable S3 objects
+        +---- pins ----------> immutable USDZ package
+        |                           |
+        |                           +---- derives ----> consumer caches
         |
-        +---- publishes -----> logical namespace + policy
+        +---- publishes -----> cache-only logical namespace + policy
                                       |
                                       v
                                    PrismFS

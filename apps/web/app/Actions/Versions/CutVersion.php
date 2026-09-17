@@ -2,36 +2,68 @@
 
 namespace App\Actions\Versions;
 
+use App\Actions\Packaging\AssembleBuildRequest;
+use App\Enums\ReviewState;
 use App\Enums\VersionStatus;
 use App\Models\Material;
 use App\Models\MaterialVersion;
-use App\Models\Representation;
+use App\Models\Package;
+use App\Models\Target;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
 /**
- * Snapshot every approved representation of the material into a new draft
- * version. Nothing is copied: the version references the representations.
+ * Snapshot one immutable canonical USDZ package per publishable variant.
+ * Nothing is copied: the version pins the package revision and its already
+ * verified consumer projections can be regenerated from that package.
  */
 class CutVersion
 {
+    public function __construct(private readonly AssembleBuildRequest $assemble) {}
+
     public function handle(Material $material, ?User $createdBy = null, ?string $notes = null): MaterialVersion
     {
         return DB::transaction(function () use ($material, $createdBy, $notes): MaterialVersion {
-            // One representation per (variant, target, quality): should two be
-            // approved (an importer can do that), the fuller and newer one wins.
-            $approved = Representation::query()
-                ->approved()
-                ->whereIn('variant_id', $material->variants()->select('id'))
-                ->withCount('representationFiles')
-                ->get()
-                ->sortByDesc(fn (Representation $representation): array => [$representation->representation_files_count, $representation->getKey()])
-                ->unique(fn (Representation $representation): string => $representation->variant_id.':'.$representation->target_id.':'.$representation->quality_tier_id)
-                ->values();
+            $canonical = Target::canonical() ?? throw new LogicException('No canonical target is defined.');
+            $variants = $material->variants()
+                ->whereHas('representations', fn ($query) => $query
+                    ->where('review_state', ReviewState::Approved)
+                    ->where('target_id', $canonical->getKey()))
+                ->orderBy('id')
+                ->get();
 
-            if ($approved->isEmpty()) {
-                throw new LogicException("Material [{$material->code}] has no approved representations to version.");
+            if ($variants->isEmpty()) {
+                throw new LogicException("Material [{$material->code}] has no approved canonical material to package.");
+            }
+
+            $packages = [];
+
+            foreach ($variants as $variant) {
+                $request = $this->assemble->handle($variant);
+                $package = Package::query()
+                    ->where('variant_id', $variant->getKey())
+                    ->where('request_digest', $request->digest())
+                    ->orderByDesc('revision')
+                    ->first();
+
+                if ($package === null) {
+                    throw new LogicException("Variant [{$variant->code}] has no up-to-date canonical USDZ package.");
+                }
+
+                foreach ((array) config('opal.publication_targets', ['revit']) as $targetSlug) {
+                    $target = Target::fromSlug((string) $targetSlug);
+                    $ready = $package->derivatives()
+                        ->where('target_id', $target->getKey())
+                        ->where('source_sha256', $package->sha256)
+                        ->exists();
+
+                    if (! $ready) {
+                        throw new LogicException("Package [{$variant->code} r{$package->revision}] has no ready [{$target->slug}] projection.");
+                    }
+                }
+
+                $packages[] = $package;
             }
 
             /** @var MaterialVersion $version */
@@ -42,11 +74,9 @@ class CutVersion
                 'created_by_user_id' => $createdBy?->getKey(),
             ]);
 
-            foreach ($approved as $representation) {
-                $version->representations()->attach($representation->getKey(), [
-                    'variant_id' => $representation->variant_id,
-                    'target_id' => $representation->target_id,
-                    'quality_tier_id' => $representation->quality_tier_id,
+            foreach ($packages as $package) {
+                $version->packages()->attach($package->getKey(), [
+                    'variant_id' => $package->variant_id,
                 ]);
             }
 

@@ -82,7 +82,7 @@ class LibraryQuality
                 count(*) filter (where ','||coalesce(signals.targets, '')||',' like '%,pbr,%' and not (','||coalesce(signals.canonical_roles, '')||',' like '%,normal,%')) as no_normal,
                 count(*) filter (where ','||coalesce(signals.targets, '')||',' like '%,pbr,%' and not (','||coalesce(signals.canonical_roles, '')||',' like '%,roughness,%')) as no_roughness,
                 count(*) filter (where ','||coalesce(signals.targets, '')||',' like '%,pbr,%' and not (','||coalesce(signals.canonical_roles, '')||',' like '%,ao,%')) as no_ao,
-                count(*) filter (where not (','||coalesce(signals.targets, '')||',' like '%,revit,%')) as no_revit,
+                count(*) filter (where not (','||coalesce(signals.consumer_targets, '')||',' like '%,revit,%')) as no_revit,
                 count(*) filter (where not (','||coalesce(signals.targets, '')||',' like '%,preview,%')) as no_preview,
                 count(*) filter (where materials.current_version_id is null) as unpublished
             ")
@@ -193,6 +193,7 @@ class LibraryQuality
     {
         $roles = $this->list($material->getAttribute('canonical_roles'));
         $targets = $this->list($material->getAttribute('targets'));
+        $consumerTargets = $this->list($material->getAttribute('consumer_targets'));
         $pixels = $material->getAttribute('canonical_pixels');
         $gaps = [];
 
@@ -214,7 +215,7 @@ class LibraryQuality
             }
         }
 
-        if (! in_array('revit', $targets, true)) {
+        if (! in_array('revit', $consumerTargets, true)) {
             $gaps[] = 'no-revit';
         }
 
@@ -242,7 +243,7 @@ class LibraryQuality
             ->withCount('variants')
             ->leftJoinSub($this->signals(), 'signals', 'signals.material_id', '=', 'materials.id')
             ->select('materials.*')
-            ->addSelect(['signals.canonical_pixels', 'signals.canonical_roles', 'signals.targets']);
+            ->addSelect(['signals.canonical_pixels', 'signals.canonical_roles', 'signals.targets', 'signals.consumer_targets']);
 
         foreach (array_intersect($gaps, self::GAPS) as $gap) {
             $query->whereRaw($this->condition($gap));
@@ -265,12 +266,19 @@ class LibraryQuality
             ->leftJoin('quality_tiers', 'quality_tiers.id', '=', 'representations.quality_tier_id')
             ->leftJoin('representation_files', 'representation_files.representation_id', '=', 'representations.id')
             ->leftJoin('map_roles', 'map_roles.id', '=', 'representation_files.map_role_id')
+            ->leftJoin('packages', 'packages.variant_id', '=', 'variants.id')
+            ->leftJoin('package_derivatives', function ($join): void {
+                $join->on('package_derivatives.package_id', '=', 'packages.id')
+                    ->on('package_derivatives.source_sha256', '=', 'packages.sha256');
+            })
+            ->leftJoin('targets as derivative_targets', 'derivative_targets.id', '=', 'package_derivatives.target_id')
             ->whereIn('representations.review_state', $states)
             ->groupBy('variants.material_id')
             ->select('variants.material_id')
             ->selectRaw('max(case when targets.is_canonical then quality_tiers.pixels end) as canonical_pixels')
             ->selectRaw("string_agg(distinct case when targets.is_canonical then map_roles.slug end, ',') as canonical_roles")
-            ->selectRaw("string_agg(distinct targets.slug, ',') as targets");
+            ->selectRaw("string_agg(distinct targets.slug, ',') as targets")
+            ->selectRaw("string_agg(distinct derivative_targets.slug, ',') as consumer_targets");
     }
 
     /**
@@ -286,7 +294,7 @@ class LibraryQuality
             'no-normal' => "','||coalesce(signals.targets, '')||',' like '%,pbr,%' and not (','||coalesce(signals.canonical_roles, '')||',' like '%,normal,%')",
             'no-roughness' => "','||coalesce(signals.targets, '')||',' like '%,pbr,%' and not (','||coalesce(signals.canonical_roles, '')||',' like '%,roughness,%')",
             'no-ao' => "','||coalesce(signals.targets, '')||',' like '%,pbr,%' and not (','||coalesce(signals.canonical_roles, '')||',' like '%,ao,%')",
-            'no-revit' => "not (','||coalesce(signals.targets, '')||',' like '%,revit,%')",
+            'no-revit' => "not (','||coalesce(signals.consumer_targets, '')||',' like '%,revit,%')",
             'no-preview' => "not (','||coalesce(signals.targets, '')||',' like '%,preview,%')",
             'unpublished' => 'materials.current_version_id is null',
             default => 'true',

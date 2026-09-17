@@ -7,6 +7,9 @@ what the project is building toward.
 The remaining documents add implementation detail without replacing that
 narrative:
 
+- [`../artifacts/opal-canonical-material-data-flow.pdf`](../artifacts/opal-canonical-material-data-flow.pdf)
+  — illustrated end-to-end flow from authoring maps through canonical USDZ,
+  derived Revit caches, PrismFS, SMB, and the Revit appearance asset;
 - [`architecture/overview.md`](architecture/overview.md) — system boundaries
   and runtime data flow;
 - [`architecture/laravel-control-plane.md`](architecture/laravel-control-plane.md)

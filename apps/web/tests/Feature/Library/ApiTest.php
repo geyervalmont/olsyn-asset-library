@@ -108,6 +108,7 @@ test('users create and revoke api tokens from settings and the docs render', fun
 test('clients can list drives, find a variant on a drive, and write platform identities back', function () {
     Storage::fake(config('opal.files_disk'));
     app(ReviewRepresentation::class)->handle($this->ashen->representations()->sole(), ReviewState::Approved);
+    $package = publishablePackage($this->ashen, '1k');
     app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
     $drive = Drive::factory()->create(['name' => 'Studio share', 'root_path' => '/materials']);
     Sanctum::actingAs($this->viewer);
@@ -117,9 +118,11 @@ test('clients can list drives, find a variant on a drive, and write platform ide
     $this->getJson('/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/paths?drive=studio-share')
         ->assertOk()
         ->assertJsonPath('data.published', true)
-        ->assertJsonPath('data.files.0.path', '/materials/Carpet/Academix/Ashen/pbr/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png')
+        ->assertJsonPath('data.files.0.path', '/materials/Carpet/Academix/Ashen/revit/1k/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png')
         ->assertJsonPath('data.files.0.role', 'base_color')
-        ->assertJsonPath('data.files.0.sha256', $this->file->sha256);
+        ->assertJsonPath('data.files.0.sha256', $this->file->sha256)
+        ->assertJsonPath('data.files.0.converter', 'usd-toolbox:revit')
+        ->assertJsonPath('data.files.0.source_package_sha256', $package->sha256);
 
     $this->getJson('/api/v1/variants/CPT-TARKETT-ACADEMIX-ASHEN/paths?drive=nope')->assertUnprocessable();
 

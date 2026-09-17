@@ -36,11 +36,12 @@ beforeEach(function () {
     $ashen = app(AddVariant::class)->handle($this->material, ['colourway' => 'Ashen']);
     $this->file = app(FileStore::class)->store(accessPng(100), 'base.png');
     app(ReviewRepresentation::class)->handle(app(CreateRepresentation::class)->handle($ashen, 'pbr', '2k', ['base_color' => $this->file]), ReviewState::Approved);
+    publishablePackage($ashen, '2k');
     app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
 
     $this->drive = Drive::factory()->create(['name' => 'Studio share', 'root_path' => 'materials']);
     $this->token = $this->drive->issueToken();
-    $this->path = '/materials/Carpet/Academix/Ashen/pbr/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png';
+    $this->path = '/materials/Carpet/Academix/Ashen/revit/2k/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png';
 });
 
 function accessEvent(string $requestId, string $path, array $overrides = []): array

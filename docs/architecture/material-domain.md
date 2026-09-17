@@ -116,8 +116,12 @@ RepresentationFile representation ⇄ file with one file per map role
 MaterialVersion    number per material, status (draft | published | superseded), notes,
                    created/published by, published_at
 material.current_version_id      the pointer PrismFS projects
-material_version_representations version ⇄ representation, with the (variant, target, quality)
-                   key denormalised so the database enforces one per key per version
+Package            immutable canonical USDZ revision: object, SHA-256, input digest,
+                   tiers, builder/version, losses
+material_version_packages version ⇄ package, one immutable package per variant
+PackageDerivative  disposable consumer cache keyed by package, target, quality,
+                   converter and converter version; records the source package SHA-256
+PackageDerivativeFile cache ⇄ file with one file per semantic map role
 ```
 
 - `CreateRepresentation` builds a candidate from files keyed by role.
@@ -125,25 +129,35 @@ material_version_representations version ⇄ representation, with the (variant, 
   approved representation for the same key, so exactly one approved
   representation exists per (variant, target, quality). Every decision is a
   provenance event on the representation.
-- `CutVersion` snapshots all approved representations into a draft;
-  representations are referenced, never copied. `PublishVersion` moves the
-  pointer, supersedes the previous current version, and is also the rollback:
-  publishing an older version again makes it current.
+- `AssembleBuildRequest` reads only approved canonical maps. `PackageVariant`
+  gives that immutable input set to `usd-toolbox`, verifies the result and
+  stores a new USDZ revision. Loose maps remain authoring inputs and evidence;
+  the USDZ is the published content boundary.
+- `BuildPackageDerivative` exports a package for one target and quality. Its
+  cache identity includes the package and converter version, so a converter
+  upgrade cannot silently change an older result.
+- `CutVersion` requires an up-to-date USDZ and every configured consumer cache,
+  then pins one package per variant. `PublishVersion` rechecks those invariants
+  and moves the current pointer. Publishing an older version again is rollback.
+- `material_version_representations` remains readable for pre-USDZ publication
+  history, but new versions do not write to it.
 
-## Slice four: platform identities and derivation (implemented)
+## Slice four: platform identities and consumer projection (implemented)
 
 ```text
 Platform           registry: revit → target revit, enscape → target revit, omniverse → omniverse
 PlatformIdentity   variant × platform: external_id, external_name, payload, status
 Converter          interface: supports(target), convert(canonical, target, quality) → files by role
 ConverterRegistry  bound in AppServiceProvider; RevitImageSetConverter, OmniverseMdlConverter
+PackageDerivativeBuilder  runs usd-toolbox export against a verified USDZ package
 ```
 
 - `AssignPlatformIdentity` records what a variant is called on a platform.
 - `ResolvePlatformVariant` finds the variant behind an external id, an
   external name, or any string containing a variant code (aliases included),
   e.g. `Academix Ashen [CPT-TARKETT-ACADEMIX-ASHEN]`.
-- `DeriveRepresentation` takes the variant's approved canonical `pbr`
+- `DeriveRepresentation` is retained for historic/manual authoring candidates.
+  It takes the variant's approved canonical `pbr`
   representation (exact quality, else the closest above, else the best
   available), runs the converter for the target, creates a candidate
   representation with `derived_from_*` metadata, and records a `converted`
@@ -154,6 +168,10 @@ ConverterRegistry  bound in AppServiceProvider; RevitImageSetConverter, Omnivers
   size; the textures travel with the representation.
 - `RevitImageSetConverter` keeps base colour, uses the normal map as bump, and
   inverts roughness into glossiness.
+- Published consumers never read those independently derived representations.
+  `ToolboxPackageDerivativeBuilder` stages and verifies the pinned USDZ, calls
+  `usd-toolbox export`, validates every Revit ZIP entry against its SHA-256,
+  and stores base colour, bump and glossiness as a reproducible cache.
 - `DeriveFromPlatformReference` is the headline path: "the Omniverse material
   for this Revit material" is one call from a Revit id or name.
 
@@ -172,10 +190,12 @@ Drive                a projected namespace: name, slug, root_path, optional tena
   they belong to. `Material::visibleToDrive($drive)` applies the same rule to
   a drive and its owning tenant.
 - `DriveNamespace` renders a drive as a PrismFS namespace manifest: for every
-  visible material with a current version, each pinned representation's files
-  appear at `/{root}/{Category}/{Material}/{Variant}/{target}/{variant code}_{role}.{ext}`
-  (packages such as `.mdl` drop the role suffix), backed by the file's bucket
-  and object key. `php artisan opal:drive:manifest {slug}` prints it;
+  visible material with a current version, only derivatives of its pinned USDZ
+  whose source hash still matches appear at
+  `/{root}/{Category}/{Material}/{Variant}/{target}/{quality}/{variant code}_{role}.{ext}`.
+  The entry also carries the package hash and converter identity. It is backed
+  by the cache file's bucket and object key. `php artisan
+  opal:drive:manifest {slug}` prints it;
   `GET /drives/{slug}/manifest.yaml` serves it to operators. PrismFS itself
   polls `GET /prismfs/drives/{slug}/manifest.yaml` with the drive's bearer
   token (issued once from the drives page, only its hash is stored) and gets
@@ -215,7 +235,7 @@ and auth pages take the same palette through the Tailwind tokens in
   material, its variant, a `pbr` candidate at the uploaded pixel size, and an
   `uploaded` provenance event with the chosen source.
 - `/materials/{code}` — the record: variants and representations, review
-  (approve/reject), derive Revit and Omniverse sets, publish a version, make
+  (approve/reject), queue the canonical USDZ plus consumer caches, publish a version, make
   an older version current, visibility and grants, provenance timeline.
 - `/drives` — register drives and download their manifests.
 
@@ -276,7 +296,7 @@ The logic is split so Revit is the last layer, not the first:
   paths onto a mount or UNC root, checks presence and SHA-256 of every file,
   and runs the three operations: **sync** (resolve every host material by
   registered identity, embedded code, then name), **plan** (choose the `revit`
-  target or fall back to `pbr`, highest quality unless asked; refuse if any
+  cache from the pinned package, highest quality unless asked; refuse if any
   file is missing or its bytes differ from the library), **apply** (set
   textures and identity parameters through the `Host`, then register the
   platform identity with the library).
@@ -359,10 +379,10 @@ channels are described in `laravel-control-plane.md`.
 
 `/quality` measures every material against what a usable material needs: a
 canonical set at 1k or better, the maps that carry surface detail (normal,
-roughness, ambient occlusion), a set Revit can read, a rendered preview and a
+roughness, ambient occlusion), a package-derived cache Revit can read, a rendered preview and a
 published version. `App\Library\Quality\LibraryQuality` aggregates the
-signals in one grouped query (best canonical size, canonical map roles, and
-the targets that have files) and turns them into gaps; the page shows a count
+signals in one grouped query (best canonical size, canonical map roles,
+authoring targets and package-derivative targets) and turns them into gaps; the page shows a count
 per gap, and each count filters the table to the queue behind it.
 
 Alongside the gap counts the page shows PBR coverage (of the materials with a

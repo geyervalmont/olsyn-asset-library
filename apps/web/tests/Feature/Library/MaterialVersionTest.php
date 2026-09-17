@@ -9,8 +9,6 @@ use App\Enums\ReviewState;
 use App\Enums\VersionStatus;
 use App\Models\File;
 use App\Models\Material;
-use App\Models\QualityTier;
-use App\Models\Target;
 use App\Models\User;
 use Database\Seeders\LibrarySeeder;
 
@@ -25,49 +23,40 @@ beforeEach(function () {
     $this->approve = fn ($representation) => $this->review->handle($representation, ReviewState::Approved);
 });
 
-test('a version snapshots only approved representations and publishing moves the current pointer', function () {
+test('a version pins only current canonical packages and publishing moves the pointer', function () {
     $publisher = User::factory()->create();
-    $ashenPbr = ($this->approve)($this->create->handle($this->ashen, 'pbr', '4k', ['base_color' => File::factory()->create()]));
-    $ashenRevit = ($this->approve)($this->create->handle($this->ashen, 'revit', '2k', ['base_color' => File::factory()->create()]));
+    ($this->approve)($this->create->handle($this->ashen, 'pbr', '4k', ['base_color' => File::factory()->create()]));
     $slateCandidate = $this->create->handle($this->slate, 'pbr', '4k', ['base_color' => File::factory()->create()]);
+    $ashenPackage = publishablePackage($this->ashen, '4k');
 
     $v1 = app(CutVersion::class)->handle($this->material, $publisher, 'first cut');
 
     expect($v1->number)->toBe(1)
         ->and($v1->status)->toBe(VersionStatus::Draft)
-        ->and($v1->representations()->count())->toBe(2)
-        ->and($v1->representations->contains($slateCandidate))->toBeFalse()
+        ->and($v1->packages()->count())->toBe(1)
+        ->and($v1->packageFor($this->ashen)?->is($ashenPackage))->toBeTrue()
+        ->and($v1->packageFor($this->slate))->toBeNull()
+        ->and($slateCandidate->review_state)->toBe(ReviewState::Candidate)
         ->and($this->material->fresh()?->current_version_id)->toBeNull();
 
     app(PublishVersion::class)->handle($v1, $publisher);
 
     expect($v1->fresh()?->status)->toBe(VersionStatus::Published)
         ->and($v1->fresh()?->published_at)->not->toBeNull()
-        ->and($this->material->fresh()?->currentVersion?->is($v1))->toBeTrue()
-        ->and($v1->representationFor($this->ashen, Target::fromSlug('revit'), QualityTier::fromSlug('2k'))?->is($ashenRevit))->toBeTrue()
-        ->and($v1->representationFor($this->slate, Target::fromSlug('pbr'), QualityTier::fromSlug('4k')))->toBeNull();
+        ->and($this->material->fresh()?->currentVersion?->is($v1))->toBeTrue();
 });
 
-test('a new version re-references unchanged representations and rollback is a pointer move', function () {
-    $ashenPbr = ($this->approve)($this->create->handle($this->ashen, 'pbr', '4k', ['base_color' => File::factory()->create()]));
-    $ashenRevitV1 = ($this->approve)($this->create->handle($this->ashen, 'revit', '2k', ['base_color' => File::factory()->create()]));
+test('a new version can re-reference an unchanged package and rollback is a pointer move', function () {
+    ($this->approve)($this->create->handle($this->ashen, 'pbr', '4k', ['base_color' => File::factory()->create()]));
+    $package = publishablePackage($this->ashen, '4k');
     $v1 = app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
-
-    $ashenRevitV2 = ($this->approve)($this->create->handle($this->ashen, 'revit', '2k', ['base_color' => File::factory()->create()]));
     $v2 = app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
-
-    $revit = Target::fromSlug('revit');
-    $pbr = Target::fromSlug('pbr');
-    $q2k = QualityTier::fromSlug('2k');
-    $q4k = QualityTier::fromSlug('4k');
 
     expect($v2->number)->toBe(2)
         ->and($v1->fresh()?->status)->toBe(VersionStatus::Superseded)
-        ->and($v2->representationFor($this->ashen, $pbr, $q4k)?->is($ashenPbr))->toBeTrue()
-        ->and($v2->representationFor($this->ashen, $revit, $q2k)?->is($ashenRevitV2))->toBeTrue()
-        ->and($v1->representationFor($this->ashen, $revit, $q2k)?->is($ashenRevitV1))->toBeTrue()
-        ->and($ashenRevitV1->fresh()?->review_state)->toBe(ReviewState::Superseded)
-        ->and($ashenPbr->versions()->count())->toBe(2)
+        ->and($v2->packageFor($this->ashen)?->is($package))->toBeTrue()
+        ->and($v1->packageFor($this->ashen)?->is($package))->toBeTrue()
+        ->and($package->versions()->count())->toBe(2)
         ->and($this->material->fresh()?->currentVersion?->is($v2))->toBeTrue();
 
     app(PublishVersion::class)->handle($v1);
@@ -84,13 +73,31 @@ test('a material with nothing approved cannot be versioned', function () {
     expect(fn () => app(CutVersion::class)->handle($this->material))->toThrow(LogicException::class);
 });
 
-test('cutting a version keeps one representation per key, the fuller and newer one', function () {
-    $thin = ($this->approve)($this->create->handle($this->ashen, 'pbr', '1k', ['base_color' => File::factory()->create()]));
-    $full = ($this->approve)($this->create->handle($this->ashen, 'pbr', '1k', ['base_color' => File::factory()->create(), 'normal' => File::factory()->create(), 'roughness' => File::factory()->create()]));
-    // An importer can leave two approved at one key; force that state.
-    $thin->update(['review_state' => ReviewState::Approved]);
+test('a stale package cannot be published after the canonical material changes', function () {
+    ($this->approve)($this->create->handle($this->ashen, 'pbr', '1k', ['base_color' => File::factory()->create()]));
+    $stale = publishablePackage($this->ashen, '1k');
+    ($this->approve)($this->create->handle($this->ashen, 'pbr', '1k', [
+        'base_color' => File::factory()->create(),
+        'normal' => File::factory()->create(),
+        'roughness' => File::factory()->create(),
+    ]));
 
+    expect(fn () => app(CutVersion::class)->handle($this->material))
+        ->toThrow(LogicException::class, 'no up-to-date canonical USDZ package');
+
+    $current = publishablePackage($this->ashen, '1k');
     $version = app(CutVersion::class)->handle($this->material);
 
-    expect($version->representations()->pluck('representations.id')->all())->toBe([$full->id]);
+    expect($version->packageFor($this->ashen)?->is($current))->toBeTrue()
+        ->and($version->packageFor($this->ashen)?->is($stale))->toBeFalse();
+});
+
+test('publishing rechecks that each package has its required cache', function () {
+    ($this->approve)($this->create->handle($this->ashen, 'pbr', '1k', ['base_color' => File::factory()->create()]));
+    $package = publishablePackage($this->ashen, '1k');
+    $version = app(CutVersion::class)->handle($this->material);
+    $package->derivatives()->delete();
+
+    expect(fn () => app(PublishVersion::class)->handle($version))
+        ->toThrow(LogicException::class, 'has no ready [revit] projection');
 });

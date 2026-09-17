@@ -4,6 +4,7 @@ use App\Actions\Authorization\SyncRolesAndPermissions;
 use App\Actions\Materials\AddVariant;
 use App\Enums\Role;
 use App\Enums\Visibility;
+use App\Jobs\BuildVariantPackage;
 use App\Models\Category;
 use App\Models\Drive;
 use App\Models\Material;
@@ -13,6 +14,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\LibrarySeeder;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
@@ -157,6 +159,21 @@ test('the material page shows the record and enforces visibility', function () {
 
     expect($material->fresh()?->visibility)->toBe(Visibility::Library)
         ->and($material->variants()->count())->toBe(2);
+});
+
+test('a contributor queues one canonical package build instead of target-specific derives', function () {
+    Queue::fake();
+    $material = Material::factory()->create(['name' => 'Travertine']);
+    $variant = app(AddVariant::class)->handle($material, ['finish' => 'Honed']);
+
+    Livewire::actingAs($this->editor)
+        ->test('pages::materials.show', ['material' => $material])
+        ->assertSee('Build package')
+        ->assertDontSee('Derive Revit')
+        ->call('buildPackage', $variant->getKey())
+        ->assertHasNoErrors();
+
+    Queue::assertPushed(BuildVariantPackage::class);
 });
 
 test('drives are registered on their page and expose a manifest', function () {

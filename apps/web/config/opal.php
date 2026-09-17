@@ -59,6 +59,13 @@ return [
 
     'toolbox_timeout' => (int) env('OPAL_TOOLBOX_TIMEOUT', 900),
 
+    // Consumer caches that must exist before a package can be published.
+    // Every available package tier is generated for each required target.
+    'publication_targets' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('OPAL_PUBLICATION_TARGETS', 'revit')),
+    ))),
+
     /*
     |--------------------------------------------------------------------------
     | Namespace projection

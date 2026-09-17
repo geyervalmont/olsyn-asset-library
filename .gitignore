@@ -17,7 +17,8 @@ services/prismfs/mnt/*
 # .NET / Revit release output
 integrations/revit-native/**/bin/
 integrations/revit-native/**/obj/
-artifacts/
+artifacts/*
+!artifacts/opal-canonical-material-data-flow.pdf
 
 # Laravel
 apps/web/.env

@@ -12,11 +12,10 @@ use Illuminate\Support\Facades\Schema;
  * Baking one produces the same canonical representation a scanned set arrives
  * as, so nothing downstream needs to know which it was.
  *
- * A package is one built USDZ — the archive's index. It is deliberately not the
- * source of truth for anything: every row here can be rebuilt from the variant
- * it belongs to, and the file it points at can be rebuilt from the same. What
- * the table buys is knowing what exists without listing a bucket of 26,000
- * objects.
+ * A package is one built USDZ and the canonical material-content boundary.
+ * Authoring files may be retained for provenance and future edits, but a
+ * published version pins this immutable package and consumer outputs are
+ * reproducible derivatives of its hash.
  */
 return new class extends Migration
 {

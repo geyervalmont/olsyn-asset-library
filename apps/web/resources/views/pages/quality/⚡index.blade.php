@@ -11,7 +11,8 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-new #[Title('Quality')] class extends Component {
+new #[Title('Quality')] class extends Component
+{
     use WithPagination;
 
     /** @var list<string> */
@@ -158,7 +159,7 @@ new #[Title('Quality')] class extends Component {
             'no-normal' => __('No normal'),
             'no-roughness' => __('No roughness'),
             'no-ao' => __('No AO'),
-            'no-revit' => __('No Revit set'),
+            'no-revit' => __('No Revit cache'),
             'no-preview' => __('No render'),
             'unpublished' => __('Unpublished'),
         ];

@@ -5,11 +5,18 @@ use App\Actions\Packaging\PackageVariant;
 use App\Actions\Representations\CreateRepresentation;
 use App\Actions\Representations\ReviewRepresentation;
 use App\Enums\ReviewState;
+use App\Jobs\BuildVariantPackage;
+use App\Library\Derivatives\BuiltPackageDerivative;
+use App\Library\Derivatives\DerivedAsset;
+use App\Library\Derivatives\PackageDerivativeBuilder;
 use App\Library\Packaging\BuildRequest;
 use App\Library\Packaging\BuiltPackage;
 use App\Library\Packaging\PackageBuilder;
 use App\Library\Packaging\PendingToolbox;
 use App\Models\File;
+use App\Models\Package;
+use App\Models\QualityTier;
+use App\Models\Target;
 use App\Models\User;
 use App\Models\Variant;
 use Database\Seeders\LibrarySeeder;
@@ -142,6 +149,56 @@ test('packaging stores the file and records the build', function () {
         ->and($package->tiers)->toBe(['4k']);
 
     Storage::disk(config('opal.packages_disk'))->assertExists($package->object_key);
+});
+
+test('the package job builds required consumer caches from the new USDZ', function () {
+    $calls = [];
+    $variant = Variant::factory()->create();
+    approvedCanonical($variant);
+    $this->app->instance(PackageBuilder::class, fakeBuilder($calls));
+    $this->app->instance(PackageDerivativeBuilder::class, new class implements PackageDerivativeBuilder
+    {
+        public function name(): string
+        {
+            return 'fake-exporter';
+        }
+
+        public function version(): string
+        {
+            return '3.2.1';
+        }
+
+        public function available(): bool
+        {
+            return true;
+        }
+
+        public function supports(Target $target): bool
+        {
+            return $target->slug === 'revit';
+        }
+
+        public function build(Package $package, Target $target, QualityTier $quality): BuiltPackageDerivative
+        {
+            return new BuiltPackageDerivative([
+                new DerivedAsset('base_color', 'derived-image-bytes', $package->variant->code.'_base_color.png', 'image/png', 'srgb'),
+            ]);
+        }
+    });
+
+    $run = BuildVariantPackage::forVariantHere($variant);
+    $package = $variant->packages()->with('derivatives.derivativeFiles.role')->sole();
+    $derivative = $package->derivatives->sole();
+
+    expect($run->result['packaged'])->toBeTrue()
+        ->and($run->result['derivatives'])->toBe([[
+            'target' => 'revit',
+            'quality' => '4k',
+            'derivative_id' => $derivative->getKey(),
+        ]])
+        ->and($derivative->source_sha256)->toBe($package->sha256)
+        ->and($derivative->converter)->toBe('fake-exporter:revit')
+        ->and($derivative->derivativeFiles->sole()->role->slug)->toBe('base_color');
 });
 
 test('an unchanged variant is not rebuilt', function () {

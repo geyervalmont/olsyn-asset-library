@@ -101,16 +101,18 @@ example environment. Production credentials must never reuse them.
 ## Reading order for someone new
 
 1. [`docs/project-overview.md`](docs/project-overview.md) for what this is and why.
-2. [`docs/architecture/material-domain.md`](docs/architecture/material-domain.md)
+2. [`artifacts/opal-canonical-material-data-flow.pdf`](artifacts/opal-canonical-material-data-flow.pdf)
+   for the illustrated USDZ-to-Revit data flow and mount stack.
+3. [`docs/architecture/material-domain.md`](docs/architecture/material-domain.md)
    for the domain: codes, variants, representations, versions, provenance,
    visibility and drives, the workers, the JSON API, the inspector, the quality
    view, and the legacy import.
-3. [`docs/material-authoring.md`](docs/material-authoring.md) for the procedural
+4. [`docs/material-authoring.md`](docs/material-authoring.md) for the procedural
    studio, map import and safe material-repair workflow.
-4. [`integrations/revit/README.md`](integrations/revit/README.md) for how a
+5. [`integrations/revit/README.md`](integrations/revit/README.md) for how a
    material reaches Revit, and how to exercise the whole loop on Linux without
    Revit installed.
-5. [`services/prismfs/README.md`](services/prismfs/README.md) for the data
+6. [`services/prismfs/README.md`](services/prismfs/README.md) for the data
    plane, the SMB drive server and the container images.
 
 Not in the repository: the legacy corpus (`apps/web/storage/app/legacy/`, kept

@@ -35,11 +35,12 @@ config.example.json
    its UniqueId (a registered identity), then the Description/Keywords/Model/
    Manufacturer parameters (an embedded variant code), then its name.
    `GET /api/v1/variants/resolve?platform=revit&reference=…` never guesses.
-2. **Plan.** `GET /api/v1/variants/{code}/paths?drive=…` lists the variant's
-   published files on that drive. The client prefers the `revit` target
-   (base colour, bump, glossiness) and falls back to the canonical `pbr` set,
-   highest quality unless one is asked for. Every file is checked on the
-   mount and hashed against the library before anything is written.
+2. **Plan.** `GET /api/v1/variants/{code}/paths?drive=…` lists the Revit cache
+   derived from the USDZ pinned by the current material version (base colour,
+   bump, glossiness). The client chooses the highest quality unless one is
+   requested. Every file is checked on the mount and hashed against the
+   library before anything is written; the API also reports the source package
+   hash and converter generation.
 3. **Apply.** Texture paths on the appearance asset are pointed at the drive
    (the asset is duplicated first if other materials share it), the
    real-world scale is set from the variant's tile width, the variant code is
@@ -47,8 +48,9 @@ config.example.json
    `POST /api/v1/variants/{code}/identities` registers the Revit UniqueId so
    the next Sync resolves it directly.
 
-Nothing is copied: Revit reads the textures from the read-only drive, so a
-republish in the library shows up in the model on the next render.
+Nothing is copied into the project: Revit reads package-derived textures from
+the read-only drive, so a republish in the library shows up in the model on the
+next render. The cache can be rebuilt without changing the canonical USDZ.
 
 ## Linking and live commands
 

@@ -12,17 +12,20 @@ use App\Actions\Visibility\SetMaterialVisibility;
 use App\Enums\CommandType;
 use App\Enums\ReviewState;
 use App\Enums\Visibility;
+use App\Jobs\BuildVariantPackage;
+use App\Jobs\DownscaleRepresentation;
 use App\Jobs\EmbedMaterial;
+use App\Jobs\RenderPreview;
 use App\Library\Previews\MaterialPreviews;
 use App\Models\ClientCommand;
 use App\Models\ClientSession;
 use App\Models\Drive;
+use App\Models\File;
 use App\Models\FileAccess;
 use App\Models\Material;
 use App\Models\ProvenanceEvent;
 use App\Models\QualityTier;
 use App\Models\Representation;
-use App\Models\Target;
 use App\Models\Tenant;
 use App\Models\User;
 use Flux\Flux;
@@ -32,7 +35,8 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     public Material $material;
 
     public string $grantEmail = '';
@@ -71,7 +75,7 @@ new class extends Component {
     }
 
     #[Computed]
-    public function preview(): ?\App\Models\File
+    public function preview(): ?File
     {
         return app(MaterialPreviews::class)->filesFor($this->material->newCollection([$this->material]))[$this->material->id] ?? null;
     }
@@ -111,7 +115,7 @@ new class extends Component {
     #[Computed]
     public function versions(): Collection
     {
-        return $this->material->versions()->withCount('representations')->orderByDesc('number')->get();
+        return $this->material->versions()->withCount('packages')->orderByDesc('number')->get();
     }
 
     #[Computed]
@@ -147,10 +151,20 @@ new class extends Component {
     #[Computed]
     public function accesses(): Collection
     {
-        $fileIds = DB::table('representation_files')
+        $authoringFileIds = DB::table('representation_files')
             ->join('representations', 'representations.id', '=', 'representation_files.representation_id')
             ->whereIn('representations.variant_id', $this->material->variants()->select('id'))
             ->pluck('representation_files.file_id');
+
+        $cacheFileIds = DB::table('package_derivative_files')
+            ->join('package_derivatives', 'package_derivatives.id', '=', 'package_derivative_files.package_derivative_id')
+            ->join('packages', 'packages.id', '=', 'package_derivatives.package_id')
+            ->join('variants', 'variants.id', '=', 'packages.variant_id')
+            ->where('variants.material_id', $this->material->getKey())
+            ->whereColumn('package_derivatives.source_sha256', 'packages.sha256')
+            ->pluck('package_derivative_files.file_id');
+
+        $fileIds = $authoringFileIds->merge($cacheFileIds)->unique()->values();
 
         return FileAccess::query()->with(['file', 'user', 'drive'])->whereIn('file_id', $fileIds)->orderByDesc('accessed_at')->orderByDesc('id')->limit(20)->get();
     }
@@ -159,12 +173,6 @@ new class extends Component {
     public function drives(): Collection
     {
         return Drive::query()->orderBy('name')->get();
-    }
-
-    #[Computed]
-    public function derivableTargets(): Collection
-    {
-        return Target::query()->where('is_canonical', false)->where('slug', '!=', 'preview')->orderBy('sort_order')->get();
     }
 
     /**
@@ -257,16 +265,14 @@ new class extends Component {
         Flux::toast(variant: 'success', text: __('Representation :decision.', ['decision' => $decision]));
     }
 
-    public function derive(int $variantId, string $target, DeriveRepresentation $derive): void
+    public function buildPackage(int $variantId): void
     {
         abort_unless(auth()->user()?->can('materials.contribute'), 403);
 
         $variant = $this->material->variants()->findOrFail($variantId);
-        $canonical = $derive->canonicalFor($variant, QualityTier::fromSlug('8k'));
-        $derive->handle($variant, $target, $canonical->quality, auth()->user());
+        $run = BuildVariantPackage::forVariant($variant, actor: auth()->user());
 
-        unset($this->variants, $this->timeline);
-        Flux::toast(variant: 'success', text: __(':target set derived as a candidate.', ['target' => $target]));
+        Flux::toast(variant: 'success', text: __('Queued canonical USDZ and consumer caches (run :run).', ['run' => substr($run->uuid, 0, 8)]));
     }
 
     public function generateTiers(int $variantId): void
@@ -283,7 +289,7 @@ new class extends Component {
             return;
         }
 
-        $run = \App\Jobs\DownscaleRepresentation::forRepresentation($source, $tiers, auth()->user());
+        $run = DownscaleRepresentation::forRepresentation($source, $tiers, auth()->user());
 
         unset($this->variants, $this->timeline);
         Flux::toast(variant: 'success', text: __('Queued tiers :tiers (run :run).', ['tiers' => implode(', ', $tiers), 'run' => substr($run->uuid, 0, 8)]));
@@ -295,13 +301,13 @@ new class extends Component {
 
         $variant = $this->material->variants()->findOrFail($variantId);
 
-        if (\App\Jobs\RenderPreview::sourceFor($variant) === null) {
+        if (RenderPreview::sourceFor($variant) === null) {
             Flux::toast(variant: 'warning', text: __('Approve a canonical set with a base colour first.'));
 
             return;
         }
 
-        $run = \App\Jobs\RenderPreview::forVariant($variant, auth()->user(), force: true);
+        $run = RenderPreview::forVariant($variant, auth()->user(), force: true);
 
         unset($this->variants, $this->timeline, $this->preview, $this->card);
         Flux::toast(variant: 'success', text: __('Queued a preview render (run :run).', ['run' => substr($run->uuid, 0, 8)]));
@@ -512,9 +518,7 @@ new class extends Component {
                             <div class="ui-actions">
                                 <x-ui.button href="{{ route('materials.create', ['mode' => 'existing', 'material' => $material->code, 'variant' => $variant->code]) }}" variant="quiet" size="sm" wire:navigate>{{ __('Upload maps') }}</x-ui.button>
                                 <x-ui.button href="{{ route('materials.studio', ['mode' => 'existing', 'material' => $material->code, 'variant' => $variant->code]) }}" variant="quiet" size="sm" wire:navigate>{{ $variant->definition ? __('Edit recipe') : __('Add recipe') }}</x-ui.button>
-                                @foreach ($this->derivableTargets as $target)
-                                    <x-ui.button wire:click="derive({{ $variant->id }}, '{{ $target->slug }}')" variant="secondary" size="sm" data-test="derive-{{ $target->slug }}">{{ __('Derive :target', ['target' => $target->name]) }}</x-ui.button>
-                                @endforeach
+                                <x-ui.button wire:click="buildPackage({{ $variant->id }})" variant="secondary" size="sm" data-test="build-package">{{ __('Build package') }}</x-ui.button>
                                 <x-ui.button wire:click="generateTiers({{ $variant->id }})" variant="quiet" size="sm" data-test="generate-tiers">{{ __('Generate tiers') }}</x-ui.button>
                                 <x-ui.button wire:click="renderPreview({{ $variant->id }})" variant="quiet" size="sm" data-test="render-preview">{{ __('Render preview') }}</x-ui.button>
                             </div>
@@ -587,14 +591,14 @@ new class extends Component {
 
     <div class="ui-grid-2" style="margin-top: 12px">
         <x-ui.panel>
-            <div class="ui-panel__heading"><div><h3>{{ __('Versions') }}</h3><p>{{ __('Immutable snapshots of approved representations.') }}</p></div></div>
+            <div class="ui-panel__heading"><div><h3>{{ __('Versions') }}</h3><p>{{ __('Immutable snapshots of canonical USDZ packages.') }}</p></div></div>
             @if ($this->versions->isEmpty())
-                <p class="ui-variant__attrs">{{ __('Nothing published yet. Approve at least one representation, then publish.') }}</p>
+                <p class="ui-variant__attrs">{{ __('Nothing published yet. Approve canonical maps, build their packages, then publish.') }}</p>
             @else
                 <ul class="ui-list">
                     @foreach ($this->versions as $version)
                         <li wire:key="version-{{ $version->id }}" data-test="version">
-                            <span><strong>v{{ $version->number }}</strong> <small>· {{ $version->status->value }} · {{ trans_choice(':count representation|:count representations', $version->representations_count) }}</small></span>
+                            <span><strong>v{{ $version->number }}</strong> <small>· {{ $version->status->value }} · {{ trans_choice(':count package|:count packages', $version->packages_count) }}</small></span>
                             @if ($version->isCurrent())
                                 <x-ui.badge tone="success" dot>{{ __('Current') }}</x-ui.badge>
                             @elsecan('materials.publish')

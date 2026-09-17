@@ -5,34 +5,41 @@ namespace App\Library\Drives;
 use App\Models\Drive;
 use App\Models\File;
 use App\Models\Material;
-use App\Models\MaterialVersion;
-use App\Models\Representation;
-use App\Models\RepresentationFile;
+use App\Models\Package;
+use App\Models\PackageDerivative;
+use App\Models\PackageDerivativeFile;
 use App\Models\Variant;
 
 /**
- * Projects a drive's visible, published materials into a PrismFS namespace
- * manifest. Paths are readable and stable; objects are the files pinned by
- * each material's current version.
+ * Projects a drive's visible, published package derivatives into PrismFS.
+ * The USDZ pinned by the material version is the source of truth; every file
+ * here is a reproducible consumer cache carrying that package's hash.
  *
- *   /materials/Carpet/Academix/Ashen/revit/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png
+ *   /materials/Carpet/Academix/Ashen/revit/2k/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png
  */
 class DriveNamespace
 {
     public const MANIFEST_VERSION = 1;
 
     /**
-     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}>
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string}>
      */
     public function entries(Drive $drive): array
     {
-        /** @var list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}> $entries */
+        /** @var list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string}> $entries */
         $entries = [];
 
         $materials = Material::query()
             ->visibleToDrive($drive)
             ->whereNotNull('current_version_id')
-            ->with(['category', 'currentVersion'])
+            ->with([
+                'category',
+                'currentVersion.packages.variant',
+                'currentVersion.packages.derivatives.target',
+                'currentVersion.packages.derivatives.quality',
+                'currentVersion.packages.derivatives.derivativeFiles.file',
+                'currentVersion.packages.derivatives.derivativeFiles.role',
+            ])
             ->orderBy('code')
             ->get();
 
@@ -43,27 +50,34 @@ class DriveNamespace
                 continue;
             }
 
-            foreach ($this->pinnedRepresentations($version, $drive) as $representation) {
-                $variant = $representation->variant;
-                $directory = implode('/', array_map($this->component(...), [
-                    $material->category->name,
-                    $material->name,
-                    $variant->name,
-                    $representation->target->slug,
-                ]));
+            foreach ($version->packages as $package) {
+                $variant = $package->variant;
 
-                foreach ($representation->representationFiles as $representationFile) {
-                    $entries[] = [
-                        'path' => $drive->root_path.'/'.$directory.'/'.$this->fileName($variant->code, $representationFile),
-                        'object' => $this->object($representationFile->file),
-                        'file_id' => $representationFile->file->getKey(),
-                        'variant' => $variant->code,
-                        'target' => $representation->target->slug,
-                        'quality' => $representation->quality->slug,
-                        'role' => $representationFile->role->slug,
-                        'sha256' => $representationFile->file->sha256,
-                        'mime_type' => $representationFile->file->mime_type,
-                    ];
+                foreach ($this->currentDerivatives($package, $drive) as $derivative) {
+                    $directory = implode('/', array_map($this->component(...), [
+                        $material->category->name,
+                        $material->name,
+                        $variant->name,
+                        $derivative->target->slug,
+                        $derivative->quality->slug,
+                    ]));
+
+                    foreach ($derivative->derivativeFiles as $derivativeFile) {
+                        $entries[] = [
+                            'path' => $drive->root_path.'/'.$directory.'/'.$this->fileName($variant->code, $derivativeFile),
+                            'object' => $this->object($derivativeFile->file),
+                            'file_id' => $derivativeFile->file->getKey(),
+                            'variant' => $variant->code,
+                            'target' => $derivative->target->slug,
+                            'quality' => $derivative->quality->slug,
+                            'role' => $derivativeFile->role->slug,
+                            'sha256' => $derivativeFile->file->sha256,
+                            'mime_type' => $derivativeFile->file->mime_type,
+                            'source_package_sha256' => $derivative->source_sha256,
+                            'converter' => $derivative->converter,
+                            'converter_version' => $derivative->converter_version,
+                        ];
+                    }
                 }
             }
         }
@@ -86,7 +100,7 @@ class DriveNamespace
     /**
      * The entries a drive projects for one variant.
      *
-     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string}>
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string}>
      */
     public function entriesForVariant(Drive $drive, Variant $variant): array
     {
@@ -118,23 +132,26 @@ class DriveNamespace
     }
 
     /**
-     * @return iterable<Representation>
+     * Only the newest converter generation for each target and quality is
+     * projected. Old cache generations remain addressable by their package for
+     * audit and rollback, but never collide at a friendly drive path.
+     *
+     * @return iterable<PackageDerivative>
      */
-    private function pinnedRepresentations(MaterialVersion $version, Drive $drive): iterable
+    private function currentDerivatives(Package $package, Drive $drive): iterable
     {
-        $query = $version->representations()->with(['variant', 'target', 'quality', 'representationFiles.file', 'representationFiles.role']);
-
-        if ($drive->target_id !== null) {
-            $query->where('representations.target_id', $drive->target_id);
-        }
-
-        return $query->get();
+        return $package->derivatives
+            ->where('source_sha256', $package->sha256)
+            ->when($drive->target_id !== null, fn ($derivatives) => $derivatives->where('target_id', $drive->target_id))
+            ->sortByDesc(fn (PackageDerivative $derivative): array => [$derivative->built_at->getTimestamp(), $derivative->getKey()])
+            ->unique(fn (PackageDerivative $derivative): string => $derivative->target_id.':'.$derivative->quality_tier_id)
+            ->values();
     }
 
-    private function fileName(string $variantCode, RepresentationFile $representationFile): string
+    private function fileName(string $variantCode, PackageDerivativeFile $derivativeFile): string
     {
-        $file = $representationFile->file;
-        $role = $representationFile->role->slug;
+        $file = $derivativeFile->file;
+        $role = $derivativeFile->role->slug;
         $extension = $file->extension === null ? '' : '.'.$file->extension;
 
         return in_array($role, ['mdl', 'usd', 'rvt', 'package'], true)

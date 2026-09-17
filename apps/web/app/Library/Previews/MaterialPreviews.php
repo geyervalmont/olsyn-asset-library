@@ -183,6 +183,19 @@ class MaterialPreviews
             }
         }
 
+        $derivatives = DB::table('package_derivatives')
+            ->join('packages', 'packages.id', '=', 'package_derivatives.package_id')
+            ->join('variants', 'variants.id', '=', 'packages.variant_id')
+            ->join('targets', 'targets.id', '=', 'package_derivatives.target_id')
+            ->whereIn('variants.material_id', $materials->modelKeys())
+            ->whereColumn('package_derivatives.source_sha256', 'packages.sha256')
+            ->orderBy('targets.sort_order')
+            ->get(['variants.material_id', 'targets.slug']);
+
+        foreach ($derivatives as $derivative) {
+            $result[(int) $derivative->material_id][$derivative->slug] = ReviewState::Approved->value;
+        }
+
         return $result;
     }
 

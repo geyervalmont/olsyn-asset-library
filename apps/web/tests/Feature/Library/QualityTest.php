@@ -47,6 +47,10 @@ beforeEach(function () {
             }
         }
 
+        if (in_array('pbr', $targets, true) && in_array('revit', $targets, true)) {
+            publishablePackage($variant, $tier);
+        }
+
         return $material;
     };
 });

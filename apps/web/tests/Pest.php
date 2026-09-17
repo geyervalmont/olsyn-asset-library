@@ -1,5 +1,13 @@
 <?php
 
+use App\Actions\Packaging\AssembleBuildRequest;
+use App\Models\File;
+use App\Models\MapRole;
+use App\Models\Package;
+use App\Models\PackageDerivative;
+use App\Models\QualityTier;
+use App\Models\Target;
+use App\Models\Variant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -49,4 +57,55 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Create the immutable package boundary and a ready consumer cache for tests
+ * whose subject starts after the toolbox has completed its work.
+ *
+ * @param  array<string, File>|null  $assets
+ */
+function publishablePackage(Variant $variant, string $quality = '2k', string $target = 'revit', ?array $assets = null): Package
+{
+    $request = app(AssembleBuildRequest::class)->handle($variant);
+    $package = Package::factory()->for($variant)->create([
+        'revision' => (int) $variant->packages()->max('revision') + 1,
+        'request_digest' => $request->digest(),
+        'tiers' => [$quality],
+    ]);
+    $targetModel = Target::fromSlug($target);
+    $qualityModel = QualityTier::fromSlug($quality);
+    $derivative = PackageDerivative::factory()->for($package)->create([
+        'target_id' => $targetModel->getKey(),
+        'quality_tier_id' => $qualityModel->getKey(),
+        'source_sha256' => $package->sha256,
+        'converter' => 'usd-toolbox:'.$target,
+    ]);
+
+    if ($assets === null) {
+        $canonical = $variant->representations()
+            ->approved()
+            ->where('target_id', Target::canonical()?->getKey())
+            ->with(['quality', 'representationFiles.file', 'representationFiles.role'])
+            ->get()
+            ->sortByDesc(fn ($representation): int => $representation->quality->pixels ?? 0)
+            ->first();
+        $source = $canonical?->filesByRole() ?? [];
+        $assets = array_filter([
+            'base_color' => $source['base_color'] ?? null,
+            'bump' => $source['bump'] ?? $source['normal'] ?? $source['height'] ?? null,
+            'glossiness' => $source['glossiness'] ?? $source['roughness'] ?? null,
+        ]);
+    }
+
+    foreach ($assets as $role => $file) {
+        $mapRole = MapRole::fromSlug($role);
+        $derivative->derivativeFiles()->create([
+            'file_id' => $file->getKey(),
+            'map_role_id' => $mapRole->getKey(),
+            'colour_space' => $file->colour_space ?? $mapRole->colour_space,
+        ]);
+    }
+
+    return $package->refresh();
 }

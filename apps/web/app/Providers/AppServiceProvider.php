@@ -8,6 +8,9 @@ use App\Http\Middleware\UseCurrentTenant;
 use App\Library\Conversion\ConverterRegistry;
 use App\Library\Conversion\OmniverseMdlConverter;
 use App\Library\Conversion\RevitImageSetConverter;
+use App\Library\Derivatives\PackageDerivativeBuilder;
+use App\Library\Derivatives\PendingPackageDerivativeBuilder;
+use App\Library\Derivatives\ToolboxPackageDerivativeBuilder;
 use App\Library\Embeddings\EmbeddingProvider;
 use App\Library\Embeddings\TitanMultimodalEmbeddingProvider;
 use App\Library\Packaging\PackageBuilder;
@@ -77,6 +80,22 @@ class AppServiceProvider extends ServiceProvider
             );
 
             return $builder->available() ? $builder : new PendingToolbox;
+        });
+
+        $this->app->singleton(PackageDerivativeBuilder::class, function (): PackageDerivativeBuilder {
+            $binary = config('opal.toolbox_bin');
+
+            if (! is_string($binary) || $binary === '') {
+                return new PendingPackageDerivativeBuilder;
+            }
+
+            $builder = new ToolboxPackageDerivativeBuilder(
+                binary: $binary,
+                packagesDisk: (string) config('opal.packages_disk'),
+                timeout: (int) config('opal.toolbox_timeout'),
+            );
+
+            return $builder->available() ? $builder : new PendingPackageDerivativeBuilder;
         });
 
         $this->app->singleton(ProceduralBaker::class, function (): ProceduralBaker {

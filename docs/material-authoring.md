@@ -14,7 +14,9 @@ from `_gl` or `_dx`.
 
 Every file is content-addressed. The resulting PBR set is a candidate linked to
 its uploader, source, role and normal convention. A reviewer approves or rejects
-it on the material record; a publisher then cuts an immutable version.
+it on the material record. The package worker seals approved inputs into an
+immutable USDZ and builds the configured consumer caches; a publisher then cuts
+a version that pins that package.
 
 ## Material Studio
 
@@ -45,7 +47,8 @@ masonry bonds, staggered board cycles, or weave repeats that would create a seam
    for procedural sources.
 4. Review the new candidate beside existing sets.
 5. Approve it, render its consistent sphere preview, generate safe lower tiers,
-   derive Revit/Omniverse outputs, and publish a new version.
+   build the canonical USDZ and its Revit/Omniverse caches, and publish a new
+   package-pinned version.
 
 Archived historical imports are hidden from the default material list but remain
 available through the status filter. No catalog rows are deleted by this view.

@@ -2,7 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Actions\Packaging\BuildPackageDerivative;
 use App\Actions\Packaging\PackageVariant;
+use App\Models\QualityTier;
+use App\Models\Target;
 use App\Models\User;
 use App\Models\Variant;
 use App\Models\WorkerRun;
@@ -49,6 +52,22 @@ class BuildVariantPackage extends TrackedJob
             return ['packaged' => false, 'reason' => 'no canonical files to package'];
         }
 
+        $derivatives = [];
+
+        foreach ((array) config('opal.publication_targets', ['revit']) as $targetSlug) {
+            $target = Target::fromSlug((string) $targetSlug);
+
+            foreach ($package->tiers as $tierSlug) {
+                $quality = QualityTier::fromSlug((string) $tierSlug);
+                $derivative = app(BuildPackageDerivative::class)->handle($package, $target, $quality);
+                $derivatives[] = [
+                    'target' => $target->slug,
+                    'quality' => $quality->slug,
+                    'derivative_id' => $derivative->getKey(),
+                ];
+            }
+        }
+
         return [
             'packaged' => true,
             'revision' => $package->revision,
@@ -59,6 +78,7 @@ class BuildVariantPackage extends TrackedJob
             // conversion that dropped something is worth seeing on the jobs
             // page without going looking for it.
             'losses' => count($package->losses ?? []),
+            'derivatives' => $derivatives,
         ];
     }
 }

@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OPAL — Canonical Material Data Flow</title>
+<style>
+  :root {
+    --ink: #12231f;
+    --muted: #5a6a65;
+    --paper: #f5f1e8;
+    --cream: #fffdf8;
+    --green: #0f6b55;
+    --mint: #bde7d7;
+    --lime: #d8efad;
+    --amber: #f2b84b;
+    --coral: #ea745d;
+    --navy: #17364a;
+    --line: #cad3cd;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #d8d6d0; color: var(--ink); font-family: "DejaVu Sans", Arial, sans-serif; }
+  body { counter-reset: page; }
+  .page {
+    width: 297mm;
+    height: 210mm;
+    margin: 8mm auto;
+    padding: 14mm 16mm 12mm;
+    background: var(--paper);
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    counter-increment: page;
+  }
+  .page:last-child { page-break-after: auto; }
+  .page::after {
+    content: "OPAL  /  MATERIAL SYSTEM  /  " counter(page, decimal-leading-zero);
+    position: absolute;
+    left: 16mm;
+    right: 16mm;
+    bottom: 5.5mm;
+    padding-top: 2.2mm;
+    border-top: .35mm solid rgba(18,35,31,.18);
+    color: #71807a;
+    font-size: 7.5pt;
+    letter-spacing: .14em;
+  }
+  h1, h2, h3, p { margin-top: 0; }
+  h1 { font-size: 34pt; line-height: 1.03; letter-spacing: -.045em; margin-bottom: 5mm; }
+  h2 { font-size: 24pt; line-height: 1.08; letter-spacing: -.035em; margin-bottom: 3mm; }
+  h3 { font-size: 11pt; line-height: 1.2; letter-spacing: .02em; margin-bottom: 1.5mm; }
+  p { font-size: 10pt; line-height: 1.5; color: var(--muted); }
+  .eyebrow { font-size: 8pt; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; color: var(--green); margin-bottom: 3mm; }
+  .lede { font-size: 13pt; line-height: 1.45; max-width: 165mm; color: #31453f; }
+  .small { font-size: 8.5pt; line-height: 1.45; }
+  .tiny { font-size: 7.5pt; line-height: 1.35; }
+  .mono { font-family: "DejaVu Sans Mono", Consolas, monospace; }
+  .pill { display: inline-block; padding: 1.1mm 2.5mm; border: .35mm solid currentColor; border-radius: 99px; font-size: 7.5pt; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; }
+  .card { background: rgba(255,253,248,.74); border: .35mm solid rgba(18,35,31,.14); border-radius: 4mm; padding: 5mm; }
+  .card p:last-child { margin-bottom: 0; }
+  .accent-card { background: var(--ink); color: white; border-radius: 5mm; padding: 6mm; }
+  .accent-card p { color: #d5e1dc; }
+  .number { width: 8mm; height: 8mm; border-radius: 50%; display: inline-grid; place-items: center; background: var(--green); color: white; font-weight: 900; font-size: 9pt; margin-bottom: 3mm; }
+  .rule { width: 26mm; height: 1.2mm; background: var(--amber); border-radius: 1mm; margin: 4mm 0; }
+  .note { border-left: 1.2mm solid var(--amber); padding-left: 4mm; }
+  .good { color: var(--green); }
+  .warn { color: #98590f; }
+  .bad { color: #a33b2d; }
+
+  .cover { background: var(--ink); color: white; }
+  .cover::before {
+    content: "";
+    position: absolute;
+    width: 126mm;
+    height: 126mm;
+    border-radius: 50%;
+    right: -25mm;
+    top: -24mm;
+    background: radial-gradient(circle at 34% 66%, var(--lime) 0 9%, var(--mint) 9% 28%, var(--green) 28% 49%, transparent 49%);
+    opacity: .95;
+  }
+  .cover::after { color: #a9bbb4; border-color: rgba(255,255,255,.2); }
+  .cover .eyebrow { color: var(--mint); margin-top: 4mm; }
+  .cover h1 { font-size: 48pt; max-width: 190mm; margin-top: 24mm; }
+  .cover .lede { color: #d6e2dd; max-width: 170mm; }
+  .cover-strip { position: absolute; left: 16mm; right: 16mm; bottom: 18mm; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2mm; }
+  .cover-step { border-top: .8mm solid var(--mint); padding-top: 3mm; font-size: 8.5pt; color: #c6d6d0; }
+  .cover-step strong { color: white; display: block; font-size: 10pt; margin-bottom: 1mm; }
+
+  .flow { display: flex; align-items: stretch; gap: 3mm; margin-top: 8mm; }
+  .flow-node { flex: 1; min-height: 48mm; padding: 4.5mm; background: var(--cream); border: .4mm solid var(--line); border-radius: 4mm; position: relative; }
+  .flow-node strong { display: block; font-size: 11pt; margin: 1.5mm 0 2mm; }
+  .flow-node p { font-size: 8.5pt; line-height: 1.4; margin: 0; }
+  .flow-node .tag { font-size: 7pt; text-transform: uppercase; letter-spacing: .12em; font-weight: 900; color: var(--green); }
+  .arrow { align-self: center; color: var(--green); font-size: 22pt; font-weight: 400; margin: 0 -1mm; }
+  .source { border-top: 2mm solid var(--green); }
+  .cache { border-top: 2mm solid var(--amber); }
+  .delivery { border-top: 2mm solid var(--navy); }
+  .consumer { border-top: 2mm solid var(--coral); }
+
+  .split { display: grid; grid-template-columns: 1fr 18mm 1fr; gap: 3mm; align-items: center; margin-top: 6mm; }
+  .split-arrow { text-align: center; color: var(--green); font-size: 24pt; }
+  .lane { border-radius: 4mm; padding: 5mm; min-height: 76mm; }
+  .lane.primary { background: #dff1e8; border: .5mm solid #8ac9b1; }
+  .lane.secondary { background: #fff3d8; border: .5mm solid #e2bb65; }
+  .lane-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3mm; }
+  .lane ol { margin: 0; padding-left: 5mm; color: #42534d; font-size: 8.6pt; line-height: 1.55; }
+
+  .mount-stack { display: grid; grid-template-columns: 70mm 20mm 70mm 20mm 70mm; align-items: center; margin-top: 7mm; }
+  .stack-box { min-height: 76mm; padding: 5mm; border-radius: 4mm; background: var(--cream); border: .4mm solid var(--line); }
+  .stack-box.dark { background: var(--navy); color: white; border-color: var(--navy); }
+  .stack-box.dark p { color: #cedde4; }
+  .stack-arrow { text-align: center; color: var(--green); font-size: 25pt; }
+  .path { display: block; background: rgba(18,35,31,.08); border-radius: 2mm; padding: 2.5mm; font-size: 8pt; line-height: 1.45; margin-top: 3mm; word-break: break-all; }
+  .dark .path { background: rgba(255,255,255,.1); }
+
+  .sequence { display: grid; grid-template-columns: 12mm 1fr; column-gap: 4mm; row-gap: 2.5mm; margin-top: 5mm; }
+  .seq-num { width: 10mm; height: 10mm; display: grid; place-items: center; border-radius: 3mm; background: var(--green); color: white; font-weight: 900; }
+  .seq-body { padding: 2mm 0 3mm; border-bottom: .35mm solid rgba(18,35,31,.14); }
+  .seq-body strong { font-size: 10pt; }
+  .seq-body p { font-size: 8.5pt; margin: 1mm 0 0; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 4mm; font-size: 8.5pt; }
+  th { text-align: left; padding: 2.5mm; background: var(--ink); color: white; font-size: 7.5pt; letter-spacing: .07em; text-transform: uppercase; }
+  td { padding: 2.5mm; border-bottom: .35mm solid var(--line); vertical-align: top; background: rgba(255,253,248,.6); }
+  td:first-child { font-weight: 800; width: 27%; }
+
+  .formula { background: var(--ink); color: white; border-radius: 4mm; padding: 5mm; font-size: 12pt; line-height: 1.6; margin: 5mm 0; }
+  .formula em { color: var(--mint); font-style: normal; }
+  .checklist { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm 8mm; margin-top: 4mm; }
+  .check { display: grid; grid-template-columns: 7mm 1fr; gap: 2mm; font-size: 8.5pt; line-height: 1.4; }
+  .tick { color: var(--green); font-weight: 900; font-size: 12pt; }
+
+  @media print {
+    @page { size: A4 landscape; margin: 0; }
+    html, body { background: transparent; }
+    .page { margin: 0; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  }
+</style>
+</head>
+<body>
+
+<section class="page cover">
+  <div class="eyebrow">Olsyn Parametric Asset Library · Architecture</div>
+  <h1>One material.<br>One source of truth.<br>Every consumer.</h1>
+  <div class="rule"></div>
+  <p class="lede">The complete flow from an immutable USDZ package in object storage to a verified, mounted texture set inside Autodesk Revit.</p>
+  <div class="cover-strip">
+    <div class="cover-step"><strong>01 · Author</strong>Ingest and validate material inputs</div>
+    <div class="cover-step"><strong>02 · Canonicalise</strong>Build one immutable USDZ revision</div>
+    <div class="cover-step"><strong>03 · Project</strong>Generate disposable consumer caches</div>
+    <div class="cover-step"><strong>04 · Consume</strong>Mount, verify and apply in Revit</div>
+  </div>
+</section>
+
+<section class="page">
+  <div class="eyebrow">Executive model</div>
+  <h2>The USDZ is canonical; everything else is a projection</h2>
+  <p class="lede">OPAL separates durable material meaning from temporary delivery formats. A published version pins a package hash. Consumer outputs are reproducible caches that may be deleted and rebuilt.</p>
+
+  <div class="flow">
+    <div class="flow-node source">
+      <span class="tag">Authoring input</span>
+      <strong>Maps + metadata</strong>
+      <p>Scans, procedural recipes, colour space, normal convention, tiling and provenance.</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="flow-node source">
+      <span class="tag">Canonical object</span>
+      <strong>Immutable USDZ</strong>
+      <p>MaterialX/OpenPBR graph, texture tiers and provenance in one self-contained package.</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="flow-node cache">
+      <span class="tag">Derived cache</span>
+      <strong>Revit image set</strong>
+      <p>Base colour, bump and glossiness generated by a versioned converter.</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="flow-node delivery">
+      <span class="tag">Delivery</span>
+      <strong>PrismFS + SMB</strong>
+      <p>Friendly folders backed by lazy S3 reads and exposed as a Windows UNC share.</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="flow-node consumer">
+      <span class="tag">Consumer</span>
+      <strong>Revit material</strong>
+      <p>Verified file paths are connected to a Generic appearance asset.</p>
+    </div>
+  </div>
+
+  <div class="grid-3" style="margin-top: 8mm;">
+    <div class="card">
+      <span class="pill good">Content truth</span>
+      <h3 style="margin-top:3mm;">USDZ package SHA-256</h3>
+      <p>The bytes that define the material. Revisions are immutable and never overwritten.</p>
+    </div>
+    <div class="card">
+      <span class="pill" style="color:var(--navy)">Governance truth</span>
+      <h3 style="margin-top:3mm;">OPAL database</h3>
+      <p>Names, permissions, visibility and the pointer to the currently published package.</p>
+    </div>
+    <div class="card">
+      <span class="pill warn">Disposable state</span>
+      <h3 style="margin-top:3mm;">Consumer artifacts</h3>
+      <p>Files generated from a package hash plus target, quality and converter version.</p>
+    </div>
+  </div>
+</section>
+
+<section class="page">
+  <div class="eyebrow">Canonical lifecycle</div>
+  <h2>How a material becomes publishable</h2>
+  <div class="split">
+    <div class="lane primary">
+      <div class="lane-title"><h3>Durable lane</h3><span class="pill good">Source of truth</span></div>
+      <ol>
+        <li>Ingest texture maps or bake a procedural definition.</li>
+        <li>Record explicit role, colour space, normal convention and physical scale.</li>
+        <li>Review the canonical authoring inputs.</li>
+        <li>Build a deterministic USDZ with the USD Toolbox.</li>
+        <li>Validate the package and calculate its SHA-256.</li>
+        <li>Store it at an immutable revision key in S3.</li>
+        <li>Pin that package in the material version.</li>
+      </ol>
+    </div>
+    <div class="split-arrow">→</div>
+    <div class="lane secondary">
+      <div class="lane-title"><h3>Projection lane</h3><span class="pill warn">Rebuildable</span></div>
+      <ol>
+        <li>Request a target and quality, such as Revit 2K.</li>
+        <li>Look up the cache key for the package and converter.</li>
+        <li>Run <span class="mono">usd-toolbox export --target revit</span> on a miss.</li>
+        <li>Verify the exported manifest and each output hash.</li>
+        <li>Store outputs as content-addressed cache objects.</li>
+        <li>Project only ready artifacts into drive manifests.</li>
+        <li>Garbage-collect artifacts no published package references.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="formula mono">
+    artifact key = <em>package SHA-256</em> + target + quality + converter + converter version
+  </div>
+
+  <div class="grid-2">
+    <div class="note">
+      <h3>Changing the material</h3>
+      <p class="small">Creates a new USDZ revision and hash. Old versions continue resolving to their original bytes and caches.</p>
+    </div>
+    <div class="note">
+      <h3>Changing a converter</h3>
+      <p class="small">Creates a new cache generation without changing or repackaging the source material.</p>
+    </div>
+  </div>
+</section>
+
+<section class="page">
+  <div class="eyebrow">Drive projection</div>
+  <h2>The “mounted drive” is a live, read-only view—not a bucket sync</h2>
+  <p class="lede">The drive carries filenames and mappings up front. Actual texture bytes move only when Windows or Revit opens a file.</p>
+
+  <div class="mount-stack">
+    <div class="stack-box">
+      <span class="pill good">Control plane</span>
+      <h3 style="margin-top:3mm;">OPAL manifest</h3>
+      <p>Maps a human path to one immutable cache object.</p>
+      <span class="path mono">/materials/Carpet/Academix/Ashen/revit/…_base_color.png<br>→ bucket + object key + byte size</span>
+    </div>
+    <div class="stack-arrow">→</div>
+    <div class="stack-box dark">
+      <span class="pill" style="color:var(--mint)">Linux container</span>
+      <h3 style="margin-top:3mm;">PrismFS / FUSE</h3>
+      <p>Builds the directory tree from the manifest and mounts it read-only.</p>
+      <span class="path mono">/srv/prismfs</span>
+      <p class="tiny" style="margin-top:3mm;">On read: authorise → range GET from S3 → memory cache → return bytes.</p>
+    </div>
+    <div class="stack-arrow">→</div>
+    <div class="stack-box">
+      <span class="pill" style="color:var(--coral)">Windows client</span>
+      <h3 style="margin-top:3mm;">Samba / SMB</h3>
+      <p>Exports the FUSE mount as the authenticated share named <strong>opal</strong>.</p>
+      <span class="path mono">\\192.168.122.1\opal</span>
+      <p class="tiny" style="margin-top:3mm;">A drive letter is optional. OPAL uses the UNC path so Revit sees it in every session.</p>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Credential</th><th>Purpose</th><th>Boundary</th></tr></thead>
+    <tbody>
+      <tr><td>Drive bearer token</td><td>Fetches the protected namespace manifest and submits access events.</td><td>PrismFS ↔ OPAL API</td></tr>
+      <tr><td>S3 access key</td><td>Reads the immutable cache objects named by the manifest.</td><td>PrismFS ↔ object storage</td></tr>
+      <tr><td>SMB user/password</td><td>Lets Windows authenticate to the read-only <span class="mono">opal</span> share.</td><td>Windows ↔ Samba</td></tr>
+      <tr><td>OPAL account token</td><td>Searches materials, resolves paths and registers Revit identity.</td><td>Revit add-in ↔ OPAL API</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="page">
+  <div class="eyebrow">Revit consumption</div>
+  <h2>From “Apply Material” to pixels in the viewport</h2>
+  <div class="grid-2" style="grid-template-columns: 1.1fr .9fr; gap:10mm;">
+    <div class="sequence">
+      <div class="seq-num">1</div><div class="seq-body"><strong>Select</strong><p>The user selects a Revit material or clicks a face, then chooses an OPAL variant.</p></div>
+      <div class="seq-num">2</div><div class="seq-body"><strong>Resolve</strong><p>The add-in asks OPAL for the Revit cache derived from the USDZ pinned by the current version, at the requested or best available quality.</p></div>
+      <div class="seq-num">3</div><div class="seq-body"><strong>Join paths</strong><p>API paths are joined to <span class="mono">\\192.168.122.1\opal</span>.</p></div>
+      <div class="seq-num">4</div><div class="seq-body"><strong>Verify bytes</strong><p>Each file is opened through SMB and its SHA-256 is compared with OPAL metadata.</p></div>
+      <div class="seq-num">5</div><div class="seq-body"><strong>Apply</strong><p>A Revit transaction connects Unified Bitmap assets for base colour, bump and glossiness.</p></div>
+      <div class="seq-num">6</div><div class="seq-body"><strong>Scale and identify</strong><p>Physical tile size, repeat settings and OPAL identity parameters are written.</p></div>
+      <div class="seq-num">7</div><div class="seq-body"><strong>Audit</strong><p>OPAL records the Revit identity while PrismFS batches open/read events back to the control plane.</p></div>
+    </div>
+    <div>
+      <div class="accent-card" style="margin-top:5mm;">
+        <span class="pill" style="color:var(--mint)">What Revit stores</span>
+        <h3 style="font-size:15pt;margin-top:4mm;">Paths, not the USDZ</h3>
+        <p>The connector writes UNC texture paths into a Generic appearance asset. Revit does not currently import MaterialX or USDZ directly.</p>
+        <span class="path mono">…\revit\2k\CPT-TARKETT-ACADEMIX-ASHEN_base_color.png</span>
+      </div>
+      <div class="card" style="margin-top:5mm;">
+        <h3>First application</h3>
+        <p class="small">Hash verification reads the complete texture. PrismFS streams the data from S3 and caches ranges in memory.</p>
+      </div>
+      <div class="card" style="margin-top:3mm;">
+        <h3>Later rendering</h3>
+        <p class="small">Revit reopens the configured paths when it needs image data, so the UNC share remains the authoritative delivery path.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page">
+  <div class="eyebrow">Operational contract</div>
+  <h2>Properties the design guarantees</h2>
+  <div class="formula mono">
+    published material → exactly one <em>package revision</em> per variant → zero or more reproducible projections
+  </div>
+  <div class="checklist">
+    <div class="check"><span class="tick">✓</span><span><strong>No drift.</strong> A drive artifact records the exact package hash and converter version that created it.</span></div>
+    <div class="check"><span class="tick">✓</span><span><strong>Atomic publication.</strong> A package is exposed only after required consumer artifacts are complete.</span></div>
+    <div class="check"><span class="tick">✓</span><span><strong>Safe rollback.</strong> Moving the current-version pointer restores the prior package and matching caches.</span></div>
+    <div class="check"><span class="tick">✓</span><span><strong>Rebuildable delivery.</strong> Deleting a cache never destroys material meaning; the USDZ recreates it.</span></div>
+    <div class="check"><span class="tick">✓</span><span><strong>Immutable history.</strong> Packages and content-addressed outputs never change underneath a reference.</span></div>
+    <div class="check"><span class="tick">✓</span><span><strong>Lazy movement.</strong> A mount loads metadata first and transfers S3 bytes only when a file is read.</span></div>
+  </div>
+
+  <table style="margin-top:7mm;">
+    <thead><tr><th>Failure</th><th>Visible result</th><th>Recovery</th></tr></thead>
+    <tbody>
+      <tr><td>USDZ build or validation fails</td><td>No new package revision can be published.</td><td>Correct the authoring input; the prior package stays current.</td></tr>
+      <tr><td>Consumer export fails</td><td>The candidate package remains unexposed to that target.</td><td>Retry with the same package and converter, or ship a corrected converter version.</td></tr>
+      <tr><td>PrismFS/Samba is down</td><td>Search still works, but Revit reports that the drive is unavailable.</td><td>Restart the drive service; no material data needs rebuilding.</td></tr>
+      <tr><td>S3 is temporarily unavailable</td><td>Folder listings may work, while uncached file reads fail.</td><td>Restore object-store access; immutable object references remain valid.</td></tr>
+      <tr><td>Hash mismatch</td><td>The Revit connector refuses to apply the material.</td><td>Regenerate the derivative and investigate storage corruption.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note" style="margin-top:6mm;">
+    <h3>The design principle</h3>
+    <p style="font-size:11pt;margin-bottom:0;">Store material meaning once. Convert for consumers deterministically. Cache for speed. Verify at every boundary.</p>
+  </div>
+</section>
+
+</body>
+</html>

@@ -104,9 +104,11 @@ that infers truth from directory names.
 ### 2. Object storage
 
 S3-compatible storage owns immutable file bytes: supplier originals, curated
-sources, generated maps, previews, packages, and archived versions. Object keys
-are storage implementation details. They must not become canonical material
-IDs or user-facing paths.
+authoring maps, previews, canonical USDZ packages, consumer caches, and archived
+versions. For a published variant revision, the USDZ is the only material
+content truth. Revit and other target files are disposable derivatives keyed by
+the package hash and converter version. Object keys are storage implementation
+details. They must not become canonical material IDs or user-facing paths.
 
 RustFS is the pinned local development fixture. The application and PrismFS
 depend on S3-compatible contracts rather than on RustFS-specific behaviour, so
@@ -116,9 +118,10 @@ production storage can be selected independently.
 
 Workers perform ingestion, analysis, conversion, thumbnailing,
 seamless-texture work, PBR generation, preview rendering, or platform
-packaging. A worker consumes versioned inputs and produces versioned candidate
-outputs plus evidence. It does not silently approve its own work or become the
-source of material identity.
+packaging. The packaging worker seals approved authoring inputs into immutable
+USDZ; target exporters read that package, never a parallel loose-map master.
+A worker does not silently approve its own work or become the source of
+material identity.
 
 Some workflows will be deterministic; others may use assisted or generative
 tools. In both cases, provenance, reproducibility where possible, explicit
@@ -189,7 +192,8 @@ At minimum, the design needs to distinguish concepts in these groups:
 | Material identity | finish, colourway, variant, aliases |
 | Technical description | dimensions, repeat, finish class, physical and rendering response |
 | Asset | source object, role, checksum, provenance, version |
-| Representation | Revit image set, AI-assisted set, PBR set, preview, application package |
+| Representation | authoring PBR set, AI-assisted set, preview, historical target output |
+| Package | immutable canonical USDZ revision and reproducible consumer caches |
 | Workflow | job, attempt, candidate, review, approval, supersession |
 | Integration | platform identity, mapping, publication, sync state |
 | Project context | project, board, selection, notes, intended use |
@@ -209,7 +213,9 @@ Supplier or manual intake
   -> candidate generation or conversion
   -> automated evidence and quality gates
   -> human review
-  -> approved, versioned representation
+  -> immutable canonical USDZ package
+  -> package-hash-keyed consumer caches
+  -> package-pinned material version
   -> platform mapping and namespace publication
   -> PrismFS projection or explicit export/sync package
   -> Revit, Enscape, Omniverse, or another client

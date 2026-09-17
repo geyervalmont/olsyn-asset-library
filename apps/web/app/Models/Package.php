@@ -7,11 +7,14 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use LogicException;
 
 /**
- * One built USDZ: the shading graph, its textures at every tier, and the
- * provenance that cannot be recomputed, in a single self-contained file.
+ * One canonical USDZ revision: the shading graph, its textures at every tier,
+ * and provenance in a single self-contained file.
  *
  * Rows are immutable. A rebuild is a new revision rather than an edit, so a
  * reference to a package can never resolve to different bytes than it did when
@@ -38,6 +41,13 @@ class Package extends Model
     /** @use HasFactory<PackageFactory> */
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::updating(function (Package $package): never {
+            throw new LogicException("Package [{$package->getKey()}] is immutable; build a new revision instead.");
+        });
+    }
+
     /**
      * Losses are recorded, not prevented: a conversion that drops subsurface
      * targeting glTF is correct behaviour. Null means the build predates loss
@@ -59,6 +69,19 @@ class Package extends Model
     public function variant(): BelongsTo
     {
         return $this->belongsTo(Variant::class);
+    }
+
+    /** @return HasMany<PackageDerivative, $this> */
+    public function derivatives(): HasMany
+    {
+        return $this->hasMany(PackageDerivative::class);
+    }
+
+    /** @return BelongsToMany<MaterialVersion, $this> */
+    public function versions(): BelongsToMany
+    {
+        return $this->belongsToMany(MaterialVersion::class, 'material_version_packages')
+            ->withPivot('variant_id');
     }
 
     /**

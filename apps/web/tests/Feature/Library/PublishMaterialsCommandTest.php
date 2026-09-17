@@ -16,12 +16,12 @@ beforeEach(function () {
     $this->seed(LibrarySeeder::class);
     $carpet = Category::query()->where('code', 'CPT')->sole();
     $this->material = Material::factory()->create(['name' => 'Academix', 'category_id' => $carpet, 'supplier_id' => Supplier::factory()->create(['name' => 'Tarkett'])]);
-    $variant = app(AddVariant::class)->handle($this->material, ['colourway' => ['value' => 'Ashen']]);
+    $this->variant = app(AddVariant::class)->handle($this->material, ['colourway' => ['value' => 'Ashen']]);
     $image = imagecreatetruecolor(4, 4);
     ob_start();
     imagepng($image);
     $file = app(FileStore::class)->store((string) ob_get_clean(), 'base.png');
-    $this->representation = app(CreateRepresentation::class)->handle($variant, 'pbr', '1k', ['base_color' => $file]);
+    $this->representation = app(CreateRepresentation::class)->handle($this->variant, 'pbr', '1k', ['base_color' => $file]);
 });
 
 test('the publish command cuts and publishes materials with approved representations', function () {
@@ -29,6 +29,7 @@ test('the publish command cuts and publishes materials with approved representat
     $this->artisan('opal:versions:publish')->expectsOutputToContain('Published 0')->assertSuccessful();
 
     app(ReviewRepresentation::class)->handle($this->representation, ReviewState::Approved);
+    publishablePackage($this->variant, '1k');
 
     $this->artisan('opal:versions:publish', ['--dry-run' => true])->expectsOutputToContain('Would publish 1')->assertSuccessful();
     expect($this->material->fresh()->current_version_id)->toBeNull();

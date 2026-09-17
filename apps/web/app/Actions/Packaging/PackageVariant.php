@@ -62,7 +62,10 @@ class PackageVariant
         // because packaging is deterministic. That is a result worth reporting
         // rather than a revision worth creating: the archive gains nothing from
         // a second copy of the same bytes under a new number.
-        $identical = Package::query()->where('sha256', $built->sha256)->first();
+        $identical = Package::query()
+            ->where('variant_id', $variant->getKey())
+            ->where('sha256', $built->sha256)
+            ->first();
 
         if ($identical !== null) {
             @unlink($built->path);
@@ -84,7 +87,10 @@ class PackageVariant
             // have written.
             @unlink($built->path);
 
-            return Package::query()->where('sha256', $built->sha256)->firstOrFail();
+            return Package::query()
+                ->where('variant_id', $variant->getKey())
+                ->where('sha256', $built->sha256)
+                ->firstOrFail();
         }
     }
 

@@ -46,6 +46,7 @@ beforeEach(function () {
             app(CreateRepresentation::class)->handle($variant, 'pbr', '1k', ['base_color' => $file]),
             ReviewState::Approved,
         );
+        publishablePackage($variant, '1k');
     }
     app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
     $this->material->refresh();

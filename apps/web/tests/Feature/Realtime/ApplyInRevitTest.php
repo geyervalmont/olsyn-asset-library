@@ -39,6 +39,7 @@ beforeEach(function () {
     $file = app(FileStore::class)->store((string) ob_get_clean(), 'base.png');
     $representation = app(CreateRepresentation::class)->handle($this->ashen, 'pbr', '1k', ['base_color' => $file]);
     app(ReviewRepresentation::class)->handle($representation, ReviewState::Approved);
+    publishablePackage($this->ashen, '1k');
     app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
     $this->material->refresh();
 });

@@ -15,15 +15,17 @@ class PublishMaterialsCommand extends Command
 {
     protected $signature = 'opal:versions:publish
         {--material= : Only this material code}
-        {--all : Every material with approved representations, even if a version is already published}
+        {--all : Every material with approved canonical inputs, even if a version is already published}
         {--dry-run : List what would be published}';
 
-    protected $description = 'Cut and publish a version for materials whose approved representations are not on any drive yet';
+    protected $description = 'Publish package-pinned material versions whose required consumer projections are ready';
 
     public function handle(CutVersion $cut, PublishVersion $publish): int
     {
         $query = Material::query()
-            ->whereHas('variants.representations', fn (Builder $builder) => $builder->where('review_state', ReviewState::Approved))
+            ->whereHas('variants.representations', fn (Builder $builder) => $builder
+                ->where('review_state', ReviewState::Approved)
+                ->whereHas('target', fn (Builder $target) => $target->where('is_canonical', true)))
             ->orderBy('code');
 
         if ($this->option('material') !== null) {
@@ -42,9 +44,14 @@ class PublishMaterialsCommand extends Command
         $skipped = 0;
         foreach ($query->cursor() as $material) {
             /** @var Material $material */
-            $approved = Representation::query()->approved()->whereIn('variant_id', $material->variants()->select('id'))->count();
+            $approved = Representation::query()
+                ->approved()
+                ->whereIn('variant_id', $material->variants()->select('id'))
+                ->whereHas('target', fn (Builder $target) => $target->where('is_canonical', true))
+                ->count();
             if ($this->option('dry-run')) {
-                $this->line(sprintf('  %-40s %d approved representation(s)', $material->code, $approved));
+                $packages = $material->variants()->withCount('packages')->get()->sum('packages_count');
+                $this->line(sprintf('  %-40s %d approved authoring set(s), %d package(s)', $material->code, $approved, $packages));
                 $published++;
 
                 continue;

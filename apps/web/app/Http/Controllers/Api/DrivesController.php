@@ -43,6 +43,7 @@ class DrivesController
 
         $drive = Drive::query()->where('slug', $validated['drive'])->firstOrFail();
 
+        $projected = $namespace->entriesForVariant($drive, $variant);
         $entries = array_map(fn (array $entry): array => [
             'path' => $entry['path'],
             'target' => $entry['target'],
@@ -51,14 +52,17 @@ class DrivesController
             'sha256' => $entry['sha256'],
             'bytes' => $entry['object']['size'],
             'mime_type' => $entry['mime_type'],
-        ], $namespace->entriesForVariant($drive, $variant));
+            'source_package_sha256' => $entry['source_package_sha256'],
+            'converter' => $entry['converter'],
+            'converter_version' => $entry['converter_version'],
+        ], $projected);
 
         return response()->json([
             'data' => [
                 'variant' => $variant->code,
                 'drive' => $drive->slug,
                 'root_path' => $drive->root_path,
-                'published' => $variant->material->current_version_id !== null,
+                'published' => $projected !== [],
                 'files' => $entries,
             ],
         ]);

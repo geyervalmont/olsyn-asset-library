@@ -10,8 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
 
 /**
- * An immutable snapshot of approved representations. Cutting a new version
- * re-references representations that did not change.
+ * An immutable snapshot of canonical USDZ packages, one per published variant.
+ * Consumer representations are reproducible caches and are not version truth.
  *
  * @property int $id
  * @property int $material_id
@@ -50,11 +50,24 @@ class MaterialVersion extends Model
         return $this->belongsTo(Material::class);
     }
 
-    /**
-     * @return BelongsToMany<Representation, $this>
-     */
+    /** @return BelongsToMany<Package, $this> */
+    public function packages(): BelongsToMany
+    {
+        return $this->belongsToMany(Package::class, 'material_version_packages')
+            ->withPivot('variant_id');
+    }
+
+    /** The canonical package pinned for one variant. */
+    public function packageFor(Variant $variant): ?Package
+    {
+        return $this->packages()->wherePivot('variant_id', $variant->getKey())->first();
+    }
+
+    /** @return BelongsToMany<Representation, $this> */
     public function representations(): BelongsToMany
     {
+        // Retained for reading pre-USDZ publication history. New versions pin
+        // packages and leave this relation empty.
         return $this->belongsToMany(Representation::class, 'material_version_representations')
             ->withPivot(['variant_id', 'target_id', 'quality_tier_id']);
     }

@@ -23,8 +23,8 @@ function e2ePng(int $grey, int $size = 64): UploadedFile
 }
 
 /**
- * Upload → review → derive → publish → drive manifest, entirely through the
- * pages people use, ending with a manifest PrismFS can mount.
+ * Upload → review → package/cache worker → publish → drive manifest,
+ * ending with a manifest PrismFS can mount.
  */
 test('a material travels from upload to a drive manifest through the UI', function () {
     Storage::fake(config('opal.files_disk'));
@@ -55,22 +55,15 @@ test('a material travels from upload to a drive manifest through the UI', functi
 
     expect($canonical?->review_state->value)->toBe('candidate');
 
-    // 2. Harrison approves the canonical set and derives the Revit and Omniverse sets.
+    // 2. Harrison approves the authoring set. The package worker then seals it
+    // into USDZ and builds the Revit cache (represented by the worker helper).
     $page = Livewire::actingAs($harrison)
         ->test('pages::materials.show', ['material' => $material])
         ->call('review', $canonical?->getKey(), 'approved')
-        ->call('derive', $variant?->getKey(), 'revit')
-        ->call('derive', $variant?->getKey(), 'omniverse')
         ->assertHasNoErrors();
 
-    $derived = $variant?->representations()->where('id', '!=', $canonical?->getKey())->get();
-
-    expect($derived)->toHaveCount(2)
-        ->and($derived?->pluck('review_state.value')->unique()->all())->toBe(['candidate']);
-
-    foreach ($derived ?? [] as $representation) {
-        $page->call('review', $representation->getKey(), 'approved');
-    }
+    $quality = $canonical?->quality->slug ?? 'preview';
+    $package = publishablePackage($variant, $quality);
 
     // 3. Nothing is projected until a version is published.
     Livewire::actingAs($harrison)
@@ -87,14 +80,15 @@ test('a material travels from upload to a drive manifest through the UI', functi
 
     expect($material?->fresh()?->currentVersion?->number)->toBe(1);
 
-    // 4. The drive now serves the published files at readable, stable paths.
+    // 4. The drive serves only package-derived cache files at readable paths.
     $manifest = $this->actingAs($harrison)->get(route('drives.manifest', $drive))->assertOk()->getContent();
 
-    expect($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/pbr/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png"')
-        ->and($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/revit/CPT-TARKETT-ACADEMIX-ASHEN_glossiness.png"')
-        ->and($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/omniverse/CPT-TARKETT-ACADEMIX-ASHEN.mdl"')
+    expect($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/revit/'.$quality.'/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png"')
+        ->and($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/revit/'.$quality.'/CPT-TARKETT-ACADEMIX-ASHEN_bump.png"')
+        ->and($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/revit/'.$quality.'/CPT-TARKETT-ACADEMIX-ASHEN_glossiness.png"')
         ->and($manifest)->toContain('bucket: "prismfs-dev"')
-        ->and(substr_count($manifest, '  - path: '))->toBe(3 + 3 + 4);
+        ->and(substr_count($manifest, '  - path: '))->toBe(3)
+        ->and($material?->fresh()?->currentVersion?->packageFor($variant)?->is($package))->toBeTrue();
 
     // 5. Restricting the material hides it from the drive until the drive is granted.
     $page->call('setVisibility', 'restricted');
@@ -103,11 +97,10 @@ test('a material travels from upload to a drive manifest through the UI', functi
     $page->set('grantDrive', (string) $drive->getKey())->call('grantDrive')->assertHasNoErrors();
     $this->actingAs($harrison)->get(route('drives.manifest', $drive))->assertDontSee('files: []', false);
 
-    // 6. The whole story is in the provenance timeline.
+    // 6. Authoring and approval remain in the provenance timeline. Package
+    // lineage is carried by the pinned package hash and derivative cache key.
     $page->assertSee('Matt uploaded')
-        ->assertSee('Harrison approved')
-        ->assertSee('opal revit image-set converter')
-        ->assertSee('opal omniverse mdl converter');
+        ->assertSee('Harrison approved');
 
     Tenant::forgetCurrent();
 });
