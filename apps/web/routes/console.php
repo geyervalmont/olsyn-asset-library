@@ -12,3 +12,5 @@ Schedule::command('opal:embeddings:index --stale')
     ->dailyAt('02:30')
     ->withoutOverlapping()
     ->when(fn (): bool => (bool) config('opal.embeddings.enabled'));
+
+Schedule::command('opal:synthesis:reconcile')->everyMinute()->withoutOverlapping();

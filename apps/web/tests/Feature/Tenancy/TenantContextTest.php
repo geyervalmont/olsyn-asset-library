@@ -84,3 +84,15 @@ test('tenant middleware is persisted for livewire requests', function () {
         EnsureValidTenantSession::class,
     );
 });
+
+test('livewire middleware replay retains the tenant until the update request ends', function () {
+    $tenant = Tenant::factory()->create();
+    $user = User::factory()->withTenant($tenant)->create();
+    $request = Request::create('/materials/studio/photos', 'GET');
+    $request->headers->set('X-Livewire', 'true');
+    $request->setUserResolver(fn () => $user);
+    app(UseCurrentTenant::class)->handle($request, fn () => response('middleware replayed'));
+    expect(Tenant::current()?->id)->toBe($tenant->id);
+    app()->terminate();
+    expect(Tenant::current())->toBeNull()->and(getPermissionsTeamId())->toBeNull();
+});

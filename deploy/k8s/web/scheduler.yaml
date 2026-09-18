@@ -22,6 +22,7 @@ spec:
         app: opal
         component: scheduler
     spec:
+      serviceAccountName: opal-scheduler
       nodeSelector:
         node-role: opal
       terminationGracePeriodSeconds: 60
@@ -29,6 +30,13 @@ spec:
         - name: scheduler
           image: ghcr.io/geyervalmont/opal:latest
           command: [php, artisan, schedule:work]
+          env:
+            - name: OPAL_SYNTHESIS_BROKER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: opal-synthesis-broker
+                  key: jwt-secret
+                  optional: true
           envFrom:
             - configMapRef:
                 name: opal-config

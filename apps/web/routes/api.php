@@ -1,5 +1,16 @@
 <?php
 
+use App\Http\Controllers\Api\SynthesisWorkerController;
+
+// Each endpoint checks a private, short-lived, per-run worker capability.
+Route::prefix('synthesis-runs/{run:uuid}')->middleware('throttle:120,1')->group(function () {
+    Route::get('/', [SynthesisWorkerController::class, 'show']);
+    Route::get('source', [SynthesisWorkerController::class, 'source']);
+    Route::post('progress', [SynthesisWorkerController::class, 'progress']);
+    Route::post('artifacts/{role}', [SynthesisWorkerController::class, 'artifact']);
+    Route::post('complete', [SynthesisWorkerController::class, 'complete']);
+});
+
 use App\Http\Controllers\Api\ClientReleasesController;
 use App\Http\Controllers\Api\CommandsController;
 use App\Http\Controllers\Api\DrivesController;

@@ -9,6 +9,17 @@ permissions:
   contents: read
 
 jobs:
+  material-synthesis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install numpy==2.2.6 Pillow==11.3.0
+      - run: python -m unittest discover -s tests -v
+        working-directory: services/material-synthesis
+
   prismfs:
     runs-on: ubuntu-latest
     defaults:
@@ -56,6 +67,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.5"
+          extensions: pdo_pgsql, gd, imagick, exif
           tools: composer:v2
           coverage: none
       - uses: oven-sh/setup-bun@v2

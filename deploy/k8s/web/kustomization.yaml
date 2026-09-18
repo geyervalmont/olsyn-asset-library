@@ -11,6 +11,7 @@ resources:
   - ingress.yaml        # IngressRoutes + redirect Middleware
   - pdb.yaml
   - networkpolicy.yaml
+  - synthesis-serviceaccount.yaml
 
 # migrate-job.yaml is deliberately absent: CI renders it per deploy with a
 # unique name, applies it, and waits for it before rolling the Deployments.

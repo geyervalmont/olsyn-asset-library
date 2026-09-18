@@ -49,7 +49,13 @@ class UseCurrentTenant
         try {
             return $next($request);
         } finally {
-            Tenant::forgetCurrent();
+            // Livewire replays page middleware before it invokes the component.
+            // Keep the authorized tenant until the real update request ends.
+            if ($request->hasHeader('X-Livewire')) {
+                app()->terminating(static fn () => Tenant::forgetCurrent());
+            } else {
+                Tenant::forgetCurrent();
+            }
         }
     }
 }

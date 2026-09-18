@@ -18,6 +18,10 @@ narrative:
   material model: readable codes, variants, provenance, search;
 - [`material-authoring.md`](material-authoring.md) — procedural recipes, map
   import, review boundaries, and the material-repair loop;
+- [`material-synthesis-and-drafts.md`](material-synthesis-and-drafts.md) — photo capture,
+  Studio drafts, colourway derivation and the shared compute roadmap;
+- [`../services/material-synthesis/README.md`](../services/material-synthesis/README.md)
+  — self-hosted worker setup, model import, deployment and implemented scope;
 - [`../services/prismfs/README.md`](../services/prismfs/README.md) — standalone
   PrismFS usage, configuration, and development;
 - [`../integrations/revit/README.md`](../integrations/revit/README.md) — the

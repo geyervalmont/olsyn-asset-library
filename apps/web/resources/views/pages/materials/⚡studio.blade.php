@@ -656,6 +656,7 @@ new #[Title('Material Studio')] class extends Component
             <p>{{ __('Author a physically scaled finish, inspect every channel, then apply the draft directly to Revit or deliberately add it to the shared library.') }}</p>
         </div>
         <div class="ui-material-studio__head-actions">
+            <x-ui.button :href="route('materials.studio.photos')" variant="quiet" wire:navigate>{{ __('Photo Studio & drafts') }}</x-ui.button>
             <span class="ui-studio-engine" data-status="{{ $previewStatus }}" aria-live="polite">
                 <i></i>
                 <span wire:loading.remove>{{ $previewStatus === 'ready' ? __('Live preview') : ($previewStatus === 'waiting' ? __('Complete a valid repeat') : __('Preview unavailable')) }}</span>

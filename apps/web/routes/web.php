@@ -9,7 +9,9 @@ use App\Http\Controllers\Prismfs\PrismfsManifestController;
 use App\Http\Controllers\PublicMaterialController;
 use App\Http\Controllers\PublicMaterialPreviewController;
 use App\Http\Controllers\PublicMaterialQrCodeController;
+use App\Http\Controllers\StudioArtifactController;
 use App\Http\Controllers\StudioLivePreviewController;
+use App\Http\Controllers\StudioPhotoController;
 use App\Http\Controllers\Tenants\SwitchTenantController;
 use Illuminate\Support\Facades\Route;
 
@@ -54,6 +56,9 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::livewire('materials', 'pages::materials.index')->name('materials.index');
     Route::livewire('materials/create', 'pages::materials.create')->name('materials.create');
     Route::livewire('materials/studio', 'pages::materials.studio')->name('materials.studio');
+    Route::post('materials/studio/photos', StudioPhotoController::class)->name('materials.studio.photos.upload');
+    Route::livewire('materials/studio/photos', 'pages::materials.photo-studio')->name('materials.studio.photos');
+    Route::get('studio-artifacts/{revision}/{role}', StudioArtifactController::class)->name('studio-artifacts.show');
     Route::get('studio-preview/{digest}/{role}', StudioLivePreviewController::class)
         ->where('digest', '[a-f0-9]{64}')
         ->whereIn('role', ['base_color', 'normal', 'roughness', 'height', 'metallic'])
