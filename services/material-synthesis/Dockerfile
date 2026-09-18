@@ -13,7 +13,7 @@ ENV PYTHONPATH=/opt/chord:/opt/stabledelight:/opt/rgbx/rgb2x \
     RGBX_REVISION=${RGBX_REVISION} CHORD_REVISION=${CHORD_REVISION} CLEANUP_REVISION=${CLEANUP_REVISION} \
     HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONUNBUFFERED=1
 RUN python -c "from chord import ChordModel; from stabledelight.system.pipeline_yoso_delight import YosoDelightPipeline; from pipeline_rgb2x import StableDiffusionAOVMatEstPipeline"
-COPY worker.py image_ops.py backends.py ./
+COPY worker.py image_ops.py backends.py download.py ./
 RUN useradd --create-home --uid 10001 worker && mkdir /work && chown worker:worker /work
 USER worker
 WORKDIR /work

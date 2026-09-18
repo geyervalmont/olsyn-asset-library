@@ -72,19 +72,10 @@ class Worker:
         if parsed.scheme != 'https':
             raise ValueError('Model bundles must use HTTPS.')
         archive = directory / 'models.tar'
-        sha = hashlib.sha256()
-        # Never forward OPAL's bearer token to storage.
-        with requests.get(spec['model_url'], stream=True, timeout=(10, 120)) as response:
-            response.raise_for_status()
-            with archive.open('wb') as output:
-                for chunk in response.iter_content(1024 * 1024):
-                    if self.cancelled.is_set():
-                        raise Cancelled()
-                    sha.update(chunk)
-                    output.write(chunk)
-                    if output.tell() > 40 * 1024**3:
-                        raise ValueError('Model bundle exceeds the worker limit.')
-        if sha.hexdigest() != spec['model_sha256']:
+        from download import download
+        # Storage requests deliberately carry no OPAL bearer token.
+        digest = download(spec['model_url'], archive, self.cancelled)
+        if digest != spec['model_sha256']:
             raise ValueError('Model bundle checksum mismatch.')
         models = directory / 'models'
         models.mkdir()
