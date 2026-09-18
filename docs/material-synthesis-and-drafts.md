@@ -1,11 +1,11 @@
 # Material synthesis, repair and Studio drafts
 
-**Status: implementation underway, 18 September 2026.** The first vertical slice
-now includes private photo/library drafts, immutable revisions, candidate
-promotion, the offline CHORD/StableDelight worker and shared AWS dispatch. GPU
-inference still requires the gated CHORD model bundle and a successful real-photo
-validation. See [the implementation runbook](../services/material-synthesis/README.md)
-for the precise implemented scope, activation steps and remaining limitations.
+**Status: self-hosted R&D proof validated, 18 September 2026.** Private photo/library
+drafts, immutable revisions, candidate promotion, offline RGB→X/StableDelight
+inference and shared AWS dispatch are integrated. A real 1K brick-photo run
+completed with cleanup and all five maps, and rendered in production Studio.
+See [the measured proof](material-synthesis-proof.md) and
+[the implementation runbook](../services/material-synthesis/README.md).
 The broader stages below remain the product roadmap. This builds on the brief at
 `~/Documents/Codex/2026-09-18/wha/outputs/material-synthesis-pipeline.md` on
 Harrison's Mac and the current OPAL and Olsyn compute implementations.
@@ -18,12 +18,15 @@ generation services. AWS GPU instances leased in our account remain compatible
 with this requirement: we deploy our own runner images, retain model artifacts
 and own the job lifecycle. Initially leave on-prem GPUs free for other workloads.
 
-**Current R&D decision:** evaluate CHORD as the primary quality baseline, with
-optional photo cleanup before estimation. Harrison identifies OPAL's current
+**Current R&D decision:** use the authors' ungated RGB→X checkpoint for the
+immediate self-hosted proof, with StableDelight cleanup before estimation. Keep
+CHORD as a supported candidate for quality comparison once its Hugging Face
+account/terms gate has been accepted. This fallback addresses artifact access,
+not commercial permission. Harrison identifies OPAL's current
 scope as an internal R&D proof of concept and will handle commercial permission
 before commercial adoption. Record CHORD's research-only terms and model access
 requirements; commercial licensing is a later deployment gate, not a reason to
-substitute a different model in this research plan. This is a scope decision,
+block the internal R&D evaluation. This is a scope decision,
 not a claim that the licence has changed or that permission has been obtained.
 
 Studio should be the workspace for creating and fixing materials, whether the

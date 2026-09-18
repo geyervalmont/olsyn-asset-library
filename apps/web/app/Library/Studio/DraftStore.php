@@ -140,12 +140,14 @@ final class DraftStore
             $maps['base_color'] = $this->put($image->getImageBlob(), 'base_color');
             $image->clear();
         }
-        if (isset($maps['roughness']) && ($settings['roughness'] ?? '') !== '') {
-            $image = new \Imagick;
-            $image->newImage($maps['roughness']['width'], $maps['roughness']['height'], new \ImagickPixel('gray('.(100 * (float) $settings['roughness']).'%)'), 'png');
-            $image->setImageDepth(8);
-            $maps['roughness'] = $this->put($image->getImageBlob(), 'roughness');
-            $image->clear();
+        foreach (['roughness', 'metallic'] as $role) {
+            if (isset($maps[$role]) && ($settings[$role] ?? '') !== '') {
+                $image = new \Imagick;
+                $image->newImage($maps[$role]['width'], $maps[$role]['height'], new \ImagickPixel('gray('.(100 * (float) $settings[$role]).'%)'), 'png');
+                $image->setImageDepth(8);
+                $maps[$role] = $this->put($image->getImageBlob(), $role);
+                $image->clear();
+            }
         }
 
         return $maps;

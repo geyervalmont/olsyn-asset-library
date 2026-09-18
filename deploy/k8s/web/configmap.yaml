@@ -21,15 +21,16 @@ data:
   APP_ENV: production
   APP_DEBUG: "false"
   APP_URL: https://opal.olsyn.com
-  # Inference is enabled after importing the gated, checksummed model bundle.
-  OPAL_SYNTHESIS_ENABLED: "false"
-  OPAL_SYNTHESIS_CLEANUP_ENABLED: "false"
-  OPAL_SYNTHESIS_PROFILE: burst-l40s-solo
+  # Self-hosted R&D backend validated with a complete 1K photo job.
+  OPAL_SYNTHESIS_ENABLED: "true"
+  OPAL_SYNTHESIS_CLEANUP_ENABLED: "true"
+  OPAL_SYNTHESIS_BACKEND: rgbx
+  OPAL_SYNTHESIS_PROFILE: aws-material-pool
   OPAL_SYNTHESIS_CALLBACK_URL: http://opal-web.opal.svc.cluster.local
-  OPAL_SYNTHESIS_IMAGE: ghcr.io/geyervalmont/opal-material-synthesis:sha-b738f45ccf409c17303d352affd4fe68fcfac219
+  OPAL_SYNTHESIS_IMAGE: ghcr.io/geyervalmont/opal-material-synthesis:sha-6cde52f6e753887e8dc0056a99c2bcb9253be027
   OPAL_SYNTHESIS_MODEL_DISK: s3
-  OPAL_SYNTHESIS_MODEL_PATH: opal/models/opal-chord-v1.tar
-  OPAL_SYNTHESIS_MODEL_SHA256: ""
+  OPAL_SYNTHESIS_MODEL_PATH: opal/models/opal-rgbx-v1-cloud.tar
+  OPAL_SYNTHESIS_MODEL_SHA256: b21ce99d984813981596845ab43230eccdbcd7cfd57a571159714bda41675f7d
   APP_LOCALE: en
   APP_FALLBACK_LOCALE: en
   APP_MAINTENANCE_DRIVER: file

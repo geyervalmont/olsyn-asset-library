@@ -26,6 +26,7 @@ new #[Title('Photo Material Studio')] class extends Component
     public string $tint = '#ffffff';
     public int $tint_amount = 0;
     public string $roughness = '';
+    public string $metallic = '';
     public string $destination = 'new';
     public string $category_id = '';
     public string $material_id = '';
@@ -109,6 +110,7 @@ new #[Title('Photo Material Studio')] class extends Component
         $this->crop = $doc['crop'] ?? ['x' => 50, 'y' => 50, 'size' => 100];
         $this->tint_amount = 0;
         $this->roughness = '';
+        $this->metallic = '';
         $this->resetValidation();
     }
 
@@ -203,7 +205,7 @@ new #[Title('Photo Material Studio')] class extends Component
     public function adjust(): void
     {
         $this->authorizeEditor();
-        $settings = $this->validate(['tint' => 'required|regex:/^#[a-fA-F0-9]{6}$/', 'tint_amount' => 'required|integer|min:0|max:100', 'roughness' => 'nullable|numeric|min:0|max:1']);
+        $settings = $this->validate(['tint' => 'required|regex:/^#[a-fA-F0-9]{6}$/', 'tint_amount' => 'required|integer|min:0|max:100', 'roughness' => 'nullable|numeric|min:0|max:1', 'metallic' => 'nullable|numeric|min:0|max:1']);
         $revision = $this->revision;
         $maps = app(DraftStore::class)->adjust($revision, $settings);
         $doc = $revision->document;
@@ -360,8 +362,10 @@ new #[Title('Photo Material Studio')] class extends Component
                         @if($this->previewSet)
                             <div class="flex items-center gap-3"><input type="color" wire:model="tint" aria-label="Colourway tint" /><label class="text-sm">Tint strength<input type="range" min="0" max="100" wire:model="tint_amount" /></label></div>
                             <flux:input wire:model="roughness" label="Roughness override (0–1)" type="number" min="0" max="1" step="0.05" placeholder="Keep generated map" />
+                            <flux:input wire:model="metallic" label="Metalness override (0–1)" type="number" min="0" max="1" step="0.05" placeholder="Keep generated map" />
+                            <p class="text-xs text-zinc-500">Use 0 for paint, stone, timber and fabric; 1 for bare metal.</p>
                             <flux:button wire:click="adjust" :disabled="$this->current->state !== 'active'">Save finish revision</flux:button>
-                            <p class="text-xs text-zinc-500">Colour edits preserve normal and height maps. A roughness override replaces that map with a uniform finish.</p>
+                            <p class="text-xs text-zinc-500">Colour edits preserve normal and height maps. Roughness and metalness overrides replace those maps with a uniform value.</p>
                         @endif
                     </div>
                     <div class="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700">

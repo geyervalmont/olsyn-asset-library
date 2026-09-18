@@ -62,16 +62,26 @@ StableDelight's pinned FP16 weights. Omit it if cleanup is not wanted.
 ```yaml
 OPAL_SYNTHESIS_ENABLED: "true"
 OPAL_SYNTHESIS_CLEANUP_ENABLED: "true"
-OPAL_SYNTHESIS_PROFILE: burst-l40s-solo
+OPAL_SYNTHESIS_BACKEND: rgbx
+OPAL_SYNTHESIS_PROFILE: aws-material-pool
 OPAL_SYNTHESIS_IMAGE: ghcr.io/geyervalmont/opal-material-synthesis:sha-<full-commit>
 OPAL_SYNTHESIS_MODEL_DISK: s3
-OPAL_SYNTHESIS_MODEL_PATH: opal/models/opal-chord-v1.tar
+OPAL_SYNTHESIS_MODEL_PATH: opal/models/opal-rgbx-v1-cloud.tar
 OPAL_SYNTHESIS_MODEL_SHA256: <64-character-sha256>
 ```
 
 Keep both enable flags false until the matching bundle is installed; cleanup
 must stay false if the bundle omits StableDelight. Broker credentials are
 injected only into the scheduler through `opal-synthesis-broker`.
+
+The `aws-material-pool` profile uses the broker acquisition API, reuses available
+AWS nodes, and tries supported regions when a fixed profile has no capacity.
+It requests one L40S or RTX Pro 6000 GPU, at least 32 GiB host memory, on-demand
+capacity and a maximum GPU instance price of $3.50/hour. Existing fixed AWS
+profiles remain supported. Model downloads use eight bounded HTTPS range
+requests, followed by whole-bundle SHA256 verification before extraction.
+StableDelight's pinned custom ControlNet is included in the worker image; no
+remote model code is fetched during generation.
 
 The initial defaults are one active cloud allocation, 30 attempts per tenant
 per day, and a 30-minute deadline including queue/startup time. Reconciliation

@@ -229,3 +229,17 @@ test('pooled synthesis acquires only bounded AWS capacity with a stable attempt 
         && $request['gpu_request']['max_gpus'] === 1);
     expect(fn () => app(SynthesisCompute::class)->allocate($run))->toThrow(RuntimeException::class, 'Invalid cloud acquisition allocation.');
 });
+
+test('zero metalness override preserves the inferred maps in the earlier revision', function () {
+    $maps = array_fill_keys(DraftStore::MAPS, $this->revision->document['source']);
+    $this->revision->update(['artifacts' => $maps]);
+    Livewire::test('pages::materials.photo-studio', ['draft' => $this->draft->uuid])
+        ->set('metallic', '0')->call('adjust')->assertHasNoErrors();
+    $head = $this->draft->fresh()->revisions()->findOrFail($this->draft->fresh()->head_id);
+    expect($head->artifacts['normal']['sha256'])->toBe($maps['normal']['sha256'])
+        ->and($this->revision->fresh()->artifacts)->toBe($maps)
+        ->and($head->document['edits'][0]['metallic'])->toBe('0');
+    $image = new Imagick;
+    $image->readImageBlob($this->store->bytes($head->artifacts['metallic']));
+    expect($image->getImagePixelColor(0, 0)->getColor()['r'])->toBe(0);
+});
