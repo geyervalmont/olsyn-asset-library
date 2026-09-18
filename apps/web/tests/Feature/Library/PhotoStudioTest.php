@@ -194,7 +194,6 @@ test('approving a repaired surface replaces old LODs and applies scale only at r
         ->and($rep->fresh()->review_state)->toBe(ReviewState::Superseded);
 });
 
-
 test('alternative model completion preserves identity and rejects a different backend', function () {
     config(['synthesis.backend' => 'rgbx']);
     $run = $this->store->generate($this->revision);
