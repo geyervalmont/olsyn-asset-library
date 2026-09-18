@@ -135,31 +135,22 @@ class Worker:
                     del pipeline
                     torch.cuda.empty_cache()
                 self.progress('estimating_material')
-                from omegaconf import OmegaConf
-                from chord import ChordModel
-                from safetensors.torch import load_file
-                config = OmegaConf.load('/opt/chord/config/chord.yaml')
-                config.model.stable_diffusion.hf_key = str(models / 'base')
-                model = ChordModel(config)
-                model.load_state_dict(load_file(str(models / 'chord_v1.safetensors')))
-                model.eval().to('cuda')
-                tensor = torch.from_numpy(np.asarray(image).copy()).permute(2, 0, 1).float().div(255).unsqueeze(0).to('cuda')
-                with torch.inference_mode(), torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                    outputs = model(tensor)
-                def array(value):
-                    value = value.detach().float().cpu().numpy()[0]
-                    return value.transpose(1, 2, 0) if value.ndim == 3 else value
-                normal = array(outputs['normal'])
-                # CHORD's renderer uses image-row-down Y; canonical maps use +Y up.
-                normal[..., 1] = 1 - normal[..., 1]
-                normal = normalize_normals(normal)
-                maps = {'base_color': array(outputs['basecolor']), 'normal': normal, 'roughness': array(outputs['roughness']), 'metallic': array(outputs['metalness']), 'height': height_from_normals(normal)}
+                from backends import estimate
+                backend = spec.get('backend', 'chord')
+                bundle_manifest = json.loads((models / 'manifest.json').read_text())
+                if bundle_manifest.get('backend', 'chord') != backend:
+                    raise ValueError('Model bundle does not match the requested backend.')
+                inference_started = time.monotonic()
+                maps, model_manifest = estimate(image, models, backend, seed)
+                torch.cuda.synchronize()
+                inference_seconds = time.monotonic() - inference_started
+                maps['height'] = height_from_normals(maps['normal'])
                 self.progress('uploading_maps')
                 for role, value in maps.items():
                     path = root / (role + '.png')
                     encode_png(value, path, height=role == 'height')
                     self.upload(role, path)
-                manifest = {'normal_convention': 'opengl', 'model_sha256': spec['model_sha256'], 'chord_revision': os.environ['CHORD_REVISION'], 'cleanup_revision': os.environ['CLEANUP_REVISION'] if spec['cleanup'] else None, 'seed': seed, 'height_method': 'periodic-normal-integration-relative', 'seconds': time.monotonic() - started, 'peak_vram_bytes': torch.cuda.max_memory_allocated()}
+                manifest = {'normal_convention': 'opengl', 'model_sha256': spec['model_sha256'], **model_manifest, 'inference_seconds': inference_seconds, 'cleanup_revision': os.environ['CLEANUP_REVISION'] if spec['cleanup'] else None, 'seed': seed, 'height_method': 'periodic-normal-integration-relative', 'seconds': time.monotonic() - started, 'peak_vram_bytes': torch.cuda.max_memory_allocated()}
                 for attempt in range(3):
                     try:
                         self.request('POST', '/complete', json=manifest)
