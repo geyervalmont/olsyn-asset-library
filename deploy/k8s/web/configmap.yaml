@@ -21,6 +21,14 @@ data:
   APP_ENV: production
   APP_DEBUG: "false"
   APP_URL: https://opal.olsyn.com
+  # Inference is enabled after importing the gated, checksummed model bundle.
+  OPAL_SYNTHESIS_ENABLED: "false"
+  OPAL_SYNTHESIS_CLEANUP_ENABLED: "false"
+  OPAL_SYNTHESIS_PROFILE: burst-l40s-solo
+  OPAL_SYNTHESIS_IMAGE: ghcr.io/geyervalmont/opal-material-synthesis:sha-b738f45ccf409c17303d352affd4fe68fcfac219
+  OPAL_SYNTHESIS_MODEL_DISK: s3
+  OPAL_SYNTHESIS_MODEL_PATH: opal/models/opal-chord-v1.tar
+  OPAL_SYNTHESIS_MODEL_SHA256: ""
   APP_LOCALE: en
   APP_FALLBACK_LOCALE: en
   APP_MAINTENANCE_DRIVER: file
