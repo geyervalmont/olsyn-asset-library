@@ -154,11 +154,23 @@ test('an existing map set can be imported, tinted and kept as a colourway draft'
     $doc = array_merge($this->revision->document, ['width_mm' => 500, 'height_mm' => 500]);
     $revision = $this->store->revise($this->draft, $this->revision->id, $doc, array_fill_keys(DraftStore::MAPS, $this->revision->document['source']));
     $rep = app(PromoteStudioRevision::class)->handle($revision, ['mode' => 'new', 'name' => 'Existing stone', 'category_id' => Category::query()->firstOrFail()->id], $this->editor);
-    Livewire::actingAs($this->editor)->test('pages::materials.photo-studio')
+    $component = Livewire::actingAs($this->editor)->test('pages::materials.photo-studio')
         ->set('importRepresentation', (string) $rep->id)->call('import')->assertHasNoErrors()
         ->set('tint', '#a04422')->set('tint_amount', 25)->call('adjust')->assertHasNoErrors()
         ->call('fork')->assertHasNoErrors()->assertSee('colourway');
     expect(StudioDraft::query()->where('state', 'active')->count())->toBe(2);
+    $fork = StudioDraft::query()->latest('id')->firstOrFail();
+    $previous = $fork->revisions()->sole();
+    config(['synthesis.daily_runs' => 0]);
+    $component->call('generate')->assertHasErrors('generation');
+    expect($fork->fresh()->head_id)->toBe($previous->id);
+    config(['synthesis.daily_runs' => 30]);
+    $component->call('generate')->assertHasNoErrors();
+    expect($fork->fresh()->head_id)->not->toBe($previous->id)
+        ->and($previous->fresh()->artifacts)->toBe($previous->artifacts)
+        ->and($previous->fresh()->document)->toHaveKey('edits');
+    $generated = $fork->revisions()->findOrFail($fork->fresh()->head_id);
+    expect($generated->run)->not->toBeNull()->and($generated->document)->not->toHaveKey('edits');
 });
 
 test('approving a repaired surface replaces old LODs and applies scale only at review', function () {

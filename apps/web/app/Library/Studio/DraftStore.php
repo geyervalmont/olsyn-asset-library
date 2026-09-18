@@ -115,6 +115,7 @@ final class DraftStore
             if ($existing !== null) {
                 return $existing;
             }
+            abort_if(! empty($revision->artifacts), 409, 'Create a fresh input revision before regenerating existing maps.');
             $count = SynthesisRun::query()->whereHas('revision.draft', fn ($q) => $q->where('tenant_id', $revision->draft->tenant_id))->where('created_at', '>=', now()->startOfDay())->count();
             if ($count >= (int) config('synthesis.daily_runs')) {
                 throw ValidationException::withMessages(['generation' => 'Today’s generation limit has been reached. Your draft is saved.']);

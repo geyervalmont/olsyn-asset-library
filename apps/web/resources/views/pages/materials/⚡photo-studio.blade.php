@@ -122,6 +122,7 @@ new #[Title('Photo Material Studio')] class extends Component
         $this->current->update(['name' => $this->name]);
         if ($doc != $revision->document) {
             $changedSource = ($doc['crop'] != ($revision->document['crop'] ?? [])) || $doc['cleanup'] != ($revision->document['cleanup'] ?? 0) || $doc['resolution'] != ($revision->document['resolution'] ?? 1024);
+            if ($changedSource) { unset($doc['edits']); }
             $next = app(DraftStore::class)->revise($this->current, $revision->id, $doc, $changedSource ? [] : $revision->artifacts);
             $this->revisionId = $next->id;
         }
@@ -138,13 +139,20 @@ new #[Title('Photo Material Studio')] class extends Component
     public function generate(): void
     {
         $this->saveDraft();
-        $revision = $this->revision;
-        if ($revision->run?->terminal()) {
-            $revision = app(DraftStore::class)->revise($this->current, $revision->id, $revision->document);
-            $this->revisionId = $revision->id;
-        }
-        app(DraftStore::class)->generate($revision);
-        unset($this->revision);
+        $source = $this->revision;
+        if ($source->run !== null && ! $source->run->terminal()) { return; }
+        $revision = DB::transaction(function () use ($source) {
+            $revision = $source;
+            if ($source->run !== null || ! empty($source->artifacts)) {
+                $document = $source->document;
+                unset($document['edits']);
+                $revision = app(DraftStore::class)->revise($this->current, $source->id, $document);
+            }
+            app(DraftStore::class)->generate($revision);
+            return $revision;
+        });
+        $this->revisionId = $revision->id;
+        unset($this->current, $this->revision, $this->previewSet);
     }
 
     public function poll(): void
@@ -335,7 +343,7 @@ new #[Title('Photo Material Studio')] class extends Component
                             <p class="text-sm text-zinc-500">Select a square sample. Position controls move the crop within the photo; 100% uses the largest square.</p>
                             @foreach(['x'=>'Horizontal position','y'=>'Vertical position','size'=>'Crop size'] as $key=>$label)<label class="block text-sm">{{ $label }} · {{ $crop[$key] }}%<input class="block w-full" type="range" min="{{ $key === 'size' ? 10 : 0 }}" max="100" wire:model.live.debounce.500ms="crop.{{ $key }}" /></label>@endforeach
                             <label class="block text-sm">Glare cleanup · {{ $cleanup }}%<input class="block w-full" type="range" min="0" max="100" wire:model.live.debounce.500ms="cleanup" @disabled(!config('synthesis.cleanup_enabled')) /></label>
-                            <p class="text-xs text-zinc-500">Optional cleanup can change surface detail. Start at zero and compare a cleaned revision.</p>
+                            <p class="text-xs text-zinc-500">Optional cleanup can change surface detail. Regeneration starts from the source; earlier finish edits remain in history.</p>
                             <flux:select wire:model.live="resolution" label="Generation size"><option value="512">512 px · quick study</option><option value="1024">1024 px · detailed</option></flux:select>
                             <flux:button wire:click="generate" variant="primary" :disabled="!config('synthesis.enabled') || ($run && !$run->terminal()) || $this->current->state !== 'active'">Generate material</flux:button>
                             @unless(config('synthesis.enabled'))<p class="text-sm text-zinc-500">Photo generation is not enabled yet. You can keep this draft or edit a library material.</p>@endunless
