@@ -38,6 +38,9 @@ class SynthesisCompute
     public function allocate(SynthesisRun $run): array
     {
         $profile = $run->runtime('profile');
+        if ($profile === 'aws-material-pool') {
+            return $this->acquire($run);
+        }
         /** @var list<array<string, mixed>> $profiles */
         $profiles = $this->broker()->get('/profiles')->throw()->json('profiles');
         $selected = collect($profiles)->firstWhere('name', $profile);
@@ -55,6 +58,41 @@ class SynthesisCompute
         throw_unless(is_array($allocation) && ($allocation['provider'] ?? '') === 'aws' && ! empty($allocation['node_selector']), RuntimeException::class, 'Invalid cloud allocation response.');
 
         return $allocation;
+    }
+
+    /** @return array<string, mixed> */
+    private function acquire(SynthesisRun $run): array
+    {
+        // The pool engine reuses stopped instances and tries other AWS regions
+        // when a fixed profile has no capacity. One key per immutable attempt
+        // prevents duplicate acquisitions if an HTTP response is lost.
+        $accepted = $this->broker()->post('/acquire', [
+            'consumer' => 'material-synthesis', 'workload' => 'material-synthesis',
+            'idempotency_key' => 'opal-synthesis-'.$run->uuid,
+            'project_id' => $run->uuid, 'ttl_seconds' => 180,
+            'max_duration_seconds' => max(60, (int) now()->diffInSeconds($run->deadline_at, false)),
+            'budget_usd_per_hour' => 3.5, 'keep_warm_minutes' => 10,
+            'gpu_request' => ['classes' => ['l40s', 'rtx-pro-6000'], 'regions' => ['ap-southeast-2', 'us-east-1', 'us-east-2', 'us-west-2'], 'min_gpus' => 1, 'max_gpus' => 1, 'markets' => ['ondemand'], 'min_memory_gib' => 32],
+            'metadata' => ['opal_run' => $run->uuid, 'opal_user_id' => $run->revision->draft->user_id, 'opal_tenant_id' => $run->revision->draft->tenant_id],
+        ])->throw()->json();
+        $id = $accepted['acquisition_id'] ?? '';
+        throw_unless(is_string($id) && preg_match('/^acq_[a-zA-Z0-9]+$/', $id), RuntimeException::class, 'Invalid compute acquisition response.');
+        $until = microtime(true) + 120;
+        do {
+            $result = $this->broker()->get('/acquisitions/'.$id)->throw()->json();
+            if (($result['state'] ?? '') === 'fulfilled') {
+                $allocation = $result['allocation'] ?? null;
+                throw_unless(is_array($allocation) && ($allocation['provider'] ?? '') === 'aws' && ! empty($allocation['allocation_id']) && ! empty($allocation['node_selector']), RuntimeException::class, 'Invalid cloud acquisition allocation.');
+
+                return $allocation;
+            }
+            throw_if(in_array($result['state'] ?? '', ['failed', 'cancelled', 'expired'], true), RuntimeException::class, 'No matching AWS material GPU could be acquired.');
+            sleep(2);
+        } while (microtime(true) < $until);
+
+        // No heartbeat is sent for an unclaimed acquisition. Its short broker
+        // lease expires; a worker is never launched after this attempt fails.
+        throw new RuntimeException('AWS material acquisition did not finish in time.');
     }
 
     public function heartbeat(SynthesisRun $run): void

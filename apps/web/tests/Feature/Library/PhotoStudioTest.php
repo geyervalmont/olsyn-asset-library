@@ -211,3 +211,21 @@ test('alternative model completion preserves identity and rejects a different ba
         ->and($run->fresh()->manifest['inference_seconds'])->toBe(2)
         ->and($run->fresh()->runtime('backend'))->toBe('rgbx');
 });
+
+test('pooled synthesis acquires only bounded AWS capacity with a stable attempt key', function () {
+    config(['synthesis.profile' => 'aws-material-pool', 'synthesis.broker_secret' => 'test-secret', 'synthesis.broker_url' => 'https://broker.test']);
+    $run = $this->store->generate($this->revision);
+    Http::fake([
+        'broker.test/acquire' => Http::response(['acquisition_id' => 'acq_test']),
+        'broker.test/acquisitions/acq_test' => Http::sequence()
+            ->push(['state' => 'fulfilled', 'allocation' => ['provider' => 'aws', 'allocation_id' => 'alloc_test', 'node_selector' => ['olsyn.com/burst-instance' => 'i-test']]])
+            ->push(['state' => 'fulfilled', 'allocation' => ['provider' => 'onprem', 'allocation_id' => 'alloc_bad', 'node_selector' => ['node' => 'local']]]),
+    ]);
+    $allocation = app(SynthesisCompute::class)->allocate($run);
+    expect($allocation['allocation_id'])->toBe('alloc_test');
+    Http::assertSent(fn ($request) => $request->url() === 'https://broker.test/acquire'
+        && $request['idempotency_key'] === 'opal-synthesis-'.$run->uuid
+        && $request['budget_usd_per_hour'] === 3.5
+        && $request['gpu_request']['max_gpus'] === 1);
+    expect(fn () => app(SynthesisCompute::class)->allocate($run))->toThrow(RuntimeException::class, 'Invalid cloud acquisition allocation.');
+});
