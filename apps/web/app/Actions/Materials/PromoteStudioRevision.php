@@ -48,7 +48,7 @@ final class PromoteStudioRevision
             } else {
                 $material = Material::query()->visibleTo($actor)->findOrFail((int) $data['material_id']);
                 $variant = $data['mode'] === 'colourway'
-                    ? app(AddVariant::class)->handle($material, ['colourway' => ['value' => $data['colourway']]])
+                    ? app(AddVariant::class)->handle($material, ['colourway' => ['value' => $data['colourway']]], overrides: ['tile_width_mm' => $locked->document['width_mm'], 'tile_height_mm' => $locked->document['height_mm']])
                     : $material->variants()->findOrFail((int) $data['variant_id']);
             }
             $files = [];
@@ -59,7 +59,7 @@ final class PromoteStudioRevision
             }
             $representation = app(CreateRepresentation::class)->handle($variant, 'pbr', (int) $locked->artifacts['base_color']['width'], $files, createdBy: $actor, metadata: [
                 'normal_convention' => $locked->document['normal_convention'] ?? 'opengl',
-                'studio_revision_id' => $locked->id, 'source_representation_id' => $draft->source_representation_id,
+                'studio_destination' => $data['mode'], 'studio_revision_id' => $locked->id, 'source_representation_id' => $draft->source_representation_id,
                 'tile_width_mm' => $locked->document['width_mm'], 'tile_height_mm' => $locked->document['height_mm'],
             ], notes: 'Studio candidate. Review material estimates before publishing.');
             foreach ($representation->representationFiles()->with('role')->get() as $link) {

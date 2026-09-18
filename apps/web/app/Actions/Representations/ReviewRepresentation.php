@@ -6,7 +6,9 @@ use App\Actions\Provenance\RecordProvenance;
 use App\Enums\ReviewState;
 use App\Jobs\RenderPreview;
 use App\Models\Representation;
+use App\Models\StudioRevision;
 use App\Models\User;
+use App\Models\Variant;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -26,12 +28,26 @@ class ReviewRepresentation
         }
 
         return DB::transaction(function () use ($representation, $decision, $reviewer, $notes): Representation {
+            Variant::query()->whereKey($representation->variant_id)->lockForUpdate()->firstOrFail();
             if ($decision === ReviewState::Approved) {
-                Representation::query()
-                    ->forKey($representation->variant, $representation->target, $representation->quality)
-                    ->approved()
-                    ->whereKeyNot($representation->getKey())
+                $studio = StudioRevision::query()->where('representation_id', $representation->id)->first();
+                $previous = Representation::query()
+                    ->where('variant_id', $representation->variant_id)
+                    ->where('target_id', $representation->target_id);
+                // A Studio repair is a replacement surface, including its scale.
+                // Keeping old higher-resolution maps would silently reintroduce
+                // the previous surface when the package creates its LODs.
+                if ($studio === null || ($representation->metadata['studio_destination'] ?? '') !== 'improve') {
+                    $previous->where('quality_tier_id', $representation->quality_tier_id);
+                }
+                $previous->approved()->whereKeyNot($representation->getKey())
                     ->update(['review_state' => ReviewState::Superseded->value]);
+                if ($studio !== null) {
+                    $representation->variant->update([
+                        'tile_width_mm' => $studio->document['width_mm'],
+                        'tile_height_mm' => $studio->document['height_mm'],
+                    ]);
+                }
             }
 
             $representation->forceFill([

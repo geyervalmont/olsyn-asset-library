@@ -72,7 +72,7 @@ class SynthesisCompute
                 'backoffLimit' => 0, 'ttlSecondsAfterFinished' => 600,
                 'activeDeadlineSeconds' => max(1, (int) now()->diffInSeconds($run->deadline_at, false)),
                 'template' => ['metadata' => ['labels' => ['app' => 'opal-synthesis']], 'spec' => [
-                    'restartPolicy' => 'Never', 'automountServiceAccountToken' => false,
+                    'restartPolicy' => 'Never', 'runtimeClassName' => 'nvidia', 'automountServiceAccountToken' => false,
                     'nodeSelector' => $run->allocation['node_selector'],
                     'tolerations' => $run->allocation['tolerations'] ?? [],
                     'imagePullSecrets' => [['name' => 'ghcr-secret']],

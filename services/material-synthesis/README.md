@@ -73,7 +73,9 @@ There is deliberately no automatic retry of an ambiguous allocation request.
 - Existing library map sets can be copied into a private draft. Colour tint and
   roughness overrides are inexpensive local operations. Promotion creates a
   review candidate for a new material, colourway or existing variant; publishing
-  continues through the existing library review/package workflow.
+  continues through the existing library review/package workflow. Approving a
+  repair replaces earlier approved resolutions for that surface and adopts the
+  new physical scale; old LODs are not mixed back into the repaired package.
 - CHORD estimates base colour, normals, roughness and metallic. Height is
   **relative 16-bit relief integrated from normals**, not measured displacement.
   Normal output is converted to OpenGL convention. Single-photo estimates and

@@ -2,6 +2,9 @@
 
 use App\Actions\Authorization\SyncRolesAndPermissions;
 use App\Actions\Materials\PromoteStudioRevision;
+use App\Actions\Representations\CreateRepresentation;
+use App\Actions\Representations\ReviewRepresentation;
+use App\Enums\ReviewState;
 use App\Enums\Role;
 use App\Library\Studio\DraftStore;
 use App\Library\Studio\SynthesisCompute;
@@ -156,4 +159,25 @@ test('an existing map set can be imported, tinted and kept as a colourway draft'
         ->set('tint', '#a04422')->set('tint_amount', 25)->call('adjust')->assertHasNoErrors()
         ->call('fork')->assertHasNoErrors()->assertSee('colourway');
     expect(StudioDraft::query()->where('state', 'active')->count())->toBe(2);
+});
+
+test('approving a repaired surface replaces old LODs and applies scale only at review', function () {
+    config(['opal.previews.auto_render' => false]);
+    $maps = array_fill_keys(DraftStore::MAPS, $this->revision->document['source']);
+    $revision = $this->store->revise($this->draft, $this->revision->id, array_merge($this->revision->document, ['width_mm' => 500, 'height_mm' => 500]), $maps);
+    $rep = app(PromoteStudioRevision::class)->handle($revision, ['mode' => 'new', 'name' => 'Original', 'category_id' => Category::query()->firstOrFail()->id], $this->editor);
+    app(ReviewRepresentation::class)->handle($rep, ReviewState::Approved);
+    $high = app(CreateRepresentation::class)->handle($rep->variant, 'pbr', 2048, $rep->filesByRole());
+    app(ReviewRepresentation::class)->handle($high, ReviewState::Approved);
+    $fork = $this->store->fork($revision->fresh());
+    $forkRevision = $fork->revisions()->sole();
+    $edited = $this->store->revise($fork, $forkRevision->id, array_merge($forkRevision->document, ['width_mm' => 300, 'height_mm' => 400]), $maps);
+    $repair = app(PromoteStudioRevision::class)->handle($edited, ['mode' => 'improve', 'name' => 'Repair', 'material_id' => $rep->variant->material_id, 'variant_id' => $rep->variant_id], $this->editor);
+    expect((float) $rep->variant->fresh()->effectiveTileWidthMm())->toBe(500.0)
+        ->and($high->fresh()->review_state)->toBe(ReviewState::Approved);
+    app(ReviewRepresentation::class)->handle($repair, ReviewState::Approved);
+    expect((float) $rep->variant->fresh()->effectiveTileWidthMm())->toBe(300.0)
+        ->and((float) $rep->variant->fresh()->effectiveTileHeightMm())->toBe(400.0)
+        ->and($high->fresh()->review_state)->toBe(ReviewState::Superseded)
+        ->and($rep->fresh()->review_state)->toBe(ReviewState::Superseded);
 });

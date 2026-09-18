@@ -230,7 +230,7 @@ new #[Title('Photo Material Studio')] class extends Component
         }
         $draft = DB::transaction(function () use ($rep, $maps) {
             $draft = StudioDraft::create(['uuid' => (string) Str::uuid(), 'user_id' => auth()->id(), 'tenant_id' => Tenant::current()->id, 'name' => $rep->variant->material->name.' — study', 'source_representation_id' => $rep->id]);
-            $rev = $draft->revisions()->create(['document' => ['schema' => 1, 'source' => $maps['base_color'], 'normal_convention' => 'opengl', 'width_mm' => $rep->variant->material->tile_width_mm, 'height_mm' => $rep->variant->material->tile_height_mm, 'resolution' => 1024, 'cleanup' => 0, 'crop' => ['x' => 50, 'y' => 50, 'size' => 100]], 'artifacts' => $maps]);
+            $rev = $draft->revisions()->create(['document' => ['schema' => 1, 'source' => $maps['base_color'], 'normal_convention' => 'opengl', 'width_mm' => $rep->metadata['tile_width_mm'] ?? $rep->variant->effectiveTileWidthMm(), 'height_mm' => $rep->metadata['tile_height_mm'] ?? $rep->variant->effectiveTileHeightMm(), 'resolution' => 1024, 'cleanup' => 0, 'crop' => ['x' => 50, 'y' => 50, 'size' => 100]], 'artifacts' => $maps]);
             $draft->update(['head_id' => $rev->id]);
             return $draft;
         });
@@ -365,7 +365,7 @@ new #[Title('Photo Material Studio')] class extends Component
                             @if($destination === 'colourway')<flux:input wire:model="colourway" label="Colourway name" />@else<flux:select wire:model="variant_id" label="Variant"><option value="">Choose variant</option>@foreach($this->variants as $variant)<option value="{{ $variant->id }}">{{ $variant->name }}</option>@endforeach</flux:select>@endif
                         @endif
                         <flux:button wire:click="promote" variant="primary" :disabled="!$this->previewSet || $this->current->state !== 'active'">Save candidate to library</flux:button>
-                        <p class="text-xs text-zinc-500">Creates a reviewable candidate. Existing published materials are preserved.</p>
+                        <p class="text-xs text-zinc-500">@if($destination === 'improve')Approval replaces the variant’s earlier map sets and adopts this sample’s scale. Published versions remain available.@else Creates a reviewable candidate. Existing published materials are preserved.@endif</p>
                     </div>
                 </div>
                 <details class="rounded-xl border border-zinc-200 p-4"><summary class="cursor-pointer font-semibold">Revision history</summary><div class="mt-3 space-y-2">@foreach($this->current->revisions()->with('run')->latest('id')->limit(20)->get() as $past)<div class="flex justify-between text-sm"><span>Revision {{ $past->id }} · {{ $past->run?->status ?? (empty($past->artifacts) ? 'Prepared' : 'Edited') }}</span>@if($past->id !== $revision->id)<button wire:click="restore({{ $past->id }})" class="underline">Use this revision</button>@endif</div>@endforeach</div></details>
