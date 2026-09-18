@@ -193,3 +193,22 @@ test('approving a repaired surface replaces old LODs and applies scale only at r
         ->and($high->fresh()->review_state)->toBe(ReviewState::Superseded)
         ->and($rep->fresh()->review_state)->toBe(ReviewState::Superseded);
 });
+
+
+test('alternative model completion preserves identity and rejects a different backend', function () {
+    config(['synthesis.backend' => 'rgbx']);
+    $run = $this->store->generate($this->revision);
+    $run->update(['artifacts' => array_fill_keys(DraftStore::MAPS, $this->revision->document['source'])]);
+    config(['synthesis.backend' => 'chord']);
+    $payload = ['normal_convention' => 'opengl', 'model_sha256' => str_repeat('a', 64), 'model' => 'chord', 'model_revision' => 'pinned-code', 'seconds' => 3];
+    $url = '/api/synthesis-runs/'.$run->uuid.'/complete';
+    $this->withToken($run->worker_token)->postJson($url, $payload)->assertUnprocessable();
+    $payload['model'] = 'rgbx';
+    $payload['inference_steps'] = 50;
+    $payload['inference_seconds'] = 2;
+    $payload['normal_method'] = 'front-facing-planar-camera-space';
+    $this->withToken($run->worker_token)->postJson($url, $payload)->assertOk();
+    expect($run->fresh()->manifest['model'])->toBe('rgbx')
+        ->and($run->fresh()->manifest['inference_seconds'])->toBe(2)
+        ->and($run->fresh()->runtime('backend'))->toBe('rgbx');
+});

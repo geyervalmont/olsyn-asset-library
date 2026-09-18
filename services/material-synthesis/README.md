@@ -10,7 +10,23 @@ HTTPS object downloads. It never contacts a hosted inference service.
 
 ## Model installation
 
-CHORD weights are gated. Accept access to
+For an immediate ungated R&D proof of concept, use the authors' RGB→X weights:
+
+```sh
+python -m venv /tmp/opal-model-import
+/tmp/opal-model-import/bin/pip install huggingface_hub==0.36.0
+/tmp/opal-model-import/bin/python services/material-synthesis/bundle_models.py \
+  /secure/path/opal-rgbx-v1.tar --backend rgbx --cleanup
+```
+
+Set `OPAL_SYNTHESIS_BACKEND=rgbx` and use that bundle's S3 key and checksum.
+This is fully self-hosted inference; Hugging Face is used only by the one-time
+model importer. The worker uses no Hugging Face credentials or hub requests.
+The importer preserves the authors' research licence in the private bundle.
+
+CHORD remains supported with `OPAL_SYNTHESIS_BACKEND=chord` (the default).
+Its Hugging Face gate is automatic after account login and terms acceptance;
+it does not establish that access is unavailable. Accept access to
 <https://huggingface.co/Ubisoft/ubisoft-laforge-chord> in the account used for
 the import, then authenticate locally with `hf auth login`. Do not put a token
 in source control, a Docker build argument, or a Kubernetes worker job.
@@ -78,7 +94,13 @@ There is deliberately no automatic retry of an ambiguous allocation request.
   continues through the existing library review/package workflow. Approving a
   repair replaces earlier approved resolutions for that surface and adopts the
   new physical scale; old LODs are not mixed back into the repaired package.
-- CHORD estimates base colour, normals, roughness and metallic. Height is
+- RGB→X is an available photo-decomposition baseline, not a claim of CHORD-level
+  material quality. It runs four sequential 50-step predictions. Use close,
+  front-facing photographs of a single flat surface: its camera-space normals
+  are interpreted as planar tangent-space normals, not a reconstructed 3D scan.
+  The authors note the released metallic checkpoint differs from their paper.
+  Sources: https://github.com/zheng95z/rgbx and https://huggingface.co/zheng95z/rgb-to-x.
+- Both backends estimate base colour, normals, roughness and metallic. Height is
   **relative 16-bit relief integrated from normals**, not measured displacement.
   Normal output is converted to OpenGL convention. Single-photo estimates and
   optional glare cleanup need visual assessment on real surfaces.
@@ -104,4 +126,4 @@ docker run --rm --entrypoint python \
 The PHP `PhotoStudioTest` covers owner isolation, immutable inputs, late results,
 tokens, quotas, map integrity, 16-bit height, promotion, uploads and repair forks.
 CPU tests do not establish inference quality or performance. Validate a real
-GPU photo job after installing the gated checkpoint before enabling broad use.
+GPU photo job after installing a matching model bundle before enabling broad use.

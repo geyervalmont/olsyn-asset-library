@@ -2,6 +2,7 @@
 
 return [
     'enabled' => (bool) env('OPAL_SYNTHESIS_ENABLED', false),
+    'backend' => env('OPAL_SYNTHESIS_BACKEND', 'chord'),
     'cleanup_enabled' => (bool) env('OPAL_SYNTHESIS_CLEANUP_ENABLED', false),
     'disk' => env('OPAL_SYNTHESIS_DISK', env('OPAL_FILES_DISK', 'local')),
     'prefix' => 'opal/studio-drafts',

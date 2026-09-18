@@ -103,7 +103,7 @@ final class DraftStore
             throw ValidationException::withMessages(['generation' => 'The self-hosted worker is not configured yet. Your draft is saved.']);
         }
         if (($revision->document['cleanup'] ?? 0) > 0 && ! config('synthesis.cleanup_enabled')) {
-            throw ValidationException::withMessages(['generation' => 'Glare cleanup is not configured. Disable cleanup to run CHORD.']);
+            throw ValidationException::withMessages(['generation' => 'Glare cleanup is not configured. Disable cleanup to generate material maps.']);
         }
 
         return DB::transaction(function () use ($revision): SynthesisRun {
@@ -121,7 +121,7 @@ final class DraftStore
                 throw ValidationException::withMessages(['generation' => 'Today’s generation limit has been reached. Your draft is saved.']);
             }
 
-            return SynthesisRun::create(['uuid' => (string) Str::uuid(), 'studio_revision_id' => $revision->id, 'worker_token' => Str::random(64), 'manifest' => ['runtime' => array_intersect_key((array) config('synthesis'), array_flip(['image', 'profile', 'model_disk', 'model_path', 'model_sha256']))], 'deadline_at' => now()->addSeconds((int) config('synthesis.max_seconds'))]);
+            return SynthesisRun::create(['uuid' => (string) Str::uuid(), 'studio_revision_id' => $revision->id, 'worker_token' => Str::random(64), 'manifest' => ['runtime' => array_intersect_key((array) config('synthesis'), array_flip(['backend', 'image', 'profile', 'model_disk', 'model_path', 'model_sha256']))], 'deadline_at' => now()->addSeconds((int) config('synthesis.max_seconds'))]);
         });
     }
 

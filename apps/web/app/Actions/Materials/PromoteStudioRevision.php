@@ -65,7 +65,7 @@ final class PromoteStudioRevision
             foreach ($representation->representationFiles()->with('role')->get() as $link) {
                 $link->update(['colour_space' => $link->role->slug === 'base_color' ? 'srgb' : 'linear']);
             }
-            app(RecordProvenance::class)->handle($representation, 'generated', $actor, outputs: array_values($files), tool: 'opal-studio', model: $locked->run !== null ? 'CHORD' : null, parameters: ['revision_id' => $locked->id, 'source_sha256' => $locked->document['source']['sha256'] ?? null, 'document' => array_diff_key($locked->document, array_flip(['source', 'original'])), 'execution' => $locked->run?->manifest], jobId: $locked->run?->uuid);
+            app(RecordProvenance::class)->handle($representation, 'generated', $actor, outputs: array_values($files), tool: 'opal-studio', model: $locked->run !== null ? strtoupper($locked->run->manifest['model'] ?? 'chord') : null, parameters: ['revision_id' => $locked->id, 'source_sha256' => $locked->document['source']['sha256'] ?? null, 'document' => array_diff_key($locked->document, array_flip(['source', 'original'])), 'execution' => $locked->run?->manifest], jobId: $locked->run?->uuid);
             $locked->update(['representation_id' => $representation->id]);
             $draft->update(['state' => 'promoted']);
 

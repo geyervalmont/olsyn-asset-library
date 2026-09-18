@@ -26,6 +26,7 @@ final class SynthesisWorkerController
 
         return response()->json([
             'schema' => 1, 'run' => $run->uuid,
+            'backend' => $run->runtime('backend') ?: 'chord',
             'resolution' => $document['resolution'], 'cleanup' => $document['cleanup'] ?? 0,
             'crop' => $document['crop'] ?? ['x' => 0, 'y' => 0, 'size' => 100],
             'source_sha256' => $document['source']['sha256'],
@@ -84,8 +85,9 @@ final class SynthesisWorkerController
     public function complete(Request $request, SynthesisRun $run): JsonResponse
     {
         $this->authorize($request, $run, true);
-        $data = $request->validate(['normal_convention' => 'required|in:opengl', 'model_sha256' => 'required|string|size:64', 'chord_revision' => 'required|string|max:64', 'cleanup_revision' => 'nullable|string|max:64', 'seed' => 'nullable|integer|min:0', 'height_method' => 'nullable|in:periodic-normal-integration-relative', 'seconds' => 'required|numeric|min:0', 'peak_vram_bytes' => 'nullable|integer|min:0']);
+        $data = $request->validate(['normal_convention' => 'required|in:opengl', 'model_sha256' => 'required|string|size:64', 'model' => 'required_without:chord_revision|in:chord,rgbx', 'model_revision' => 'required_with:model|string|max:64', 'chord_revision' => 'required_without:model|string|max:64', 'cleanup_revision' => 'nullable|string|max:64', 'seed' => 'nullable|integer|min:0', 'height_method' => 'nullable|in:periodic-normal-integration-relative', 'normal_method' => 'nullable|in:front-facing-planar-camera-space', 'inference_steps' => 'nullable|integer|min:1|max:100', 'inference_seconds' => 'nullable|numeric|min:0', 'seconds' => 'required|numeric|min:0', 'peak_vram_bytes' => 'nullable|integer|min:0']);
         abort_unless(hash_equals((string) $run->runtime('model_sha256'), $data['model_sha256']), 422);
+        abort_unless(($data['model'] ?? 'chord') === ($run->runtime('backend') ?: 'chord'), 422);
         DB::transaction(function () use ($request, $run, $data): void {
             $locked = SynthesisRun::query()->lockForUpdate()->findOrFail($run->id);
             $this->authorize($request, $locked, true);
