@@ -16,7 +16,18 @@ spec:
     - ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
-    # Signed private object downloads and OPAL callbacks. Workers receive no
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: opal
+          podSelector:
+            matchLabels:
+              component: web
+      ports:
+        - {protocol: TCP, port: 8000}
+        - {protocol: TCP, port: 80}
+    # Signed private object downloads only. OPAL callbacks stay on the encrypted cluster network.
+    # Workers receive no
     # AWS credentials, Kubernetes token, broker secret or Hugging Face login.
     - ports:
         - {protocol: TCP, port: 443}

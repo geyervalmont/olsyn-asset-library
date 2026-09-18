@@ -38,3 +38,15 @@ spec:
           port: 8000
         - protocol: TCP
           port: 8080
+    # GPU workers cross the tailnet into the control plane; they only need
+    # the HTTP app port, not Reverb, Redis or scheduler credentials.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: opal-synthesis
+          podSelector:
+            matchLabels:
+              app: opal-synthesis
+      ports:
+        - protocol: TCP
+          port: 8000

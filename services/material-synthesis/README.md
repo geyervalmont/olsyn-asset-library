@@ -4,7 +4,9 @@ OPAL stores private drafts and immutable input revisions. Its scheduler leases
 an AWS GPU through Olsyn's compute broker, then creates one Kubernetes Job on
 that allocation. The worker downloads a checksummed model bundle from our
 private bucket, runs offline, and uploads a complete material set to the exact
-revision that requested it. It never contacts a hosted inference service.
+revision that requested it. Callbacks use the internal OPAL service over the
+cluster/tailnet connection; namespace policies permit only OPAL HTTP, DNS and
+HTTPS object downloads. It never contacts a hosted inference service.
 
 ## Model installation
 

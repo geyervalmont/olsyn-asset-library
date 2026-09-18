@@ -25,6 +25,7 @@ data:
   OPAL_SYNTHESIS_ENABLED: "false"
   OPAL_SYNTHESIS_CLEANUP_ENABLED: "false"
   OPAL_SYNTHESIS_PROFILE: burst-l40s-solo
+  OPAL_SYNTHESIS_CALLBACK_URL: http://opal-web.opal.svc.cluster.local
   OPAL_SYNTHESIS_IMAGE: ghcr.io/geyervalmont/opal-material-synthesis:sha-b738f45ccf409c17303d352affd4fe68fcfac219
   OPAL_SYNTHESIS_MODEL_DISK: s3
   OPAL_SYNTHESIS_MODEL_PATH: opal/models/opal-chord-v1.tar
