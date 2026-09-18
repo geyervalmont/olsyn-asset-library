@@ -167,8 +167,8 @@ const FINISHES = {
  * the shader ball no longer exposes the UV islands in its source mesh.
  */
 function enableSeamlessProjection(material) {
-    material.userData.opalProjection = { enabled: 1, scale: 1 };
-    material.customProgramCacheKey = () => 'opal-seamless-projection-v1';
+    material.userData.opalProjection = { enabled: 1, scale: new THREE.Vector2(1, 1) };
+    material.customProgramCacheKey = () => 'opal-seamless-projection-v2';
     material.onBeforeCompile = (shader) => {
         const projection = material.userData.opalProjection;
         shader.uniforms.opalProjectionEnabled = { value: projection.enabled };
@@ -188,7 +188,7 @@ function enableSeamlessProjection(material) {
                 varying vec3 vOpalWorldPosition;
                 varying vec3 vOpalWorldNormal;
                 uniform float opalProjectionEnabled;
-                uniform float opalProjectionScale;
+                uniform vec2 opalProjectionScale;
 
                 vec3 opalBlendWeights(vec3 surfaceNormal) {
                     vec3 weight = pow(abs(normalize(surfaceNormal)), vec3(8.0));
@@ -197,10 +197,10 @@ function enableSeamlessProjection(material) {
 
                 vec4 opalSample(sampler2D textureSampler, vec3 position, vec3 surfaceNormal) {
                     vec3 weight = opalBlendWeights(surfaceNormal);
-                    vec3 point = position * opalProjectionScale;
-                    vec2 uvX = point.zy * vec2(surfaceNormal.x < 0.0 ? -1.0 : 1.0, 1.0);
-                    vec2 uvY = point.xz * vec2(surfaceNormal.y < 0.0 ? -1.0 : 1.0, 1.0);
-                    vec2 uvZ = point.xy * vec2(surfaceNormal.z < 0.0 ? -1.0 : 1.0, 1.0);
+                    vec3 point = position;
+                    vec2 uvX = point.zy * opalProjectionScale * vec2(surfaceNormal.x < 0.0 ? -1.0 : 1.0, 1.0);
+                    vec2 uvY = point.xz * opalProjectionScale * vec2(surfaceNormal.y < 0.0 ? -1.0 : 1.0, 1.0);
+                    vec2 uvZ = point.xy * opalProjectionScale * vec2(surfaceNormal.z < 0.0 ? -1.0 : 1.0, 1.0);
                     return texture2D(textureSampler, uvX) * weight.x
                         + texture2D(textureSampler, uvY) * weight.y
                         + texture2D(textureSampler, uvZ) * weight.z;
@@ -209,13 +209,13 @@ function enableSeamlessProjection(material) {
                 vec3 opalNormalSample(sampler2D textureSampler, vec3 position, vec3 surfaceNormal, vec2 strength) {
                     vec3 n = normalize(surfaceNormal);
                     vec3 weight = opalBlendWeights(n);
-                    vec3 point = position * opalProjectionScale;
+                    vec3 point = position;
                     float signX = n.x < 0.0 ? -1.0 : 1.0;
                     float signY = n.y < 0.0 ? -1.0 : 1.0;
                     float signZ = n.z < 0.0 ? -1.0 : 1.0;
-                    vec3 normalX = texture2D(textureSampler, point.zy * vec2(signX, 1.0)).xyz * 2.0 - 1.0;
-                    vec3 normalY = texture2D(textureSampler, point.xz * vec2(signY, 1.0)).xyz * 2.0 - 1.0;
-                    vec3 normalZ = texture2D(textureSampler, point.xy * vec2(-signZ, 1.0)).xyz * 2.0 - 1.0;
+                    vec3 normalX = texture2D(textureSampler, point.zy * opalProjectionScale * vec2(signX, 1.0)).xyz * 2.0 - 1.0;
+                    vec3 normalY = texture2D(textureSampler, point.xz * opalProjectionScale * vec2(signY, 1.0)).xyz * 2.0 - 1.0;
+                    vec3 normalZ = texture2D(textureSampler, point.xy * opalProjectionScale * vec2(-signZ, 1.0)).xyz * 2.0 - 1.0;
                     normalX.xy *= strength;
                     normalY.xy *= strength;
                     normalZ.xy *= strength;
@@ -329,7 +329,8 @@ const stage = {
     sizeObserver: null,
     frame: null,
     visible: true,
-    pending: null,
+    dirty: true,
+    showRequest: 0,
     shownKey: null,
     framing: 1.08,
     verticalBias: 0,
@@ -372,12 +373,13 @@ const stage = {
             controls.enablePan = false;
             // Zooming follows the pointer, and close enough to read a weave.
             controls.zoomToCursor = true;
-            controls.autoRotate = ! window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            controls.autoRotate = this.autoRotate !== false && ! window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             controls.autoRotateSpeed = 1.4;
+            controls.addEventListener('change', () => { this.dirty = true; });
             // Turning by hand pauses the drift; it resumes when let go.
             controls.addEventListener('start', () => { controls.autoRotate = false; });
             controls.addEventListener('end', () => {
-                controls.autoRotate = ! window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                controls.autoRotate = this.autoRotate !== false && ! window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             });
             canvas.addEventListener('dblclick', () => this.frame_());
 
@@ -450,6 +452,9 @@ const stage = {
         this.host = host;
         this.framing = options.framing ?? 1.08;
         this.verticalBias = options.verticalBias ?? 0;
+        if (! host.isConnected) return gl;
+        this.autoRotate = options.autoRotate !== false;
+        gl.controls.autoRotate = this.autoRotate && ! window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         host.appendChild(gl.canvas);
         gl.controls.enableZoom = options.zoom !== false;
         gl.controls.enableRotate = options.rotate !== false;
@@ -482,6 +487,7 @@ const stage = {
 
         this.observer?.disconnect();
         this.sizeObserver?.unobserve(host);
+        this.showRequest++;
         this.gl?.canvas.remove();
         this.host = null;
         this.pace();
@@ -498,6 +504,7 @@ const stage = {
         const width = host.clientWidth || 640;
         const height = host.clientHeight || 360;
 
+        this.dirty = true;
         gl.renderer.setSize(width, height, false);
         gl.camera.aspect = width / Math.max(height, 1);
         gl.camera.updateProjectionMatrix();
@@ -544,8 +551,11 @@ const stage = {
         if (wanted && this.frame === null) {
             const draw = () => {
                 this.frame = requestAnimationFrame(draw);
-                this.gl.controls.update();
-                this.gl.renderer.render(this.gl.scene, this.gl.camera);
+                const changed = this.gl.controls.update();
+                if (changed || this.dirty) {
+                    this.dirty = false;
+                    this.gl.renderer.render(this.gl.scene, this.gl.camera);
+                }
             };
             draw();
         }
@@ -573,74 +583,70 @@ const stage = {
     },
 
     /**
-     * Show a variant's maps. Rapid changes (sweeping across colourway chips)
-     * coalesce, and loaded maps are kept so going back is instant.
+     * Show a variant's maps. Only the latest request can update the material,
+     * and loaded maps are kept so going back is instant.
      */
-    show(set, objectSizeMm = 1000) {
-        clearTimeout(this.pending);
+    async show(set, objectSizeMm = 1000) {
+        const request = ++this.showRequest;
+        const gl = await this.boot();
+        const key = `${set?.key}:${objectSizeMm}`;
+        if (! set || this.shownKey === key) return;
+        const maps = await this.maps(gl, set, objectSizeMm);
+        // A slow texture decode must never replace a newer material.
+        if (request !== this.showRequest) return;
+        const finish = FINISHES[set.finish] ?? FINISHES.default;
+        const material = gl.material;
 
-        return new Promise((resolve) => {
-            this.pending = setTimeout(async () => {
-                const gl = await this.boot();
+        const reliefMap = maps.height ?? maps.bump ?? null;
+        material.map = maps.base_color ?? null;
+        // Generated sets carry a physically scaled height channel. It
+        // gives continuous relief under triplanar projection; a normal
+        // map remains the fallback for imported map-only materials.
+        material.normalMap = reliefMap ? null : (maps.normal ?? null);
+        material.bumpMap = reliefMap;
+        // Geometry displacement is expressed in object units, while
+        // bumpScale controls the slope reconstructed from a normalised
+        // height map. Reusing the tiny displacement number made deep
+        // masonry joints look painted on. Convert relative relief to a
+        // useful slope, with conservative limits for noisy scans.
+        material.bumpScale = reliefMap
+            ? (set.displacement_scale == null ? 0.06 : Math.max(0, Math.min(2, set.displacement_scale * 100)))
+            : 0;
+        material.roughnessMap = maps.roughness ?? null;
+        material.metalnessMap = maps.metallic ?? null;
+        material.aoMap = maps.ao ?? null;
+        material.aoMapIntensity = maps.ao ? 1 : 0;
+        material.emissiveMap = maps.emissive ?? null;
+        material.emissive.set(maps.emissive ? 0xffffff : 0x000000);
+        material.alphaMap = maps.opacity ?? null;
+        material.transparent = Boolean(maps.opacity);
+        material.color.set(maps.base_color ? 0xffffff : (set.hex || '#cfcbc1'));
 
-                if (! set || this.shownKey === set.key) {
-                    return resolve();
-                }
+        // A map drives the channel; the finish sets what a map cannot.
+        material.roughness = maps.roughness ? 1 : (finish.roughness ?? 0.7);
+        material.metalness = maps.metallic ? 1 : (finish.metalness ?? 0);
+        material.normalScale.setScalar(finish.normalScale ?? 1);
+        material.sheen = finish.sheen ?? 0;
+        material.sheenRoughness = finish.sheenRoughness ?? 1;
+        material.sheenColor.set(0xffffff);
+        material.clearcoat = finish.clearcoat ?? 0;
+        material.clearcoatRoughness = finish.clearcoatRoughness ?? 0.3;
+        material.anisotropy = finish.anisotropy ?? 0;
+        // Light through the sample: marble and solid surface only, and
+        // never far enough to see the other side.
+        material.transmission = finish.transmission ?? 0;
+        material.thickness = finish.thickness ?? 0;
+        material.attenuationColor.set(0xffffff);
+        material.attenuationDistance = finish.transmission ? 1.4 : Infinity;
+        material.envMapIntensity = 1;
+        gl.surface = { set, maps, repeat: new THREE.Vector2(
+            objectSizeMm / Math.max(set.tile_mm || 1000, 1),
+            objectSizeMm / Math.max(set.tile_height_mm || set.tile_mm || 1000, 1),
+        ) };
+        this.applyProjection();
+        material.needsUpdate = true;
 
-                const maps = await this.maps(gl, set, objectSizeMm);
-                const finish = FINISHES[set.finish] ?? FINISHES.default;
-                const material = gl.material;
-
-                const reliefMap = maps.height ?? maps.bump ?? null;
-                material.map = maps.base_color ?? null;
-                // Generated sets carry a physically scaled height channel. It
-                // gives continuous relief under triplanar projection; a normal
-                // map remains the fallback for imported map-only materials.
-                material.normalMap = reliefMap ? null : (maps.normal ?? null);
-                material.bumpMap = reliefMap;
-                // Geometry displacement is expressed in object units, while
-                // bumpScale controls the slope reconstructed from a normalised
-                // height map. Reusing the tiny displacement number made deep
-                // masonry joints look painted on. Convert relative relief to a
-                // useful slope, with conservative limits for noisy scans.
-                material.bumpScale = reliefMap
-                    ? Math.max(0.06, Math.min(2, (set.displacement_scale ?? 0) * 100))
-                    : 0;
-                material.roughnessMap = maps.roughness ?? null;
-                material.metalnessMap = maps.metallic ?? null;
-                material.aoMap = maps.ao ?? null;
-                material.aoMapIntensity = maps.ao ? 1 : 0;
-                material.emissiveMap = maps.emissive ?? null;
-                material.emissive.set(maps.emissive ? 0xffffff : 0x000000);
-                material.alphaMap = maps.opacity ?? null;
-                material.transparent = Boolean(maps.opacity);
-                material.color.set(maps.base_color ? 0xffffff : (set.hex || '#cfcbc1'));
-
-                // A map drives the channel; the finish sets what a map cannot.
-                material.roughness = maps.roughness ? 1 : (finish.roughness ?? 0.7);
-                material.metalness = maps.metallic ? 1 : (finish.metalness ?? 0);
-                material.normalScale.setScalar(finish.normalScale ?? 1);
-                material.sheen = finish.sheen ?? 0;
-                material.sheenRoughness = finish.sheenRoughness ?? 1;
-                material.sheenColor.set(0xffffff);
-                material.clearcoat = finish.clearcoat ?? 0;
-                material.clearcoatRoughness = finish.clearcoatRoughness ?? 0.3;
-                material.anisotropy = finish.anisotropy ?? 0;
-                // Light through the sample: marble and solid surface only, and
-                // never far enough to see the other side.
-                material.transmission = finish.transmission ?? 0;
-                material.thickness = finish.thickness ?? 0;
-                material.attenuationColor.set(0xffffff);
-                material.attenuationDistance = finish.transmission ? 1.4 : Infinity;
-                material.envMapIntensity = 1;
-                gl.surface = { set, maps, repeat: Math.max(1, objectSizeMm / Math.max(set.tile_mm || 1000, 1)) };
-                this.applyProjection();
-                material.needsUpdate = true;
-
-                this.shownKey = set.key;
-                resolve();
-            }, 90);
-        });
+        this.shownKey = key;
     },
 
     /** Curved samples use triplanar relief; only the flat sample displaces vertices. */
@@ -651,11 +657,12 @@ const stage = {
             return;
         }
 
+        this.dirty = true;
         const { set, maps, repeat } = gl.surface;
         const planar = gl.shapeName === 'panel';
         const bounds = new THREE.Box3().setFromObject(gl.shown).getSize(new THREE.Vector3());
         const span = Math.max(bounds.x, bounds.y, bounds.z, 0.001);
-        setSeamlessProjection(gl.material, ! planar, repeat / span);
+        setSeamlessProjection(gl.material, ! planar, repeat.clone().divideScalar(span));
 
         // UV displacement tears duplicated vertices apart at model seams and
         // collapses into a singularity at sphere poles. A subdivided flat
@@ -668,15 +675,17 @@ const stage = {
 
     /** Textures for a set, loaded once and reused. */
     maps(gl, set, objectSizeMm) {
-        if (this.cache.has(set.key)) {
-            const hit = this.cache.get(set.key);
-            this.cache.delete(set.key);
-            this.cache.set(set.key, hit);
+        const key = `${set.key}:${objectSizeMm}`;
+        if (this.cache.has(key)) {
+            const hit = this.cache.get(key);
+            this.cache.delete(key);
+            this.cache.set(key, hit);
 
             return hit.maps;
         }
 
-        const repeat = Math.max(1, objectSizeMm / Math.max(set.tile_mm || 1000, 1));
+        const repeatX = objectSizeMm / Math.max(set.tile_mm || 1000, 1);
+        const repeatY = objectSizeMm / Math.max(set.tile_height_mm || set.tile_mm || 1000, 1);
         const load = (url, colorSpace) => new Promise((resolve) => {
             if (! url) {
                 return resolve(null);
@@ -684,7 +693,7 @@ const stage = {
 
             gl.loader.load(url, (texture) => {
                 texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-                texture.repeat.set(repeat, repeat);
+                texture.repeat.set(repeatX, repeatY);
                 texture.colorSpace = colorSpace;
                 texture.anisotropy = gl.anisotropy;
                 // The model carries one UV set; ambient occlusion reads it too.
@@ -708,7 +717,7 @@ const stage = {
         const loading = Promise.all(roles.map(([role, colorSpace]) => load(set[role], colorSpace)))
             .then((textures) => Object.fromEntries(roles.map(([role], index) => [role, textures[index]])));
 
-        this.cache.set(set.key, { maps: loading });
+        this.cache.set(key, { maps: loading });
 
         while (this.cache.size > CACHE_LIMIT) {
             const [oldest, entry] = this.cache.entries().next().value;
@@ -811,10 +820,15 @@ async function loadEnvironment(renderer) {
         const hdr = await new HDRLoader().loadAsync(HDRI_URL);
         const environment = pmrem.fromEquirectangular(hdr).texture;
         hdr.dispose();
+        pmrem.dispose();
 
         return environment;
     } catch (error) {
-        return pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        const room = new RoomEnvironment();
+        const environment = pmrem.fromScene(room, 0.04).texture;
+        room.dispose();
+        pmrem.dispose();
+        return environment;
     }
 }
 
@@ -830,6 +844,8 @@ document.addEventListener('alpine:init', () => {
         framing: config.framing ?? 1.08,
         verticalBias: config.verticalBias ?? 0,
         zoom: config.zoom !== false,
+        autoRotate: config.autoRotate !== false,
+        showRevision: 0,
         status: 'idle',
         host: null,
         variantId: null,
@@ -868,6 +884,11 @@ document.addEventListener('alpine:init', () => {
                 .map(([role, label, shortLabel]) => ({ role, label, shortLabel, url: set[role] }));
         },
 
+        get tileAspect() {
+            const set = this.currentSet;
+            return Math.max(0.01, (set?.tile_mm || 1000) / (set?.tile_height_mm || set?.tile_mm || 1000));
+        },
+
         get activeMap() {
             return this.maps.find((map) => map.role === this.mapRole) ?? null;
         },
@@ -887,7 +908,7 @@ document.addEventListener('alpine:init', () => {
 
             this.status = 'loading';
             this.host = this.$refs.stage ?? this.$el;
-            stage.attach(this.host, { zoom: this.zoom, framing: this.framing, verticalBias: this.verticalBias }).then(() => {
+            stage.attach(this.host, { zoom: this.zoom, framing: this.framing, verticalBias: this.verticalBias, autoRotate: this.autoRotate }).then(() => {
                 stage.setShape(this.shape);
                 this.status = 'ready';
             });
@@ -920,9 +941,26 @@ document.addEventListener('alpine:init', () => {
             }
 
             this.status = 'loading';
+            const revision = ++this.showRevision;
             stage.show(set, this.objectSizeMm).then(() => {
-                this.status = 'ready';
+                if (revision === this.showRevision) this.status = 'ready';
             });
+        },
+
+        replacePreview({ set, size }) {
+            this.sets = { preview: set };
+            this.objectSizeMm = size;
+            this.show('preview');
+        },
+
+        toggleRotation() {
+            this.autoRotate = ! this.autoRotate;
+            stage.autoRotate = this.autoRotate;
+            if (stage.gl) stage.gl.controls.autoRotate = this.autoRotate;
+        },
+
+        resetView() {
+            stage.frame_();
         },
 
         inspectSurface() {

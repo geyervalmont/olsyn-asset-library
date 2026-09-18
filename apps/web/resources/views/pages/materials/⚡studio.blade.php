@@ -1,8 +1,8 @@
 <?php
 
+use App\Actions\Clients\IssueClientCommand;
 use App\Actions\Materials\AddVariant;
 use App\Actions\Materials\CreateMaterial;
-use App\Actions\Clients\IssueClientCommand;
 use App\Enums\CommandType;
 use App\Jobs\BakeProceduralMaterial;
 use App\Library\Procedural\ProceduralBaker;
@@ -15,9 +15,11 @@ use App\Models\Definition;
 use App\Models\Material;
 use App\Models\Supplier;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Models\Variant;
 use Flux\Flux;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -73,6 +75,12 @@ new #[Title('Material Studio')] class extends Component
     public string $previewStatus = 'idle';
 
     public int $previewRevision = 0;
+
+    public int $previewResolution = 384;
+
+    public array $previewSet = [];
+
+    protected bool $previewDirty = false;
 
     public bool $libraryDestination = false;
 
@@ -159,6 +167,20 @@ new #[Title('Material Studio')] class extends Component
     public function updated(string $property): void
     {
         if (preg_match('/^(recipe\.|width_mm$|height_mm$|seed$)/', $property) === 1) {
+            if (in_array($property, ['recipe.unit_width_mm', 'recipe.unit_height_mm', 'recipe.joint_mm', 'recipe.bond', 'recipe.board_width_mm', 'recipe.board_length_mm', 'recipe.stagger', 'recipe.thread_mm', 'recipe.basket'], true)) {
+                $this->fitRepeat(false);
+            }
+            $this->previewDirty = true;
+        }
+        if ($property === 'previewResolution') {
+            $this->previewDirty = true;
+        }
+    }
+
+    public function rendering(): void
+    {
+        // Livewire may update several controls in one request. Bake the final state once.
+        if ($this->previewDirty) {
             $this->refreshPreview(app(ProceduralBaker::class));
         }
     }
@@ -168,14 +190,42 @@ new #[Title('Material Studio')] class extends Component
         abort_unless(array_key_exists($generator, ProceduralRecipes::generators()), 404);
         $this->generator = $generator;
         $this->recipe = ProceduralRecipes::defaults($generator);
-        [$this->width_mm, $this->height_mm] = match ($generator) {
-            'masonry' => [480.0, 172.0],
-            'timber' => [1203.0, 286.0],
-            default => [1000.0, 1000.0],
-        };
+        [$this->width_mm, $this->height_mm] = ProceduralRecipes::dimensions($generator);
         $this->clearPreview();
         $this->resetValidation();
         $this->refreshPreview(app(ProceduralBaker::class));
+    }
+
+    public function applyPreset(string $preset): void
+    {
+        $values = ProceduralRecipes::presets($this->generator)[$preset] ?? null;
+        abort_unless($values !== null, 404);
+        $this->recipe = array_replace(ProceduralRecipes::defaults($this->generator), $values['recipe']);
+        [$this->width_mm, $this->height_mm] = ProceduralRecipes::dimensions($this->generator);
+        $this->fitRepeat(false);
+        $this->resetValidation();
+        $this->refreshPreview(app(ProceduralBaker::class));
+    }
+
+    public function fitRepeat(bool $refresh = true): void
+    {
+        $joint = (float) ($this->recipe['joint_mm'] ?? 0);
+        [$x, $y, $rows] = match ($this->generator) {
+            'masonry' => [(float) ($this->recipe['unit_width_mm'] ?? 0) + $joint, (float) ($this->recipe['unit_height_mm'] ?? 0) + $joint, match ($this->recipe['bond'] ?? 'stack') {
+                'quarter' => 4, 'running' => 2, default => 1
+            }],
+            'timber' => [(float) ($this->recipe['board_length_mm'] ?? 0) + $joint, (float) ($this->recipe['board_width_mm'] ?? 0) + $joint, ($this->recipe['stagger'] ?? false) ? 2 : 1],
+            'textile' => [(float) ($this->recipe['thread_mm'] ?? 0) * (($this->recipe['basket'] ?? false) ? 4 : 2), (float) ($this->recipe['thread_mm'] ?? 0) * (($this->recipe['basket'] ?? false) ? 4 : 2), 1],
+            default => [0, 0, 1],
+        };
+        if ($x > 0 && $y > 0) {
+            $this->width_mm = min(100000, $x * max(1, round($this->width_mm / $x)));
+            $this->height_mm = min(100000, $y * $rows * max(1, round($this->height_mm / ($y * $rows))));
+        }
+        $this->resetValidation(['width_mm', 'height_mm']);
+        if ($refresh) {
+            $this->refreshPreview(app(ProceduralBaker::class));
+        }
     }
 
     public function addPaletteColour(string $key): void
@@ -213,6 +263,7 @@ new #[Title('Material Studio')] class extends Component
     public function resetRecipe(): void
     {
         $this->recipe = ProceduralRecipes::defaults($this->generator);
+        [$this->width_mm, $this->height_mm] = ProceduralRecipes::dimensions($this->generator);
         $this->resetValidation();
         $this->refreshPreview(app(ProceduralBaker::class));
     }
@@ -271,7 +322,7 @@ new #[Title('Material Studio')] class extends Component
         }
 
         $user = auth()->user();
-        abort_unless($user instanceof \App\Models\User, 403);
+        abort_unless($user instanceof User, 403);
         $label = trim($this->name) !== '' ? trim($this->name) : $this->generators()[$this->generator].' draft';
         $studio = $previews->put($user, $baker->bake($this->definitionPayload()), $label);
         $command = $issue->handle($session, $user, CommandType::Apply, ['studio' => $studio]);
@@ -308,6 +359,8 @@ new #[Title('Material Studio')] class extends Component
 
     private function refreshPreview(ProceduralBaker $baker): void
     {
+        $this->previewDirty = false;
+        $this->previewError = '';
         $validator = Validator::make([
             'generator' => $this->generator,
             'resolution' => $this->resolution,
@@ -318,12 +371,15 @@ new #[Title('Material Studio')] class extends Component
         ], $this->recipeRules());
 
         if ($validator->fails() || ! $this->validateRepeat(false)) {
+            $this->resetValidation();
+            $this->setErrorBag($validator->errors());
+            $this->validateRepeat();
             $this->previewStatus = 'waiting';
 
             return;
         }
 
-        $this->previewError = '';
+        $this->resetValidation();
 
         if (! $baker->available()) {
             $this->previewError = __('The USD toolbox is not installed on this server.');
@@ -333,16 +389,47 @@ new #[Title('Material Studio')] class extends Component
         }
 
         try {
-            $bake = $baker->bake($this->definitionPayload(320));
+            $definition = $this->definitionPayload(in_array($this->previewResolution, [384, 1024], true) ? $this->previewResolution : 384);
+            $binary = (string) config('opal.toolbox_bin');
+            $engine = $baker::class;
+            if (is_file($binary)) {
+                $fingerprint = hash('sha256', $binary.filemtime($binary).filectime($binary).filesize($binary));
+                $engine = Cache::remember('studio-engine:'.$fingerprint, now()->addDay(), fn () => hash_file('sha256', $binary));
+            }
+            $key = 'studio-preview-v3:'.auth()->id().':'.hash('sha256', $engine.json_encode($definition));
+            $assets = Cache::remember($key, now()->addMinutes(15), function () use ($baker, $definition): array {
+                $images = [];
+                foreach ($baker->bake($definition)->assets as $asset) {
+                    if ($asset->mimeType === 'image/png') {
+                        $images[$asset->role] = $asset->contents;
+                    }
+                }
+
+                return $images;
+            });
             $this->previewMaps = [];
 
-            foreach ($bake->assets as $asset) {
-                if (str_starts_with($asset->mimeType, 'image/')) {
-                    $this->previewMaps[$asset->role] = 'data:'.$asset->mimeType.';base64,'.base64_encode($asset->contents);
-                }
+            foreach (array_keys($assets) as $role) {
+                $this->previewMaps[$role] = route('studio-preview.show', ['digest' => substr($key, strrpos($key, ':') + 1), 'role' => $role]);
             }
             $this->previewStatus = 'ready';
             $this->previewRevision++;
+            $relief = match ($this->generator) {
+                'masonry' => (float) ($this->recipe['edge_depth_mm'] ?? 0),
+                'terrazzo' => (float) ($this->recipe['chip_depth_mm'] ?? 0),
+                'textile' => (float) ($this->recipe['depth_mm'] ?? 0),
+                'paint' => (float) ($this->recipe['texture_depth'] ?? 0),
+                default => 0.75,
+            };
+            $this->previewSet = [
+                'key' => $key,
+                'tile_mm' => $this->width_mm,
+                'tile_height_mm' => $this->height_mm,
+                'displacement_scale' => min(0.08, $relief / max($this->width_mm, $this->height_mm) * 2.4),
+                'finish' => $this->generator === 'textile' ? 'textile' : 'default',
+                ...$this->previewMaps,
+            ];
+            $this->dispatch('studio-preview-updated', set: $this->previewSet, size: max($this->width_mm, $this->height_mm));
         } catch (Throwable $exception) {
             report($exception);
             $this->previewError = $exception->getMessage();
@@ -525,7 +612,7 @@ new #[Title('Material Studio')] class extends Component
             $valid = $this->aligned('width_mm', $this->width_mm, (float) ($this->recipe['board_length_mm'] ?? 0) + $joint, 1, $showErrors) && $valid;
             $valid = $this->aligned('height_mm', $this->height_mm, (float) ($this->recipe['board_width_mm'] ?? 0) + $joint, ($this->recipe['stagger'] ?? false) ? 2 : 1, $showErrors) && $valid;
         } elseif ($this->generator === 'textile') {
-            $pitch = (float) ($this->recipe['thread_mm'] ?? 0) * 2;
+            $pitch = (float) ($this->recipe['thread_mm'] ?? 0) * (($this->recipe['basket'] ?? false) ? 4 : 2);
             $valid = $this->aligned('width_mm', $this->width_mm, $pitch, 1, $showErrors) && $valid;
             $valid = $this->aligned('height_mm', $this->height_mm, $pitch, 1, $showErrors) && $valid;
         }
@@ -604,6 +691,19 @@ new #[Title('Material Studio')] class extends Component
                     <div><span>01</span><h2>{{ $this->generators()[$generator] }}</h2></div>
                     <button type="button" wire:click="resetRecipe">{{ __('Reset') }}</button>
                 </header>
+
+                <div class="ui-studio-presets">
+                    <span>{{ __('Starting finishes') }}</span>
+                    <div>
+                        @foreach (ProceduralRecipes::presets($generator) as $id => $preset)
+                            @php $swatches = $preset['recipe']['unit_colours'] ?? $preset['recipe']['colours'] ?? $preset['recipe']['chip_colours'] ?? [$preset['recipe']['colour'] ?? $preset['recipe']['warp_colour'] ?? '#BDBAB2']; @endphp
+                            <button type="button" wire:click="applyPreset('{{ $id }}')" data-test="studio-preset-{{ $id }}">
+                                <span style="background: linear-gradient(115deg, {{ implode(', ', count($swatches) > 1 ? $swatches : [$swatches[0], $swatches[0]]) }})"></span>
+                                {{ __($preset['label']) }}
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
 
                 <div class="ui-studio-property-group">
                     @if ($generator === 'paint')
@@ -696,27 +796,12 @@ new #[Title('Material Studio')] class extends Component
                         <p>{{ __('Complete the highlighted dimensions and the material will render here automatically.') }}</p>
                     </div>
                 @else
-                    @php
-                        $reliefMm = match ($generator) {
-                            'masonry' => (float) ($recipe['edge_depth_mm'] ?? 0),
-                            'terrazzo' => (float) ($recipe['chip_depth_mm'] ?? 0),
-                            'textile' => (float) ($recipe['depth_mm'] ?? 0),
-                            'paint' => (float) ($recipe['texture_depth'] ?? 0),
-                            default => 0.75,
-                        };
-                        $previewSet = ['preview' => [
-                            'key' => 'studio-'.$previewRevision,
-                            'tile_mm' => max($width_mm, $height_mm),
-                            'displacement_scale' => min(0.08, $reliefMm / max($width_mm, $height_mm) * 2.2),
-                            'finish' => match ($generator) { 'paint' => 'matte', 'timber' => 'wood', 'textile' => 'textile', default => 'default' },
-                            ...$previewMaps,
-                        ]];
-                    @endphp
                     <div
                         class="ui-viewer ui-studio-live-viewer"
-                        wire:key="studio-preview-{{ $previewRevision }}"
-                        x-data="materialViewer(@js(['sets' => $previewSet, 'objectSizeMm' => max($width_mm, $height_mm), 'shape' => 'panel', 'shapeKey' => 'material-studio', 'framing' => 1.28, 'verticalBias' => 0.04]))"
-                        x-effect="show('preview')"
+                        wire:key="studio-preview"
+                        x-data="materialViewer(@js(['sets' => ['preview' => $previewSet], 'autoRotate' => false, 'objectSizeMm' => max($width_mm, $height_mm), 'shape' => 'panel', 'shapeKey' => 'material-studio', 'framing' => 1.28, 'verticalBias' => 0.04]))"
+                        x-init="show('preview')"
+                        x-on:studio-preview-updated.window="replacePreview($event.detail)"
                         data-test="studio-live-preview"
                     >
                         <div class="ui-studio-view-tools">
@@ -733,6 +818,13 @@ new #[Title('Material Studio')] class extends Component
                                             data-test="studio-shape-{{ $shape }}"
                                         >{{ $label }}</button>
                                     @endforeach
+                                </div>
+                            </div>
+                            <div class="ui-studio-view-tools__group">
+                                <span>{{ __('View') }}</span>
+                                <div role="group" aria-label="{{ __('View controls') }}">
+                                    <button type="button" x-on:click="toggleRotation()" x-bind:aria-pressed="autoRotate" x-bind:class="autoRotate && 'is-active'">{{ __('Auto rotate') }}</button>
+                                    <button type="button" x-on:click="resetView()">{{ __('Reset view') }}</button>
                                 </div>
                             </div>
                             <div class="ui-studio-view-tools__group ui-studio-view-tools__group--maps">
@@ -765,8 +857,8 @@ new #[Title('Material Studio')] class extends Component
                     <span><i></i>{{ __('Draft · nothing is stored in the material library') }}</span>
                     <code>seed {{ $seed }}</code>
                 </div>
-                <div class="ui-studio-loading" wire:loading.flex>
-                    <span></span><strong>{{ __('Rebuilding preview') }}</strong>
+                <div class="ui-studio-loading" wire:loading.delay.flex role="status">
+                    <span></span><strong>{{ __('Updating preview…') }}</strong>
                 </div>
             </main>
 
@@ -778,9 +870,13 @@ new #[Title('Material Studio')] class extends Component
                             <x-ui.studio-measure :label="__('Repeat width')" model="width_mm" :value="$width_mm" min="1" />
                             <x-ui.studio-measure :label="__('Repeat height')" model="height_mm" :value="$height_mm" min="1" />
                         </div>
+                        @if (in_array($generator, ['masonry', 'timber', 'textile'], true))
+                            <button class="ui-studio-text-action" type="button" wire:click="fitRepeat" data-test="studio-fit-repeat">{{ __('Fit a seamless repeat') }}</button>
+                        @endif
+                        <label class="ui-studio-select"><span>{{ __('Preview quality') }}</span><select wire:model.live="previewResolution"><option value="384">{{ __('Fast · 384 px') }}</option><option value="1024">{{ __('Detailed · 1K') }}</option></select></label>
                         <label class="ui-studio-select"><span>{{ __('Production resolution') }}</span><select wire:model="resolution">@foreach ([512, 1024, 2048, 4096] as $size)<option value="{{ $size }}">{{ $size >= 1024 ? ($size / 1024).'K' : $size.' px' }}</option>@endforeach</select></label>
                         <label class="ui-studio-seed"><span>{{ __('Variation seed') }}</span><span><input type="number" min="0" wire:model.live.debounce.450ms="seed" /><button type="button" wire:click="randomizeSeed" title="{{ __('Generate another deterministic variation') }}">↻</button></span></label>
-                        <p class="ui-studio-hint">{{ __('Patterned recipes only accept complete repeats, so exported maps remain seamless.') }}</p>
+                        <p class="ui-studio-hint">{{ __('Changing unit sizes fits the repeat automatically. Production resolution is independent of preview quality.') }}</p>
                     </div>
                 </details>
 

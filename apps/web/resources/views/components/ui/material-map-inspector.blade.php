@@ -28,7 +28,7 @@
             x-cloak
             data-test="material-tile-view"
         >
-            <span x-bind:style="activeMap ? `background-image: url('${activeMap.url}')` : ''"></span>
+            <span x-bind:style="activeMap ? `background-image: url('${activeMap.url}'); aspect-ratio: ${tileAspect}; width: min(100%, ${Math.min(520, 520 * tileAspect)}px)` : ''"></span>
             <p>
                 <strong x-text="activeMap?.label"></strong>
                 <span>{{ __('4-up repeat · inspect every seam') }}</span>

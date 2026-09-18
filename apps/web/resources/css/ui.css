@@ -3915,25 +3915,34 @@ h1.ui-reveal.is-revealed em::after {
 
 .ui-studio-loading {
     position: absolute;
-    inset: 43px 0 37px;
+    right: 16px;
+    bottom: 48px;
     z-index: 10;
     display: none;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--ui-line);
+    border-radius: 6px;
     color: var(--ui-slate);
     font-family: var(--ui-font-mono);
-    font-size: 9px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    background: rgba(245, 243, 239, 0.66);
-    backdrop-filter: blur(4px);
+    font-size: 10px;
+    background: rgba(245, 243, 239, 0.94);
+    pointer-events: none;
 }
 
 .ui-studio-loading > span {
-    margin-bottom: 10px;
+    width: 14px;
+    height: 14px;
     animation: ui-studio-spin 1.5s linear infinite;
 }
+
+.ui-studio-presets { padding: 16px; border-bottom: 1px solid var(--ui-line); }
+.ui-studio-presets > span { display: block; margin-bottom: 10px; font-size: 11px; color: var(--ui-slate); }
+.ui-studio-presets > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ui-studio-presets button { text-align: left; font-size: 10px; line-height: 1.4; padding: 5px; border: 1px solid transparent; border-radius: 5px; }
+.ui-studio-presets button:hover, .ui-studio-presets button:focus-visible { border-color: var(--ui-slate); background: rgba(128, 128, 128, 0.06); }
+.ui-studio-presets button > span { display: block; height: 32px; border-radius: 3px; margin-bottom: 6px; }
 
 @keyframes ui-studio-spin {
     to { transform: rotate(360deg); }

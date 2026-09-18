@@ -29,9 +29,29 @@ generators are paint, masonry, timber, terrazzo and textile. Each recipe records
 - generator version, application digest and toolbox digest;
 - PBR maps and, where meaningful, SVG and Revit PAT hatches.
 
-The browser requests a small preview from the same `usd-toolbox` engine the
-worker uses for production. Saving stores the recipe on the variant and queues
-a tracked bake. Existing recipes can be reopened and changed, while a paint
+The browser requests a preview from the same `usd-toolbox` engine the
+worker uses for production. Start with one of fifteen editable finishes, use
+**Fast** (384 px) while adjusting the recipe, and switch to **Detailed** (1K)
+to inspect fine grain. Production resolution remains independent. The viewer
+keeps its camera, shape and map selection between edits; auto rotation is an
+explicit control. Rectangular repeats retain their physical proportions on
+both the surface and the four-up repeat inspection.
+
+Changes to unit sizes, joints or bond/weave patterns fit the coverage to a
+complete repeat automatically. Manually entered dimensions remain explicit;
+**Fit a seamless repeat** repairs a cropped extent. Basket weave requires a
+four-thread cycle.
+
+Preview PNGs use authenticated, owner-scoped URLs rather than embedding image
+bytes in Livewire state. A fifteen-minute cache keys bakes by recipe, preview
+resolution and engine digest; bundled edits bake once. The shared engine source
+lives in the sibling `usd-toolbox` repository (`crates/procedural`). Deploy its
+updated CLI with these UI changes to obtain the revised paint noise,
+longitudinal timber grain, wrapped unit identities and angular terrazzo chips.
+Build the CLI against a libc compatible with the application container.
+
+Saving stores the recipe on the variant and queues a tracked bake. Existing
+recipes can be reopened and changed, while a paint
 family can add a new variant and change just its colour. This handles fixed
 supplier ranges and custom colours without giving either a special downstream
 format.

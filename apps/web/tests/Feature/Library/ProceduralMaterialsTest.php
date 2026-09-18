@@ -9,6 +9,7 @@ use App\Jobs\PurgeStudioPreview;
 use App\Library\Procedural\ProceduralAsset;
 use App\Library\Procedural\ProceduralBake;
 use App\Library\Procedural\ProceduralBaker;
+use App\Library\Procedural\ProceduralRecipes;
 use App\Library\Procedural\ToolboxProceduralBaker;
 use App\Models\Category;
 use App\Models\ClientCommand;
@@ -333,4 +334,67 @@ SH;
     ]))->toThrow(RuntimeException::class, 'does not match its report');
 
     unlink($script);
+});
+
+test('preview changes are coalesced and repeated recipes reuse cached maps', function () {
+    $baker = new FakeProceduralBaker;
+    app()->instance(ProceduralBaker::class, $baker);
+    $studio = Livewire::actingAs($this->editor)->test('pages::materials.studio');
+    $initialMaps = $studio->get('previewMaps');
+    $studio->update(updates: ['recipe.roughness' => 0.25, 'recipe.variation' => 0.1])->assertSet('previewStatus', 'ready');
+    expect($baker->bakes)->toBe(2);
+    $studio->call('resetRecipe')->assertSet('previewMaps', $initialMaps);
+    expect($baker->bakes)->toBe(2);
+    $studio->set('previewResolution', 1024)->assertSet('previewStatus', 'ready');
+    expect($baker->bakes)->toBe(3);
+    $studio->set('resolution', 4096);
+    expect($baker->bakes)->toBe(3);
+});
+
+test('live preview maps are private cacheable images instead of livewire image payloads', function () {
+    app()->instance(ProceduralBaker::class, new FakeProceduralBaker);
+    $studio = Livewire::actingAs($this->editor)->test('pages::materials.studio');
+    $url = $studio->get('previewMaps')['base_color'];
+    expect($url)->not->toStartWith('data:');
+    $this->actingAs($this->editor)->get($url)->assertOk()->assertHeader('Content-Type', 'image/png');
+    $other = User::factory()->withTenant($this->tenant, Role::Editor)->create();
+    $this->actingAs($other)->get($url)->assertNotFound();
+    $this->actingAs($this->viewer)->get($url)->assertForbidden();
+    $this->actingAs($this->editor);
+    $this->travel(16)->minutes();
+    $this->get($url)->assertNotFound();
+});
+
+test('unit size edits fit a complete repeat and manual dimensions can be repaired', function () {
+    app()->instance(ProceduralBaker::class, new FakeProceduralBaker);
+    Livewire::actingAs($this->editor)->test('pages::materials.studio')
+        ->call('chooseGenerator', 'masonry')
+        ->set('recipe.unit_width_mm', 250)
+        ->assertSet('width_mm', 1040.0)
+        ->assertSet('previewStatus', 'ready')
+        ->set('width_mm', 500)
+        ->assertSet('previewStatus', 'waiting')
+        ->assertHasErrors('width_mm')
+        ->call('fitRepeat')
+        ->assertSet('width_mm', 520.0)
+        ->assertHasNoErrors()
+        ->assertSet('previewStatus', 'ready')
+        ->call('chooseGenerator', 'textile')
+        ->set('recipe.basket', true)
+        ->set('width_mm', 132)
+        ->assertSet('previewStatus', 'waiting')
+        ->call('fitRepeat')
+        ->assertSet('width_mm', 136.0)
+        ->assertSet('previewStatus', 'ready');
+});
+
+test('every curated finish has valid editable parameters and a complete repeat', function () {
+    app()->instance(ProceduralBaker::class, new FakeProceduralBaker);
+    $studio = Livewire::actingAs($this->editor)->test('pages::materials.studio');
+    foreach (ProceduralRecipes::generators() as $generator => $label) {
+        $studio->call('chooseGenerator', $generator);
+        foreach (ProceduralRecipes::presets($generator) as $id => $preset) {
+            $studio->call('applyPreset', $id)->assertSet('previewStatus', 'ready')->assertHasNoErrors();
+        }
+    }
 });

@@ -8,10 +8,10 @@
     'suffix' => '',
 ])
 
-<label class="ui-studio-control" wire:key="studio-control-{{ str_replace('.', '-', $model) }}">
+<label x-data="{ current: @js($value) }" x-effect="current = $wire.get('{{ $model }}')" class="ui-studio-control" wire:key="studio-control-{{ str_replace('.', '-', $model) }}">
     <span class="ui-studio-control__label">
         <strong>{{ $label }}</strong>
-        <span><output>{{ $value }}</output>{{ $suffix }}</span>
+        <span><output x-text="current">{{ $value }}</output>{{ $suffix }}</span>
     </span>
     <span class="ui-studio-control__range">
         <input
@@ -20,7 +20,8 @@
             max="{{ $max }}"
             step="{{ $step }}"
             value="{{ $value }}"
-            wire:model.live.debounce.450ms="{{ $model }}"
+            x-model="current"
+            wire:model.live.debounce.250ms="{{ $model }}"
             aria-label="{{ $label }}"
         />
         <input
@@ -30,7 +31,8 @@
             max="{{ $max }}"
             step="{{ $step }}"
             value="{{ $value }}"
-            wire:model.live.debounce.450ms="{{ $model }}"
+            x-model="current"
+            wire:model.live.debounce.250ms="{{ $model }}"
             aria-label="{{ $label }} {{ __('value') }}"
         />
     </span>
