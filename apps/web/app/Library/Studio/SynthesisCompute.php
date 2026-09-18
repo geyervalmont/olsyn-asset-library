@@ -45,7 +45,8 @@ class SynthesisCompute
 
         // Never automatically retry allocation: an ambiguous timeout could create
         // duplicate paid capacity. The broker expires abandoned leases after 180s.
-        $allocation = $this->broker()->post('/allocate', [
+        // Trying multiple AWS availability zones can take over a minute.
+        $allocation = $this->broker()->timeout(180)->post('/allocate', [
             'consumer' => 'material-synthesis', 'profile' => $profile,
             'project_id' => $run->uuid, 'ttl_seconds' => 180,
             'max_duration_seconds' => max(60, (int) now()->diffInSeconds($run->deadline_at, false)),
