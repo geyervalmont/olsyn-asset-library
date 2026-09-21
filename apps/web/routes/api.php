@@ -11,6 +11,7 @@ Route::prefix('synthesis-runs/{run:uuid}')->middleware('throttle:120,1')->group(
     Route::post('complete', [SynthesisWorkerController::class, 'complete']);
 });
 
+use App\Http\Controllers\Api\BenderMaterialsController;
 use App\Http\Controllers\Api\ClientReleasesController;
 use App\Http\Controllers\Api\CommandsController;
 use App\Http\Controllers\Api\DrivesController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\Api\SessionsController;
 use App\Http\Controllers\Api\StudioPreviewsController;
 use App\Http\Controllers\Api\VariantsController;
 use App\Http\Middleware\EnsureOlsynAccess;
+use App\Http\Middleware\RestrictBenderToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -56,7 +58,16 @@ Route::prefix('v1')->group(function () {
         ->name('api.client-releases.revit.legacy-channel');
 });
 
-Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class])->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class, RestrictBenderToken::class])->group(function () {
+    Route::prefix('bender')->middleware('throttle:60,1')->group(function () {
+        $controller = BenderMaterialsController::class;
+        Route::get('identity', [$controller, 'identity']);
+        Route::get('materials', [$controller, 'search']);
+        Route::post('commissions', [$controller, 'store']);
+        Route::get('commissions/{id}', [$controller, 'show'])->whereUuid('id');
+        Route::match(['GET', 'POST'], 'commissions/{id}/artifacts/{role}', [$controller, 'artifact'])->whereUuid('id');
+        Route::post('commissions/{id}/complete', [$controller, 'complete'])->whereUuid('id');
+    });
     Route::get('me', fn (Request $request) => [
         'name' => $request->user()->name,
         'email' => $request->user()->email,
