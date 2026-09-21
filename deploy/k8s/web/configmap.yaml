@@ -27,7 +27,7 @@ data:
   OPAL_SYNTHESIS_BACKEND: rgbx
   OPAL_SYNTHESIS_PROFILE: aws-material-pool
   OPAL_SYNTHESIS_CALLBACK_URL: http://opal-web.opal.svc.cluster.local
-  OPAL_SYNTHESIS_IMAGE: ghcr.io/geyervalmont/opal-material-synthesis:sha-6cde52f6e753887e8dc0056a99c2bcb9253be027
+  OPAL_SYNTHESIS_IMAGE: ghcr.io/geyervalmont/opal-material-synthesis:sha-f057ceecf5c9cabf335ab2f7b681921bf6a245a7
   OPAL_SYNTHESIS_MODEL_DISK: s3
   OPAL_SYNTHESIS_MODEL_PATH: opal/models/opal-rgbx-v1-cloud.tar
   OPAL_SYNTHESIS_MODEL_SHA256: b21ce99d984813981596845ab43230eccdbcd7cfd57a571159714bda41675f7d
