@@ -44,4 +44,24 @@ class StudioRevision extends Model
     {
         return $this->hasOne(SynthesisRun::class);
     }
+
+    public function label(): string
+    {
+        if ($this->run !== null) {
+            return match ($this->run->status) {
+                'succeeded' => 'Generated material',
+                'failed' => 'Generation failed',
+                'cancelled' => 'Generation cancelled',
+                default => $this->run->stageLabel(),
+            };
+        }
+
+        return ! empty($this->document['edits']) ? 'Finish adjustment'
+            : (isset($this->artifacts['base_color']) ? 'Saved material' : 'Source preparation');
+    }
+
+    public function previewRole(): string
+    {
+        return isset($this->artifacts['base_color']) ? 'base_color' : 'source';
+    }
 }

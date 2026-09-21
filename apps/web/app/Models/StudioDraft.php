@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -32,5 +33,11 @@ class StudioDraft extends Model
     public function revisions(): HasMany
     {
         return $this->hasMany(StudioRevision::class);
+    }
+
+    /** @return BelongsTo<StudioRevision, $this> */
+    public function head(): BelongsTo
+    {
+        return $this->belongsTo(StudioRevision::class, 'head_id');
     }
 }

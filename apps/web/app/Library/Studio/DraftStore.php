@@ -132,6 +132,23 @@ final class DraftStore
     public function adjust(StudioRevision $revision, array $settings): array
     {
         $maps = $revision->artifacts ?? [];
+        if (isset($maps['base_color']) && (($settings['photo_blend'] ?? 0) > 0 || ($settings['brightness'] ?? 100) !== 100 || ($settings['saturation'] ?? 100) !== 100)) {
+            $image = new \Imagick;
+            $image->readImageBlob($this->bytes($maps['base_color']));
+            if (($settings['photo_blend'] ?? 0) > 0 && isset($maps['prepared'])) {
+                $photo = new \Imagick;
+                $photo->readImageBlob($this->bytes($maps['prepared']));
+                throw_unless($photo->getImageWidth() === $image->getImageWidth() && $photo->getImageHeight() === $image->getImageHeight(), \RuntimeException::class, 'Photo and material must be aligned.');
+                $photo->setImageAlphaChannel(\Imagick::ALPHACHANNEL_SET);
+                $photo->evaluateImage(\Imagick::EVALUATE_MULTIPLY, (float) $settings['photo_blend'] / 100, \Imagick::CHANNEL_ALPHA);
+                $image->compositeImage($photo, \Imagick::COMPOSITE_OVER, 0, 0);
+                $photo->clear();
+            }
+            $image->modulateImage((float) ($settings['brightness'] ?? 100), (float) ($settings['saturation'] ?? 100), 100);
+            $image->stripImage();
+            $maps['base_color'] = $this->put($image->getImageBlob(), 'base_color');
+            $image->clear();
+        }
         if (isset($maps['base_color']) && ($settings['tint_amount'] ?? 0) > 0) {
             $image = new \Imagick;
             $image->readImageBlob($this->bytes($maps['base_color']));

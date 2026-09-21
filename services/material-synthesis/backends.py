@@ -4,7 +4,7 @@ import numpy as np
 from image_ops import normalize_normals
 
 
-def estimate(image, models, backend, seed):
+def estimate(image, models, backend, seed, progress=None):
     import torch
     if backend == 'chord':
         from omegaconf import OmegaConf
@@ -46,7 +46,9 @@ def estimate(image, models, backend, seed):
                 ('roughness', 'roughness', 'Roughness'),
                 ('metallic', 'metallic', 'Metallicness')]
     with torch.inference_mode():
-        for role, aov, prompt in channels:
+        for index, (role, aov, prompt) in enumerate(channels):
+            if progress:
+                progress('estimating_material', completed=index, total=len(channels), role=role)
             value = pipeline(prompt=prompt, photo=photo, num_inference_steps=50,
                              height=image.height, width=image.width, generator=generator,
                              required_aovs=[aov], output_type='np').images[0][0]
@@ -54,6 +56,8 @@ def estimate(image, models, backend, seed):
                 raise ValueError('Non-finite material prediction.')
             # RGB-X already gamma-encodes albedo, and leaves data maps linear.
             maps[role] = value
+            if progress:
+                progress('estimating_material', completed=index + 1, total=len(channels), role=role)
     # RGB-X uses camera +X right, +Y up, +Z toward viewer. For a front-on
     # planar capture this matches a tangent-space OpenGL map. Perspective
     # surface reconstruction is deliberately not inferred from a single photo.

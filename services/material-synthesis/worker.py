@@ -38,11 +38,11 @@ class Worker:
         response.raise_for_status()
         return response
 
-    def progress(self, stage):
+    def progress(self, stage, **details):
         if self.cancelled.is_set():
             raise Cancelled()
         self.stage = stage
-        self.request('POST', '/progress', json={'stage': stage})
+        self.request('POST', '/progress', json={'stage': stage, **details})
 
     def heartbeat(self):
         # Separate HTTP session; requests.Session isn't shared across threads.
@@ -132,15 +132,17 @@ class Worker:
                 if bundle_manifest.get('backend', 'chord') != backend:
                     raise ValueError('Model bundle does not match the requested backend.')
                 inference_started = time.monotonic()
-                maps, model_manifest = estimate(image, models, backend, seed)
+                maps, model_manifest = estimate(image, models, backend, seed, progress=self.progress)
                 torch.cuda.synchronize()
                 inference_seconds = time.monotonic() - inference_started
                 maps['height'] = height_from_normals(maps['normal'])
                 self.progress('uploading_maps')
-                for role, value in maps.items():
+                for index, (role, value) in enumerate(maps.items()):
+                    self.progress('uploading_maps', completed=index, total=len(maps), role=role)
                     path = root / (role + '.png')
                     encode_png(value, path, height=role == 'height')
                     self.upload(role, path)
+                    self.progress('uploading_maps', completed=index + 1, total=len(maps), role=role)
                 manifest = {'normal_convention': 'opengl', 'model_sha256': spec['model_sha256'], **model_manifest, 'inference_seconds': inference_seconds, 'cleanup_revision': os.environ['CLEANUP_REVISION'] if spec['cleanup'] else None, 'seed': seed, 'height_method': 'periodic-normal-integration-relative', 'seconds': time.monotonic() - started, 'peak_vram_bytes': torch.cuda.max_memory_allocated()}
                 for attempt in range(3):
                     try:

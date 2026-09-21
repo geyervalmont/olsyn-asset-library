@@ -5,15 +5,24 @@ use App\Actions\Materials\PromoteStudioRevision;
 use App\Enums\CommandType;
 use App\Library\Procedural\{ProceduralAsset, ProceduralBake, StudioPreviewStore};
 use App\Library\Studio\DraftStore;
-use App\Models\{Category, ClientSession, Material, Representation, StudioDraft, StudioRevision, Tenant, User};
+use App\Models\{Category, ClientSession, Material, Representation, StudioDraft, StudioRevision, SynthesisRun, Tenant, User};
 use Flux\Flux;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\{Computed, Locked, Title, Url};
 use Livewire\Component;
+use Livewire\WithPagination;
 
 new #[Title('Photo Material Studio')] class extends Component
 {
+    use WithPagination;
+
+    public string $search = '';
+    public string $draftState = 'active';
+    #[Locked] public ?int $compareId = null;
+    public int $brightness = 100;
+    public int $saturation = 100;
+    public int $photo_blend = 0;
 
     #[Url] public string $draft = '';
     #[Locked] public ?int $revisionId = null;
@@ -59,7 +68,31 @@ new #[Title('Photo Material Studio')] class extends Component
 
     #[Computed] public function drafts()
     {
-        return StudioDraft::query()->owned()->where('state', 'active')->latest('updated_at')->limit(30)->get();
+        return StudioDraft::query()->owned()->with('head.run')->withCount('revisions')
+            ->where('state', in_array($this->draftState, ['active', 'promoted'], true) ? $this->draftState : 'active')
+            ->when($this->search !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'ilike', '%'.$this->search.'%')->orWhere('uuid', 'like', '%'.$this->search.'%')))
+            ->latest('updated_at')->paginate(12);
+    }
+
+    #[Computed] public function activity(): ?SynthesisRun
+    {
+        if ($this->current === null) { return null; }
+        return SynthesisRun::query()->whereHas('revision', fn ($q) => $q->where('studio_draft_id', $this->current->id))
+            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->oldest()->first() ?? $this->revision?->run
+            ?? SynthesisRun::query()->whereHas('revision', fn ($q) => $q->where('studio_draft_id', $this->current->id))->latest('id')->first();
+    }
+
+    #[Computed] public function comparison(): ?StudioRevision
+    {
+        return $this->compareId === null ? null : $this->current?->revisions()->findOrFail($this->compareId);
+    }
+
+    public function compare(int $id): void
+    {
+        $this->authorizeEditor();
+        $this->current->revisions()->findOrFail($id);
+        $this->compareId = $id;
+        unset($this->comparison);
     }
 
     #[Computed] public function materials()
@@ -101,13 +134,17 @@ new #[Title('Photo Material Studio')] class extends Component
         $this->draft = $draft->uuid;
         $this->revisionId = $draft->head_id;
         $this->name = $draft->name;
-        unset($this->current, $this->revision, $this->previewSet);
+        unset($this->current, $this->revision, $this->previewSet, $this->activity, $this->comparison);
         $doc = $this->revision->document;
         $this->width_mm = $doc['width_mm'] ?? '';
         $this->height_mm = $doc['height_mm'] ?? '';
         $this->resolution = $doc['resolution'] ?? 1024;
         $this->cleanup = $doc['cleanup'] ?? 0;
         $this->crop = $doc['crop'] ?? ['x' => 50, 'y' => 50, 'size' => 100];
+        $this->compareId = null;
+        $this->brightness = 100;
+        $this->saturation = 100;
+        $this->photo_blend = 0;
         $this->tint_amount = 0;
         $this->roughness = '';
         $this->metallic = '';
@@ -128,11 +165,14 @@ new #[Title('Photo Material Studio')] class extends Component
             $next = app(DraftStore::class)->revise($this->current, $revision->id, $doc, $changedSource ? [] : $revision->artifacts);
             $this->revisionId = $next->id;
         }
-        unset($this->current, $this->revision, $this->previewSet, $this->drafts);
+        unset($this->current, $this->revision, $this->previewSet, $this->drafts, $this->activity);
     }
 
     public function updated(string $property): void
     {
+        if (in_array($property, ['search', 'draftState'], true)) {
+            $this->resetPage();
+        }
         if ($this->draft !== '' && $this->current?->state === 'active' && (in_array($property, ['name', 'width_mm', 'height_mm', 'cleanup', 'resolution'], true) || str_starts_with($property, 'crop.'))) {
             $this->saveDraft();
         }
@@ -140,6 +180,7 @@ new #[Title('Photo Material Studio')] class extends Component
 
     public function generate(): void
     {
+        if ($this->activity && ! $this->activity->terminal()) { return; }
         $this->saveDraft();
         $source = $this->revision;
         if ($source->run !== null && ! $source->run->terminal()) { return; }
@@ -154,18 +195,18 @@ new #[Title('Photo Material Studio')] class extends Component
             return $revision;
         });
         $this->revisionId = $revision->id;
-        unset($this->current, $this->revision, $this->previewSet);
+        unset($this->current, $this->revision, $this->previewSet, $this->activity, $this->comparison);
     }
 
     public function poll(): void
     {
-        unset($this->revision, $this->previewSet);
+        unset($this->revision, $this->previewSet, $this->activity, $this->drafts);
     }
 
     public function cancel(): void
     {
         $this->authorizeEditor();
-        $run = $this->revision?->run;
+        $run = $this->activity;
         if ($run !== null) {
             DB::transaction(function () use ($run): void {
                 $run = $run->newQuery()->lockForUpdate()->findOrFail($run->id);
@@ -174,7 +215,7 @@ new #[Title('Photo Material Studio')] class extends Component
                 }
             });
         }
-        unset($this->revision);
+        unset($this->revision, $this->activity, $this->drafts);
     }
 
     public function discard(): void
@@ -183,7 +224,7 @@ new #[Title('Photo Material Studio')] class extends Component
         $this->current?->update(['state' => 'discarded']);
         $this->draft = '';
         $this->revisionId = null;
-        unset($this->current, $this->revision, $this->drafts);
+        unset($this->current, $this->revision, $this->drafts, $this->activity, $this->comparison);
     }
 
     public function fork(): void
@@ -205,7 +246,7 @@ new #[Title('Photo Material Studio')] class extends Component
     public function adjust(): void
     {
         $this->authorizeEditor();
-        $settings = $this->validate(['tint' => 'required|regex:/^#[a-fA-F0-9]{6}$/', 'tint_amount' => 'required|integer|min:0|max:100', 'roughness' => 'nullable|numeric|min:0|max:1', 'metallic' => 'nullable|numeric|min:0|max:1']);
+        $settings = $this->validate(['tint' => 'required|regex:/^#[a-fA-F0-9]{6}$/', 'tint_amount' => 'required|integer|min:0|max:100', 'roughness' => 'nullable|numeric|min:0|max:1', 'metallic' => 'nullable|numeric|min:0|max:1', 'brightness' => 'required|integer|min:50|max:150', 'saturation' => 'required|integer|min:0|max:200', 'photo_blend' => 'required|integer|min:0|max:100']);
         $revision = $this->revision;
         $maps = app(DraftStore::class)->adjust($revision, $settings);
         $doc = $revision->document;
@@ -291,12 +332,24 @@ new #[Title('Photo Material Studio')] class extends Component
         <x-ui.button :href="route('materials.studio')" variant="quiet" wire:navigate>Procedural Studio</x-ui.button>
     </div>
     @if($errors->any())<div role="alert" class="rounded-xl border border-red-300 bg-red-50 p-4 text-red-900">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
-    <div class="grid gap-6 lg:grid-cols-[240px_1fr]">
-        <aside class="space-y-5 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700">
-            <h2 class="font-semibold">Your drafts</h2>
-            @foreach($this->drafts as $item)
-                <button wire:click="open('{{ $item->uuid }}')" class="block w-full rounded-lg p-2 text-left {{ $draft === $item->uuid ? 'bg-zinc-100 dark:bg-zinc-800' : '' }}">{{ $item->name }}</button>
-            @endforeach
+    <div class="grid gap-6 lg:grid-cols-[300px_1fr]">
+        <aside class="self-start rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700" x-data="{ expanded: @js($draft === '') }">
+            <button type="button" class="w-full text-left text-sm font-semibold lg:hidden" x-on:click="expanded = !expanded" x-bind:aria-expanded="expanded">Browse drafts / start a material <span class="float-right" x-text="expanded ? '−' : '+'"></span></button>
+            <div x-show="expanded" class="mt-4 space-y-5 lg:mt-0 lg:block!">
+            <div class="flex items-center justify-between"><h2 class="font-semibold">Your drafts</h2><span class="text-xs text-zinc-500">{{ $this->drafts->total() }} {{ $this->drafts->total() === 1 ? 'draft' : 'drafts' }}</span></div>
+            <flux:input wire:model.live.debounce.300ms="search" placeholder="Search name or draft ID…" aria-label="Search drafts" />
+            <flux:select wire:model.live="draftState" aria-label="Draft collection"><option value="active">In progress</option><option value="promoted">Saved to library</option></flux:select>
+            <div class="space-y-2">
+                @forelse($this->drafts as $item)
+                    <button wire:key="draft-{{ $item->id }}" wire:click="open('{{ $item->uuid }}')" aria-current="{{ $draft === $item->uuid ? 'true' : 'false' }}" class="flex w-full gap-3 rounded-xl border p-2 text-left {{ $draft === $item->uuid ? 'border-zinc-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800' }}">
+                        @if($item->head)<img loading="lazy" alt="{{ $item->name }} preview" src="{{ route('studio-artifacts.show', ['revision' => $item->head_id, 'role' => $item->head->previewRole(), 'thumbnail' => 1]) }}" class="h-16 w-16 shrink-0 rounded-lg object-cover" />@endif
+                        <span class="min-w-0"><span class="block truncate text-sm font-medium">{{ $item->name }}</span><span class="block text-xs text-zinc-500">{{ substr($item->uuid, 0, 5) }} · {{ $item->head?->label() }}</span><span class="mt-1 block text-xs text-zinc-500">{{ $item->updated_at->diffForHumans() }} · {{ $item->revisions_count }} revisions</span></span>
+                    </button>
+                @empty
+                    <p class="text-sm text-zinc-500">No drafts found. Start with a photo below.</p>
+                @endforelse
+            </div>
+            {{ $this->drafts->links() }}
             <form method="POST" action="{{ route('materials.studio.photos.upload') }}" enctype="multipart/form-data" class="space-y-3 border-t border-zinc-200 pt-4" x-data="{ uploading: false }" x-on:submit="uploading = true">
                 @csrf
                 <flux:input name="name" label="Draft name" value="Untitled material" required maxlength="120" />
@@ -309,29 +362,43 @@ new #[Title('Photo Material Studio')] class extends Component
                 <flux:select wire:model="importRepresentation" label="Start from a library material"><option value="">Choose a material…</option>@foreach($this->importSets as $set)<option value="{{ $set->id }}">{{ $set->variant->material->name }} · {{ $set->variant->name }} · {{ $set->quality->name }}</option>@endforeach</flux:select>
                 <flux:button type="submit">Repair / derive material</flux:button>
             </form>
+            </div>
         </aside>
         <main class="min-w-0 space-y-5">
             @if($this->revision)
                 @php($revision = $this->revision)
-                @php($run = $revision->run)
+                @php($run = $this->activity)
                 <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div><h2 class="text-xl font-semibold">{{ $this->current->name }}</h2><p class="text-sm text-zinc-500">Revision {{ $revision->id }} · {{ ucfirst($this->current->state) }} <span wire:loading>· Saving…</span></p></div>
+                    <div><h2 class="text-xl font-semibold">{{ $this->current->name }}</h2><p class="text-sm text-zinc-500">Revision {{ $revision->id }} · {{ ucfirst($this->current->state) }} <span wire:loading wire:target="saveDraft,adjust,name,width_mm,height_mm,cleanup,resolution,crop.x,crop.y,crop.size">· Saving…</span></p></div>
                     <div class="flex gap-2"><flux:button wire:click="fork">Derive colourway</flux:button><flux:button wire:click="discard" wire:confirm="Discard this draft? Its library outputs will remain available.">Discard</flux:button></div>
                 </div>
-                @if($run && !$run->terminal())
-                    <div wire:poll.5s="poll" role="status" class="flex items-center justify-between rounded-xl bg-zinc-100 p-4 dark:bg-zinc-800"><span>{{ ucfirst(str_replace('_', ' ', $run->stage)) }}… You can leave and return to this draft.</span><flux:button wire:click="cancel">Cancel</flux:button></div>
-                @elseif($run?->error)
-                    <p role="alert" class="rounded-xl border border-amber-300 p-4">{{ $run->error }}</p>
+                <ol class="grid grid-cols-3 gap-2 text-sm" aria-label="Material workflow">
+                    <li class="rounded-lg bg-zinc-100 p-3 dark:bg-zinc-800">1. Prepare photo</li>
+                    <li class="rounded-lg bg-zinc-100 p-3 dark:bg-zinc-800">2. Generate & refine</li>
+                    <li class="rounded-lg bg-zinc-100 p-3 dark:bg-zinc-800">3. Use material</li>
+                </ol>
+                @if($run)
+                    <x-ui.synthesis-progress :run="$run" :current-revision="$revision->id" />
                 @endif
                 @if($this->previewSet)
                     <div class="ui-viewer relative min-h-[420px] overflow-hidden rounded-2xl bg-zinc-100" wire:key="photo-viewer-{{ $revision->id }}-{{ count($revision->artifacts ?? []) }}" x-data="materialViewer(@js(['sets' => ['preview' => $this->previewSet], 'autoRotate' => false, 'objectSizeMm' => (float) ($width_mm ?: 1000), 'shape' => 'panel', 'shapeKey' => 'photo-studio']))" x-init="show('preview')">
                         <div class="absolute left-3 top-3 z-10 flex gap-2"><button class="rounded bg-white px-3 py-2 text-black" x-on:click="shape = 'panel'; inspectSurface()">Sample</button><button class="rounded bg-white px-3 py-2 text-black" x-on:click="shape = 'ball'; inspectSurface()">Sphere</button><button class="rounded bg-white px-3 py-2 text-black" x-on:click="toggleRotation()">Rotate</button></div>
                         <div x-ref="stage" wire:ignore class="ui-viewer__stage h-[420px] w-full"></div>
                     </div>
+                    @if(isset($revision->artifacts['prepared']))
+                        <details class="rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                            <summary class="cursor-pointer text-sm font-semibold">Compare photo and base colour · {{ $revision->artifacts['base_color']['width'] }} px</summary>
+                            <div class="mt-3 grid grid-cols-2 gap-3">
+                                @foreach(['prepared' => 'Aligned source photo', 'base_color' => 'Current base colour'] as $role => $label)
+                                    <figure><a target="_blank" href="{{ route('studio-artifacts.show', ['revision' => $revision->id, 'role' => $role]) }}"><img alt="{{ $label }}" src="{{ route('studio-artifacts.show', ['revision' => $revision->id, 'role' => $role]) }}" class="aspect-square w-full rounded-lg object-contain" /></a><figcaption class="mt-2 text-sm text-zinc-500">{{ $label }} · click for full size</figcaption></figure>
+                                @endforeach
+                            </div>
+                        </details>
+                    @endif
                     <div class="grid grid-cols-3 gap-3 sm:grid-cols-5">@foreach(DraftStore::MAPS as $role)@if(isset($revision->artifacts[$role]))<a href="{{ route('studio-artifacts.show', ['revision'=>$revision->id,'role'=>$role]) }}" target="_blank" class="overflow-hidden rounded-lg border border-zinc-200"><img alt="{{ str_replace('_',' ', $role) }} map" src="{{ route('studio-artifacts.show', ['revision'=>$revision->id,'role'=>$role]) }}" class="aspect-square w-full object-cover" /><span class="block p-2 text-xs">{{ ucfirst(str_replace('_',' ', $role)) }}</span></a>@endif @endforeach</div>
                 @endif
                 <details @if(!$this->previewSet) open @endif class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700">
-                    <summary class="cursor-pointer font-semibold">Source and preparation</summary>
+                    <summary class="cursor-pointer font-semibold">1. Source and preparation</summary>
                     <div class="mt-4 grid gap-4 md:grid-cols-2">
                         <div>
                             <div class="relative overflow-hidden rounded-lg bg-zinc-100" style="aspect-ratio: {{ $revision->document['source']['width'] }} / {{ $revision->document['source']['height'] }}">
@@ -346,8 +413,11 @@ new #[Title('Photo Material Studio')] class extends Component
                             @foreach(['x'=>'Horizontal position','y'=>'Vertical position','size'=>'Crop size'] as $key=>$label)<label class="block text-sm">{{ $label }} · {{ $crop[$key] }}%<input class="block w-full" type="range" min="{{ $key === 'size' ? 10 : 0 }}" max="100" wire:model.live.debounce.500ms="crop.{{ $key }}" /></label>@endforeach
                             <label class="block text-sm">Glare cleanup · {{ $cleanup }}%<input class="block w-full" type="range" min="0" max="100" wire:model.live.debounce.500ms="cleanup" @disabled(!config('synthesis.cleanup_enabled')) /></label>
                             <p class="text-xs text-zinc-500">Use a close, front-on photo of one flat surface. Optional cleanup can change surface detail. Regeneration starts from the source; earlier finish edits remain in history.</p>
-                            <flux:select wire:model.live="resolution" label="Generation size"><option value="512">512 px · quick study</option><option value="1024">1024 px · detailed</option></flux:select>
-                            <flux:button wire:click="generate" variant="primary" :disabled="!config('synthesis.enabled') || ($run && !$run->terminal()) || $this->current->state !== 'active'">Generate material</flux:button>
+                            <flux:select wire:model.live="resolution" label="Generation size"><option value="512">512 px · quick study</option><option value="1024">1024 px · larger maps</option></flux:select>
+                            @php($cropPixels = (int) round(min($revision->document['source']['width'], $revision->document['source']['height']) * $crop['size'] / 100))
+                            <p class="text-xs text-zinc-500">{{ $cropPixels }} × {{ $cropPixels }} px source crop → {{ $resolution }} × {{ $resolution }} px maps. Generation estimates surface properties; it does not upscale or recover lost detail.</p>
+                            @if($cropPixels < $resolution)<p class="text-sm text-amber-700 dark:text-amber-300">This crop is smaller than the output. Use a wider crop or a sharper source to retain more detail.</p>@endif
+                            <flux:button wire:click="generate" variant="primary" :disabled="!config('synthesis.enabled') || ($run && !$run->terminal()) || $this->current->state !== 'active'">{{ $this->previewSet ? 'Generate a new version' : 'Generate material' }}</flux:button>
                             @unless(config('synthesis.enabled'))<p class="text-sm text-zinc-500">Photo generation is not enabled yet. You can keep this draft or edit a library material.</p>@endunless
                         </div>
                     </div>
@@ -355,11 +425,19 @@ new #[Title('Photo Material Studio')] class extends Component
                 </details>
                 <div class="grid gap-4 md:grid-cols-2">
                     <div class="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700">
-                        <h3 class="font-semibold">Scale and finish</h3>
+                        <h3 class="font-semibold">2. Refine this version</h3>
                         <flux:input wire:model.live.debounce.700ms="name" label="Material name" />
                         <div class="grid grid-cols-2 gap-3"><flux:input wire:model.live.debounce.700ms="width_mm" label="Width (mm)" type="number" min="1" placeholder="Unknown" /><flux:input wire:model.live.debounce.700ms="height_mm" label="Height (mm)" type="number" min="1" placeholder="Unknown" /></div>
                         <p class="text-xs text-zinc-500">Set the physical size of the selected sample before applying or saving to the library.</p>
                         @if($this->previewSet)
+                            <p class="text-sm text-zinc-500">Adjust colour and finish, then save a version to see the result. No GPU generation needed. Compare or restore any earlier version below.</p>
+                            @foreach(['brightness' => ['Brightness', 50, 150], 'saturation' => ['Saturation', 0, 200]] as $control => [$label, $min, $max])
+                                <label class="block text-sm" x-data="{ amount: $wire.entangle('{{ $control }}') }">{{ $label }} · <span x-text="amount"></span>%<input class="block w-full" type="range" min="{{ $min }}" max="{{ $max }}" x-model="amount" /></label>
+                            @endforeach
+                            @if(isset($revision->artifacts['prepared']))
+                                <label class="block text-sm" x-data="{ amount: $wire.entangle('photo_blend') }">Original photo blend · <span x-text="amount"></span>%<input class="block w-full" type="range" min="0" max="100" x-model="amount" /></label>
+                                <p class="text-xs text-zinc-500">Blend the aligned photo back into base colour to retain its appearance. This also brings back photographed shadows and highlights.</p>
+                            @endif
                             <div class="flex items-center gap-3"><input type="color" wire:model="tint" aria-label="Colourway tint" /><label class="text-sm">Tint strength<input type="range" min="0" max="100" wire:model="tint_amount" /></label></div>
                             <flux:input wire:model="roughness" label="Roughness override (0–1)" type="number" min="0" max="1" step="0.05" placeholder="Keep generated map" />
                             <flux:input wire:model="metallic" label="Metalness override (0–1)" type="number" min="0" max="1" step="0.05" placeholder="Keep generated map" />
@@ -369,7 +447,7 @@ new #[Title('Photo Material Studio')] class extends Component
                         @endif
                     </div>
                     <div class="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700">
-                        <h3 class="font-semibold">Use this material</h3>
+                        <h3 class="font-semibold">3. Use this material</h3>
                         <flux:button wire:click="apply" :disabled="!$this->previewSet">Apply to Revit</flux:button>
                         <flux:select wire:model.live="destination" label="Library destination"><option value="new">New material</option><option value="colourway">New colourway</option><option value="improve">Improve existing variant</option></flux:select>
                         @if($destination === 'new')<flux:select wire:model="category_id" label="Category"><option value="">Choose category</option>@foreach(Category::query()->orderBy('name')->get() as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</flux:select>
@@ -380,7 +458,29 @@ new #[Title('Photo Material Studio')] class extends Component
                         <p class="text-xs text-zinc-500">@if($destination === 'improve')Approval replaces the variant’s earlier map sets and adopts this sample’s scale. Published versions remain available.@else Creates a reviewable candidate. Existing published materials are preserved.@endif</p>
                     </div>
                 </div>
-                <details class="rounded-xl border border-zinc-200 p-4"><summary class="cursor-pointer font-semibold">Revision history</summary><div class="mt-3 space-y-2">@foreach($this->current->revisions()->with('run')->latest('id')->limit(20)->get() as $past)<div class="flex justify-between text-sm"><span>Revision {{ $past->id }} · {{ $past->run?->status ?? (empty($past->artifacts) ? 'Prepared' : 'Edited') }}</span>@if($past->id !== $revision->id)<button wire:click="restore({{ $past->id }})" class="underline">Use this revision</button>@endif</div>@endforeach</div></details>
+                <section class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700" aria-label="Revision history">
+                    <h3 class="font-semibold">Version history</h3>
+                    <p class="mt-1 text-sm text-zinc-500">Compare a version before restoring it. Restoring makes a new version and keeps your history.</p>
+                    @if($this->comparison)
+                        @php($comparison = $this->comparison)
+                        <div class="my-4 grid grid-cols-2 gap-3" data-test="revision-comparison">
+                            @foreach(['Selected version' => $comparison, 'Current version' => $revision] as $label => $version)
+                                <figure><a href="{{ route('studio-artifacts.show', ['revision' => $version->id, 'role' => $version->previewRole()]) }}" target="_blank"><img alt="{{ $label }} {{ $version->id }}" src="{{ route('studio-artifacts.show', ['revision' => $version->id, 'role' => $version->previewRole()]) }}" class="aspect-square w-full rounded-xl object-contain bg-zinc-100" /></a><figcaption class="mt-2 text-sm">{{ $label }} · #{{ $version->id }} · {{ $version->label() }}</figcaption></figure>
+                            @endforeach
+                        </div>
+                        @if($this->current->state === 'active' && $comparison->id !== $revision->id)<flux:button wire:click="restore({{ $comparison->id }})">Restore selected version</flux:button>@endif
+                    @endif
+                    <div class="mt-4 max-h-96 space-y-2 overflow-y-auto">
+                        @foreach($this->current->revisions()->with('run')->latest('id')->get() as $past)
+                            <div wire:key="history-{{ $past->id }}" class="flex items-center gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+                                <img loading="lazy" alt="Version {{ $past->id }} preview" src="{{ route('studio-artifacts.show', ['revision' => $past->id, 'role' => $past->previewRole(), 'thumbnail' => 1]) }}" class="h-16 w-16 rounded-lg object-cover" />
+                                <div class="min-w-0 flex-1"><p class="text-sm font-medium">{{ $past->label() }} @if($past->id === $revision->id)<span class="text-zinc-500">· Current</span>@endif</p><p class="text-xs text-zinc-500">#{{ $past->id }} · {{ $past->created_at->format('j M, g:i a') }} · {{ $past->document['resolution'] ?? '—' }} px · Crop {{ $past->document['crop']['size'] ?? 100 }}% · Cleanup {{ $past->document['cleanup'] ?? 0 }}%</p>
+                                @if(!empty($past->document['edits']))<p class="text-xs text-zinc-500">{{ count($past->document['edits']) }} saved finish adjustments</p>@endif</div>
+                                <flux:button size="sm" wire:click="compare({{ $past->id }})">Compare</flux:button>
+                            </div>
+                        @endforeach
+                    </div>
+                </section>
             @else
                 <div class="flex min-h-[500px] items-center justify-center rounded-2xl border border-dashed border-zinc-300 p-8 text-center"><div><h2 class="text-2xl font-semibold">Start with a real surface</h2><p class="mt-3 max-w-md text-zinc-500">Upload a photograph or reopen a draft. Generation creates editable material maps; your original capture stays private.</p></div></div>
             @endif

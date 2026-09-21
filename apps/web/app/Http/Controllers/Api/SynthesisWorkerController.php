@@ -45,11 +45,33 @@ final class SynthesisWorkerController
     public function progress(Request $request, SynthesisRun $run): JsonResponse
     {
         $this->authorize($request, $run);
-        $data = $request->validate(['stage' => 'required|in:loading_models,preparing_photo,cleaning_photo,estimating_material,uploading_maps', 'error' => 'nullable|string|max:2000']);
+        $data = $request->validate([
+            'stage' => 'required|in:loading_models,preparing_photo,cleaning_photo,estimating_material,uploading_maps',
+            'error' => 'nullable|string|max:2000',
+            'completed' => 'sometimes|required|integer|min:0|max:5',
+            'total' => 'required_with:completed|integer|min:1|max:5|gte:completed',
+            'role' => 'sometimes|required|in:base_color,normal,roughness,metallic,height',
+        ]);
         DB::transaction(function () use ($request, $run, $data): void {
             $locked = SynthesisRun::query()->lockForUpdate()->findOrFail($run->id);
             $this->authorize($request, $locked);
-            $locked->update(['status' => empty($data['error']) ? 'running' : 'failed', 'stage' => $data['stage'], 'heartbeat_at' => now(), 'error' => empty($data['error']) ? null : 'The synthesis worker failed. Your draft is saved.']);
+            // An in-flight heartbeat can arrive after the next stage callback.
+            $stages = array_keys($locked->stages());
+            if (array_search($data['stage'], $stages, true) < array_search($locked->stage, $stages, true) && empty($data['error'])) {
+                $locked->update(['heartbeat_at' => now()]);
+
+                return;
+            }
+            $manifest = $locked->manifest ?? [];
+            $progress = $manifest['progress'] ?? [];
+            if ($locked->stage !== $data['stage'] || empty($progress)) {
+                $progress = ['stage_started_at' => now()->toIso8601String()];
+            }
+            if (isset($data['completed'])) {
+                $progress = array_merge($progress, array_intersect_key($data, array_flip(['completed', 'total', 'role'])));
+            }
+            $manifest['progress'] = $progress;
+            $locked->update(['status' => empty($data['error']) ? 'running' : 'failed', 'stage' => $data['stage'], 'manifest' => $manifest, 'heartbeat_at' => now(), 'error' => empty($data['error']) ? null : 'The synthesis worker failed. Your draft is saved.']);
         });
 
         return response()->json(['ok' => true]);

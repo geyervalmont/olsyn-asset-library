@@ -137,3 +137,28 @@ The PHP `PhotoStudioTest` covers owner isolation, immutable inputs, late results
 tokens, quotas, map integrity, 16-bit height, promotion, uploads and repair forks.
 CPU tests do not establish inference quality or performance. Validate a real
 GPU photo job after installing a matching model bundle before enabling broad use.
+
+## Studio feedback and iteration
+
+The draft browser includes private 160 px thumbnails, name/ID search, pagination,
+state filters and revision counts. Version history supports read-only comparisons
+and non-destructive restore. Prepared photos can be compared directly with the
+resulting base colour at full resolution. Brightness, saturation, tint and an
+explicit aligned-photo blend are saved as finish revisions without another GPU
+run; structural maps are retained. Photo blending restores photographed lighting
+as well as appearance and should be judged in the material preview.
+
+Generation shows queue/startup/model-loading stages, elapsed time, worker heartbeat
+age, intermediate photo previews and map counts. Counters represent completed maps
+within a stage, not an estimated percentage of total wall time. Deploy the web app
+and rebuild the synthesis worker to get RGB→X estimation counts and upload counts;
+older workers continue to report coarse stages. CHORD inference remains
+indeterminate until upload. Editing the current draft does not hide an older
+revision's active run, and completed results remain accessible in version history.
+
+The size selector describes output map dimensions, not super-resolution. Production
+draft `0fa9c` (revision 36) used RGB→X with a 59% crop of a 2048 px source, 1024 px
+output, and cleanup disabled. Its aligned input was already soft; the inferred
+base colour lost additional fine grain. This UI update does not add a learned
+upscaler or establish improved inference quality. A future detail-recovery stage
+needs evaluation of the complete, aligned PBR map set.

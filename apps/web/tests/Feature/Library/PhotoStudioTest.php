@@ -14,6 +14,7 @@ use App\Models\SynthesisRun;
 use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\LibrarySeeder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -242,4 +243,86 @@ test('zero metalness override preserves the inferred maps in the earlier revisio
     $image = new Imagick;
     $image->readImageBlob($this->store->bytes($head->artifacts['metallic']));
     expect($image->getImagePixelColor(0, 0)->getColor()['r'])->toBe(0);
+});
+
+test('worker progress preserves runtime, rejects invalid counts and ignores stale heartbeats', function () {
+    $run = $this->store->generate($this->revision);
+    $url = '/api/synthesis-runs/'.$run->uuid.'/progress';
+    $this->withToken($run->worker_token)->postJson($url, ['stage' => 'estimating_material', 'completed' => 1, 'total' => 4, 'role' => 'normal'])->assertOk();
+    $this->withToken($run->worker_token)->postJson($url, ['stage' => 'estimating_material'])->assertOk();
+    $this->withToken($run->worker_token)->postJson($url, ['stage' => 'loading_models'])->assertOk();
+    expect($run->fresh()->stage)->toBe('estimating_material')
+        ->and($run->fresh()->manifest['progress']['completed'])->toBe(1)
+        ->and($run->fresh()->runtime('model_sha256'))->toBe(str_repeat('a', 64));
+    $this->withToken($run->worker_token)->postJson($url, ['stage' => 'uploading_maps', 'completed' => 5, 'total' => 4])->assertUnprocessable();
+    $this->withToken($run->worker_token)->postJson($url, ['stage' => 'uploading_maps'])->assertOk();
+    expect($run->fresh()->manifest['progress'])->not->toHaveKey('completed');
+});
+
+test('intermediate previews remain private and generation stays visible after edits', function () {
+    $run = $this->store->generate($this->revision);
+    $run->update(['stage' => 'estimating_material', 'status' => 'running', 'artifacts' => ['prepared' => $this->revision->document['source']]]);
+    $url = route('studio-artifacts.show', ['revision' => $this->revision, 'role' => 'prepared']);
+    $this->get($url)->assertOk();
+    $this->tenant->makeCurrent();
+    Livewire::actingAs($this->editor)->test('pages::materials.photo-studio', ['draft' => $this->draft->uuid])
+        ->set('crop.size', 60)->assertHasNoErrors()
+        ->assertSee('Estimating surface')->assertSee('This generation belongs to an earlier version.')
+        ->call('generate')->assertHasNoErrors()
+        ->call('cancel')->assertHasNoErrors();
+    expect(SynthesisRun::count())->toBe(1)->and($run->fresh()->status)->toBe('cancelled');
+    $other = User::factory()->withTenant($this->tenant, Role::Editor)->create();
+    $this->actingAs($other)->get($url)->assertNotFound();
+});
+
+test('draft search and revision comparisons do not change the draft head', function () {
+    $next = $this->store->revise($this->draft, $this->revision->id, array_merge($this->revision->document, ['cleanup' => 20]));
+    $component = Livewire::actingAs($this->editor)->test('pages::materials.photo-studio', ['draft' => $this->draft->uuid])
+        ->call('compare', $this->revision->id)->assertSee('Selected version')->assertHasNoErrors()
+        ->set('search', substr($this->draft->uuid, 0, 5))->assertSee('1 draft')
+        ->set('search', 'does-not-exist')->assertSee('No drafts found.');
+    expect($this->draft->fresh()->head_id)->toBe($next->id);
+    $foreign = $this->store->fromPhoto(UploadedFile::fake()->image('other.jpg'), 'Another draft');
+    expect(fn () => $component->call('compare', $foreign->head_id))->toThrow(ModelNotFoundException::class);
+});
+
+test('appearance controls alter only base colour and keep reversible revisions', function () {
+    $image = new Imagick;
+    $image->newImage(64, 64, new ImagickPixel('#804020'), 'png');
+    $base = $this->store->put($image->getImageBlob(), 'base_color');
+    $image->clear();
+    $image->newImage(64, 64, new ImagickPixel('#2080c0'), 'png');
+    $prepared = $this->store->put($image->getImageBlob(), 'prepared');
+    $maps = array_fill_keys(DraftStore::MAPS, $base) + ['prepared' => $prepared];
+    $revision = $this->store->revise($this->draft, $this->revision->id, $this->revision->document, $maps);
+    $component = Livewire::actingAs($this->editor)->test('pages::materials.photo-studio', ['draft' => $this->draft->uuid])
+        ->set('photo_blend', 100)->call('adjust')->assertHasNoErrors();
+    $edited = $this->draft->fresh()->head;
+    $image->readImageBlob($this->store->bytes($edited->artifacts['base_color']));
+    $pixel = $image->getImagePixelColor(0, 0)->getColor();
+    expect($pixel['r'])->toBe(32)->and($pixel['g'])->toBe(128)->and($pixel['b'])->toBe(192);
+    foreach (['normal', 'roughness', 'height', 'metallic'] as $role) {
+        expect($edited->artifacts[$role])->toBe($maps[$role]);
+    }
+    $component->set('brightness', 120)->set('saturation', 0)->call('adjust')->assertHasNoErrors();
+    $adjusted = $this->draft->fresh()->head;
+    $image->readImageBlob($this->store->bytes($adjusted->artifacts['base_color']));
+    $pixel = $image->getImagePixelColor(0, 0)->getColor();
+    expect($pixel['r'])->toBe($pixel['g'])->and($pixel['g'])->toBe($pixel['b']);
+    $component->call('restore', $revision->id)->assertHasNoErrors();
+    expect($this->draft->fresh()->head->artifacts)->toBe($maps)
+        ->and($revision->fresh()->artifacts)->toBe($maps);
+});
+
+test('draft thumbnails are bounded and retain owner authorization', function () {
+    $image = new Imagick;
+    $image->newImage(512, 256, new ImagickPixel('#886644'), 'png');
+    $asset = $this->store->put($image->getImageBlob(), 'base_color');
+    $this->revision->update(['artifacts' => ['base_color' => $asset]]);
+    $url = route('studio-artifacts.show', ['revision' => $this->revision, 'role' => 'base_color', 'thumbnail' => 1]);
+    $response = $this->get($url)->assertOk();
+    $size = getimagesizefromstring($response->getContent());
+    expect($size[0])->toBe(160)->and($size[1])->toBe(80);
+    $other = User::factory()->withTenant($this->tenant, Role::Editor)->create();
+    $this->actingAs($other)->get($url)->assertNotFound();
 });

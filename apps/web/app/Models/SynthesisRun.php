@@ -54,4 +54,21 @@ class SynthesisRun extends Model
     {
         return 'synthesis-'.$this->uuid;
     }
+
+    /** @return array<string, string> */
+    public function stages(): array
+    {
+        $stages = ['queued' => 'Queued', 'waiting_for_compute' => 'Starting compute',
+            'loading_models' => 'Loading models', 'preparing_photo' => 'Preparing photo'];
+        if (($this->revision->document['cleanup'] ?? 0) > 0) {
+            $stages['cleaning_photo'] = 'Cleaning glare';
+        }
+
+        return $stages + ['estimating_material' => 'Estimating surface', 'uploading_maps' => 'Saving maps', 'complete' => 'Ready'];
+    }
+
+    public function stageLabel(): string
+    {
+        return $this->stages()[$this->stage] ?? ucfirst(str_replace('_', ' ', $this->stage));
+    }
 }
