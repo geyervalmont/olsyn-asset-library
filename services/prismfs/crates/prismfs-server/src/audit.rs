@@ -67,6 +67,7 @@ impl AuditShipper {
     /// Posts one batch. On failure the batch goes back to the queue for the
     /// next flush. Returns how many events were delivered.
     pub async fn flush_once(&self) -> usize {
+        prismfs_telemetry::record_audit_queue(self.queue.len(), self.queue.dropped());
         let events = self.queue.drain(self.batch);
         if events.is_empty() {
             return 0;
@@ -75,11 +76,15 @@ impl AuditShipper {
         let batch = AccessBatch { events };
         match self.post(&batch).await {
             Ok(()) => {
+                prismfs_telemetry::record_audit_delivery(true);
+                prismfs_telemetry::record_audit_queue(self.queue.len(), self.queue.dropped());
                 debug!(count, "access events shipped");
                 count
             }
             Err(error) => {
                 self.queue.requeue(batch.events);
+                prismfs_telemetry::record_audit_delivery(false);
+                prismfs_telemetry::record_audit_queue(self.queue.len(), self.queue.dropped());
                 warn!(%error, count, queued = self.queue.len(), "access events kept for retry");
                 0
             }

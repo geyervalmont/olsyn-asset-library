@@ -1,0 +1,74 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: prismfs
+spec:
+  groups:
+    - name: prismfs
+      rules:
+        - alert: PrismFSUnavailable
+          expr: up{namespace="opal",service="prismfs-studio-share-metrics"} == 0 or absent(up{namespace="opal",service="prismfs-studio-share-metrics"})
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: PrismFS telemetry is unavailable
+            description: Check the drive deployment, pod events and metrics Service. This does not establish SMB availability.
+        - alert: PrismFSManifestStale
+          expr: (time() - prismfs_manifest_last_success_timestamp_seconds > 120) and (prismfs_manifest_remote == 1)
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: PrismFS has not confirmed its namespace for over two minutes
+            description: Check OPAL connectivity, drive token and manifest validation errors. Existing files may remain readable while new publications or permission changes are stale.
+        - alert: PrismFSReadErrors
+          expr: sum by (namespace, pod) (increase(prismfs_requests_total{operation="read",result="error"}[5m])) >= 3
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: PrismFS is failing file reads
+            description: Inspect the structured read logs and S3 connectivity/credentials.
+        - alert: PrismFSSlowReads
+          expr: histogram_quantile(0.95, sum by (le, namespace, pod) (rate(prismfs_request_duration_seconds_bucket{operation="read"}[5m]))) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: PrismFS p95 file read latency exceeds five seconds
+        - alert: PrismFSRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="opal",pod=~"prismfs-.*"}[15m]) >= 3
+          labels:
+            severity: critical
+          annotations:
+            summary: PrismFS or Samba is repeatedly restarting
+        - alert: PrismFSShareNotReady
+          expr: kube_deployment_status_replicas_available{namespace="opal",deployment="prismfs-studio-share"} < 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: The PrismFS SMB share has no ready replica
+            description: Readiness includes an authenticated SMB directory listing. Check Samba and the FUSE mount.
+        - alert: PrismFSAuditDeliveryFailing
+          expr: sum by (namespace, pod) (increase(prismfs_audit_batches_total{result="error"}[5m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: PrismFS access events cannot reach OPAL
+        - alert: PrismFSAuditLoss
+          expr: delta(prismfs_audit_dropped_events[5m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: PrismFS audit queue is dropping access events
+        - alert: PrismFSMemoryPressure
+          expr: container_memory_working_set_bytes{namespace="opal",container="prismfs"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="opal",container="prismfs",resource="memory"} > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: PrismFS is using over 80 percent of its memory limit
+            description: The current range cache is in memory. Inspect cache growth before an OOM restart interrupts the share.

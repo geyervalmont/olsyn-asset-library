@@ -21,6 +21,7 @@ class MaterialResource extends JsonResource
             : null;
 
         return [
+            'uuid' => $this->uuid,
             'code' => $this->code,
             'name' => $this->name,
             'category' => ['code' => $this->category->code, 'name' => $this->category->name],

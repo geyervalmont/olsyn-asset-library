@@ -147,3 +147,24 @@ test('clients can resolve many references in one request', function () {
 
     $this->postJson('/api/v1/variants/resolve', ['platform' => 'revit', 'references' => []])->assertUnprocessable();
 });
+
+test('UUID endpoints expose permanent identity and versioned drive paths with visibility checks', function () {
+    Sanctum::actingAs($this->viewer);
+    $this->getJson('/api/v1/materials/'.$this->material->uuid)->assertOk()->assertJsonPath('data.uuid', $this->material->uuid);
+    $this->getJson('/api/v1/variants/'.$this->ashen->uuid)->assertOk()->assertJsonPath('data.material_uuid', $this->material->uuid);
+    $secret = Material::query()->where('name', 'Secret stone')->sole();
+    $this->getJson('/api/v1/materials/'.$secret->uuid)->assertNotFound();
+
+    app(ReviewRepresentation::class)->handle($this->ashen->representations()->sole(), ReviewState::Approved);
+    publishablePackage($this->ashen, '1k');
+    app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
+    app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
+    $drive = Drive::factory()->create(['path_layout' => 'stable']);
+    $url = '/api/v1/variants/'.$this->ashen->uuid.'/paths?drive='.$drive->slug;
+    $this->getJson($url)->assertOk()->assertJsonPath('data.files.0.material_version', 2)
+        ->assertJsonPath('data.variant_uuid', $this->ashen->uuid)->assertJsonPath('data.path_layout', 'stable');
+    $this->getJson($url.'&version=1')->assertOk()->assertJsonPath('data.files.0.material_version', 1);
+    $this->getJson($url.'&version=0')->assertUnprocessable();
+    $drive->update(['is_active' => false]);
+    $this->getJson($url)->assertNotFound();
+});

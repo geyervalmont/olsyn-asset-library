@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Library\CodeTokenizer;
 use App\Library\MaterialCodes;
 use App\Models\Concerns\HasAliases;
+use App\Models\Concerns\HasPermanentUuid;
 use App\Models\Concerns\HasProvenance;
 use App\Models\Concerns\Searchable;
 use Database\Factories\VariantFactory;
@@ -16,12 +17,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Str;
 use LogicException;
 
 /**
  * The consumable unit of a material: one colourway, saturation, finish,
  * pattern or format combination, described by typed attributes.
  *
+ * @property string $uuid
  * @property int $id
  * @property int $material_id
  * @property string $code
@@ -48,7 +51,7 @@ use LogicException;
 class Variant extends Model
 {
     /** @use HasFactory<VariantFactory> */
-    use HasAliases, HasFactory, HasProvenance, Searchable;
+    use HasAliases, HasFactory, HasPermanentUuid, HasProvenance, Searchable;
 
     private bool $recoding = false;
 
@@ -89,6 +92,10 @@ class Variant extends Model
      */
     public static function resolveCode(string $code): ?self
     {
+        if (Str::isUuid(trim($code))) {
+            return static::query()->where('uuid', strtolower(trim($code)))->first();
+        }
+
         $code = strtoupper(trim($code));
 
         $variant = static::query()->where('code', $code)->first();

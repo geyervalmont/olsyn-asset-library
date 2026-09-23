@@ -80,12 +80,14 @@ test('a material travels from upload to a drive manifest through the UI', functi
 
     expect($material?->fresh()?->currentVersion?->number)->toBe(1);
 
-    // 4. The drive serves only package-derived cache files at readable paths.
+    // 4. New drives serve package-derived files at permanent versioned paths.
     $manifest = $this->actingAs($harrison)->get(route('drives.manifest', $drive))->assertOk()->getContent();
 
-    expect($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/revit/'.$quality.'/CPT-TARKETT-ACADEMIX-ASHEN_base_color.png"')
-        ->and($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/revit/'.$quality.'/CPT-TARKETT-ACADEMIX-ASHEN_bump.png"')
-        ->and($manifest)->toContain('path: "/materials/Carpet/Academix/Ashen/revit/'.$quality.'/CPT-TARKETT-ACADEMIX-ASHEN_glossiness.png"')
+    $directory = '/materials/by-id/'.$material->uuid.'/'.$variant->uuid.'/v1/revit/'.$quality.'/'.$package->derivatives()->sole()->uuid;
+    expect($drive->path_layout)->toBe('stable')
+        ->and($manifest)->toContain('path: "'.$directory.'/base_color.png"')
+        ->and($manifest)->toContain('path: "'.$directory.'/bump.png"')
+        ->and($manifest)->toContain('path: "'.$directory.'/glossiness.png"')
         ->and($manifest)->toContain('bucket: "prismfs-dev"')
         ->and(substr_count($manifest, '  - path: '))->toBe(3)
         ->and($material?->fresh()?->currentVersion?->packageFor($variant)?->is($package))->toBeTrue();

@@ -73,12 +73,27 @@ impl ObjectCache for MemoryCache {
     }
 
     async fn put(&self, key: CacheKey, value: Bytes) -> Result<()> {
-        self.entries.insert(key, value);
+        let size = value.len();
+        let previous = self.entries.insert(key, value);
+        metrics::gauge!("prismfs_cache_bytes").increment(size as f64);
+        if let Some(previous) = previous {
+            metrics::gauge!("prismfs_cache_bytes").decrement(previous.len() as f64);
+        } else {
+            metrics::gauge!("prismfs_cache_entries").increment(1.0);
+        }
         Ok(())
     }
 
     async fn invalidate(&self, object: &ObjectRef) -> Result<()> {
-        self.entries.retain(|key, _| &key.object != object);
+        self.entries.retain(|key, value| {
+            if &key.object == object {
+                metrics::gauge!("prismfs_cache_bytes").decrement(value.len() as f64);
+                metrics::gauge!("prismfs_cache_entries").decrement(1.0);
+                false
+            } else {
+                true
+            }
+        });
         Ok(())
     }
 }

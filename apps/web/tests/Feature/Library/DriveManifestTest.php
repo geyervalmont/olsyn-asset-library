@@ -20,6 +20,7 @@ use App\Models\Supplier;
 use App\Models\Target;
 use Database\Seeders\LibrarySeeder;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 function solidPng(int $grey): string
 {
@@ -111,4 +112,43 @@ test('restricted materials appear only on drives that were granted access', func
         ->assertSuccessful();
 
     $this->artisan('opal:drive:manifest', ['drive' => 'nope'])->assertFailed();
+});
+
+test('stable drive paths survive renames and retain published versions and converter generations', function () {
+    $drive = Drive::factory()->create(['path_layout' => 'stable']);
+    $namespace = app(DriveNamespace::class);
+    $package = publishablePackage($this->ashen);
+    $first = app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
+    $original = $namespace->entries($drive);
+    $derivative = $package->derivatives()->firstOrFail();
+    expect($original)->toHaveCount(2)
+        ->and($original[0]['path'])->toStartWith('/materials/by-id/'.$this->material->uuid.'/'.$this->ashen->uuid.'/v1/revit/2k/'.$derivative->uuid.'/')
+        ->and(Str::isUuid($derivative->uuid, version: 7))->toBeTrue();
+
+    $this->material->update(['name' => 'New material name']);
+    $this->ashen->update(['name' => 'New colour name']);
+    expect(array_column($namespace->entries($drive), 'path'))->toBe(array_column($original, 'path'));
+
+    $next = PackageDerivative::factory()->for($package)->create(['converter_version' => '2.0.0', 'built_at' => now()->addMinute()]);
+    foreach ($derivative->derivativeFiles as $item) {
+        $next->derivativeFiles()->create(['file_id' => $item->file_id, 'map_role_id' => $item->map_role_id, 'colour_space' => $item->colour_space]);
+    }
+    expect($namespace->entries($drive))->toHaveCount(4)
+        ->and(array_unique(array_column($namespace->entriesForVariant($drive, $this->ashen, $first->number), 'derivative_uuid')))->toBe([$next->uuid]);
+
+    publishablePackage($this->ashen);
+    $second = app(PublishVersion::class)->handle(app(CutVersion::class)->handle($this->material));
+    $entries = $namespace->entries($drive);
+    expect($entries)->toHaveCount(6)
+        ->and(array_diff(array_column($original, 'path'), array_column($entries, 'path')))->toBe([])
+        ->and(array_unique(array_column($namespace->entriesForVariant($drive, $this->ashen), 'material_version')))->toBe([$second->number])
+        ->and($namespace->entriesForVariant($drive, $this->ashen, $first->number))->toHaveCount(2);
+
+    // Unpublished snapshots must not become readable, and revocation still applies to history.
+    app(CutVersion::class)->handle($this->material);
+    expect($namespace->entries($drive))->toHaveCount(6);
+    app(SetMaterialVisibility::class)->handle($this->material, Visibility::Restricted);
+    expect($namespace->entries($drive))->toBe([]);
+    app(GrantMaterialAccess::class)->handle($this->material, $drive);
+    expect($namespace->entries($drive))->toHaveCount(6);
 });

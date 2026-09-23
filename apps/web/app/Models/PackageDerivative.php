@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPermanentUuid;
 use Database\Factories\PackageDerivativeFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,6 +19,7 @@ use LogicException;
  * The cache key is package + target + quality + converter + version. Rows and
  * their files are immutable: a converter change creates another generation.
  *
+ * @property string $uuid
  * @property int $id
  * @property int $package_id
  * @property int $target_id
@@ -35,7 +37,7 @@ use LogicException;
 class PackageDerivative extends Model
 {
     /** @use HasFactory<PackageDerivativeFactory> */
-    use HasFactory;
+    use HasFactory, HasPermanentUuid;
 
     protected static function booted(): void
     {

@@ -17,6 +17,7 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property string $name
  * @property string $slug
+ * @property string $path_layout
  * @property string $root_path
  * @property int|null $tenant_id
  * @property int|null $target_id
@@ -27,7 +28,7 @@ use Illuminate\Support\Str;
  * @property-read Tenant|null $tenant
  * @property-read Target|null $target
  */
-#[Fillable(['name', 'slug', 'root_path', 'tenant_id', 'target_id', 'description', 'is_active'])]
+#[Fillable(['name', 'slug', 'root_path', 'tenant_id', 'target_id', 'description', 'is_active', 'path_layout'])]
 class Drive extends Model
 {
     /** @use HasFactory<DriveFactory> */

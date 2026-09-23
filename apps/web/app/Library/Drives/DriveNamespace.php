@@ -22,11 +22,15 @@ class DriveNamespace
     public const MANIFEST_VERSION = 1;
 
     /**
-     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string}>
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string, current?: bool, latest_cache?: bool, material_uuid?: string, variant_uuid?: string, material_version?: int, derivative_uuid?: string}>
      */
     public function entries(Drive $drive): array
     {
-        /** @var list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string}> $entries */
+        if ($drive->path_layout === 'stable') {
+            return $this->stableEntries($drive);
+        }
+
+        /** @var list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string, current?: bool, latest_cache?: bool, material_uuid?: string, variant_uuid?: string, material_version?: int, derivative_uuid?: string}> $entries */
         $entries = [];
 
         $materials = Material::query()
@@ -100,14 +104,66 @@ class DriveNamespace
     /**
      * The entries a drive projects for one variant.
      *
-     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string}>
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string, current?: bool, latest_cache?: bool, material_uuid?: string, variant_uuid?: string, material_version?: int, derivative_uuid?: string}>
      */
-    public function entriesForVariant(Drive $drive, Variant $variant): array
+    public function entriesForVariant(Drive $drive, Variant $variant, ?int $version = null): array
     {
         return array_values(array_filter(
             $this->entries($drive),
-            fn (array $entry): bool => $entry['variant'] === $variant->code,
+            fn (array $entry): bool => $entry['variant'] === $variant->code
+                && ($version === null ? ($entry['current'] ?? true) : (($entry['material_version'] ?? null) === $version && ($entry['latest_cache'] ?? false))),
         ));
+    }
+
+    /**
+     * Immutable paths retain every published version and converter generation.
+     * Visibility is still evaluated now, so retention never bypasses revocation.
+     *
+     * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string, current?: bool, latest_cache?: bool, material_uuid?: string, variant_uuid?: string, material_version?: int, derivative_uuid?: string}>
+     */
+    private function stableEntries(Drive $drive): array
+    {
+        $entries = [];
+        $materials = Material::query()->visibleToDrive($drive)->with([
+            'versions' => fn ($query) => $query->whereNotNull('published_at'),
+            'versions.packages.variant', 'versions.packages.derivatives.target',
+            'versions.packages.derivatives.quality', 'versions.packages.derivatives.derivativeFiles.file',
+            'versions.packages.derivatives.derivativeFiles.role',
+        ])->get();
+        foreach ($materials as $material) {
+            foreach ($material->versions as $version) {
+                foreach ($version->packages as $package) {
+                    $current = collect($this->currentDerivatives($package, $drive))->pluck('id')->all();
+                    foreach ($package->derivatives as $derivative) {
+                        if ($derivative->source_sha256 !== $package->sha256
+                            || ($drive->target_id !== null && $derivative->target_id !== $drive->target_id)) {
+                            continue;
+                        }
+                        foreach ($derivative->derivativeFiles as $item) {
+                            $file = $item->file;
+                            $path = implode('/', [$drive->root_path, 'by-id', $material->uuid, $package->variant->uuid,
+                                'v'.$version->number, $derivative->target->slug, $derivative->quality->slug,
+                                $derivative->uuid, $item->role->slug.($file->extension ? '.'.$file->extension : '')]);
+                            $entries[] = [
+                                'path' => $path, 'object' => $this->object($file), 'file_id' => $file->id,
+                                'variant' => $package->variant->code, 'target' => $derivative->target->slug,
+                                'quality' => $derivative->quality->slug, 'role' => $item->role->slug,
+                                'sha256' => $file->sha256, 'mime_type' => $file->mime_type,
+                                'source_package_sha256' => $package->sha256, 'converter' => $derivative->converter,
+                                'converter_version' => $derivative->converter_version,
+                                'material_uuid' => $material->uuid, 'variant_uuid' => $package->variant->uuid,
+                                'material_version' => $version->number, 'derivative_uuid' => $derivative->uuid,
+                                'latest_cache' => in_array($derivative->id, $current, true),
+                                'current' => $material->current_version_id === $version->id && in_array($derivative->id, $current, true),
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+        usort($entries, fn (array $a, array $b): int => strcmp($a['path'], $b['path']));
+
+        return $entries;
     }
 
     public function toYaml(Drive $drive): string

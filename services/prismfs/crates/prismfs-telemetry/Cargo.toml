@@ -8,6 +8,7 @@ authors.workspace = true
 [dependencies]
 humantime.workspace = true
 metrics.workspace = true
+metrics-exporter-prometheus = { version = "0.18.3", default-features = false, features = ["http-listener"] }
 prismfs-core.workspace = true
 serde.workspace = true
 tracing.workspace = true

@@ -423,6 +423,10 @@ new class extends Component
                 @if ($material->collection)<span>{{ $material->collection }}</span>@endif
                 @if ($material->tile_width_mm)<span>{{ (float) $material->tile_width_mm }} × {{ (float) $material->tile_height_mm }} mm</span>@endif
             </div>
+            <details class="ui-muted" style="margin-top: 8px; font-size: 12px">
+                <summary>{{ __('Permanent material ID') }}</summary>
+                <code data-test="material-uuid" style="user-select: all">{{ $material->uuid }}</code>
+            </details>
         </div>
         <div class="ui-page-head__actions">
             <x-ui.badge :tone="match ($material->status->value) { 'active' => 'success', 'archived' => 'neutral', default => 'warning' }" dot>{{ $material->status->label() }}</x-ui.badge>
@@ -592,6 +596,10 @@ new class extends Component
                         <div>
                             <strong>{{ $variant->name }}</strong>
                             <span class="ui-code" style="margin-left: 8px">{{ $variant->code }}</span>
+                            <details class="ui-muted" style="font-size: 12px">
+                                <summary>{{ __('Permanent colourway ID') }}</summary>
+                                <code style="user-select: all">{{ $variant->uuid }}</code>
+                            </details>
                             <p class="ui-variant__attrs">
                                 @forelse ($variant->attributes as $attribute)
                                     <span>{{ $attribute->type->name }}: {{ $attribute->value }}@if ($attribute->supplier_code) ({{ $attribute->supplier_code }})@endif</span>

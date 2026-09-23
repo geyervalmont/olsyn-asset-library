@@ -7,6 +7,7 @@ use App\Enums\Permission;
 use App\Enums\Visibility;
 use App\Library\MaterialCodes;
 use App\Models\Concerns\HasAliases;
+use App\Models\Concerns\HasPermanentUuid;
 use App\Models\Concerns\HasProvenance;
 use App\Models\Concerns\HasTags;
 use App\Models\Concerns\Searchable;
@@ -27,6 +28,7 @@ use LogicException;
  * A material in the OPAL library. Owned by the library, never by a tenant;
  * contributions are recorded, not ownership.
  *
+ * @property string $uuid
  * @property int $id
  * @property string $code
  * @property string $name
@@ -67,7 +69,7 @@ use LogicException;
 class Material extends Model
 {
     /** @use HasFactory<MaterialFactory> */
-    use HasAliases, HasFactory, HasProvenance, HasTags, Searchable;
+    use HasAliases, HasFactory, HasPermanentUuid, HasProvenance, HasTags, Searchable;
 
     private bool $recoding = false;
 
@@ -130,6 +132,10 @@ class Material extends Model
      */
     public static function resolveCode(string $code): ?self
     {
+        if (Str::isUuid(trim($code))) {
+            return static::query()->where('uuid', strtolower(trim($code)))->first();
+        }
+
         $code = strtoupper(trim($code));
 
         $material = static::query()->where('code', $code)->first();

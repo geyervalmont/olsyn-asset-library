@@ -59,6 +59,7 @@ new #[Title('Drives')] class extends Component {
 
         Drive::create([
             'name' => $validated['name'],
+            'path_layout' => 'stable',
             'root_path' => $validated['root_path'],
             'target_id' => $validated['target_id'] !== '' ? (int) $validated['target_id'] : null,
         ]);
@@ -75,7 +76,7 @@ new #[Title('Drives')] class extends Component {
         <div>
             <x-ui.eyebrow>{{ __('Delivery') }}</x-ui.eyebrow>
             <h1>{{ __('Drives') }}</h1>
-            <p class="ui-page-head__lede">{{ __('A drive is a namespace PrismFS projects: the current version of every material it can see, at the targets it serves.') }}</p>
+            <p class="ui-page-head__lede">{{ __('New drives use permanent UUID paths and retain published versions. Existing friendly-path drives keep their original layout.') }}</p>
         </div>
     </div>
 
@@ -99,7 +100,7 @@ new #[Title('Drives')] class extends Component {
                     <thead>
                         <tr>
                             <th>{{ __('Drive') }}</th>
-                            <th>{{ __('Root') }}</th>
+                            <th>{{ __('Root') }}</th><th>{{ __('Path layout') }}</th>
                             <th>{{ __('Target') }}</th>
                             <th>{{ __('Files') }}</th>
                             <th>{{ __('Token') }}</th>
@@ -110,7 +111,7 @@ new #[Title('Drives')] class extends Component {
                         @foreach ($this->drives as $row)
                             <tr wire:key="drive-{{ $row['drive']->id }}" data-test="drive-row">
                                 <td><strong style="color: var(--ui-ink)">{{ $row['drive']->name }}</strong> <span class="ui-code">{{ $row['drive']->slug }}</span></td>
-                                <td><span class="ui-code">{{ $row['drive']->root_path }}</span></td>
+                                <td><span class="ui-code">{{ $row['drive']->root_path }}</span></td><td>{{ $row['drive']->path_layout === 'stable' ? 'UUID · versioned' : 'Friendly · latest' }}</td>
                                 <td>{{ $row['drive']->target?->name ?? __('All targets') }}</td>
                                 <td data-test="drive-entries">{{ $row['entries'] }}</td>
                                 <td>{{ $row['drive']->hasToken() ? __('Issued :when', ['when' => $row['drive']->token_issued_at?->diffForHumans()]) : __('None') }}</td>

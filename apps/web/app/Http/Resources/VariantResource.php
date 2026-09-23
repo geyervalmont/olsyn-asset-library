@@ -18,8 +18,10 @@ class VariantResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'uuid' => $this->uuid,
             'code' => $this->code,
             'name' => $this->name,
+            'material_uuid' => $this->whenLoaded('material', fn () => $this->material->uuid),
             'material_code' => $this->whenLoaded('material', fn () => $this->material->code),
             'attributes' => $this->whenLoaded('attributes', fn () => $this->attributes->map(fn (VariantAttribute $attribute): array => [
                 'type' => $attribute->type->slug,

@@ -51,7 +51,7 @@ impl RemoteManifest {
             .with_context(|| format!("manifest request to {} failed", self.url))?;
 
         match response.status() {
-            StatusCode::NOT_MODIFIED => Ok(None),
+            StatusCode::NOT_MODIFIED if self.etag.is_some() => Ok(None),
             StatusCode::OK => {
                 let etag = response
                     .headers()
@@ -74,6 +74,12 @@ impl RemoteManifest {
         }
     }
 
+    /// Do not acknowledge a parsed manifest that failed semantic validation.
+    /// Otherwise the next 304 could incorrectly report a rejected snapshot as healthy.
+    pub fn reject(&mut self) {
+        self.etag = None;
+    }
+
     /// Performs the first fetch on a private runtime, before any mount exists.
     pub fn fetch_initial(&mut self) -> Result<NamespaceManifest> {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -83,5 +89,70 @@ impl RemoteManifest {
         runtime
             .block_on(self.fetch())?
             .context("the control plane answered 304 to a first fetch")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
+    #[test]
+    fn rejecting_a_snapshot_forces_a_full_fetch() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let url = format!(
+            "http://{}/manifest.yaml",
+            listener.local_addr().expect("address")
+        );
+        let server = thread::spawn(move || {
+            for index in 0..3 {
+                let (mut stream, _) = listener.accept().expect("request");
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .expect("timeout");
+                let mut request = Vec::new();
+                let mut byte = [0];
+                while !request.ends_with(b"\r\n\r\n") {
+                    stream.read_exact(&mut byte).expect("headers");
+                    request.push(byte[0]);
+                }
+                let request = String::from_utf8(request)
+                    .expect("header text")
+                    .to_lowercase();
+                assert_eq!(request.contains("if-none-match:"), index == 1);
+                let response = if index == 1 {
+                    "HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n".to_owned()
+                } else {
+                    let body = "version: 1\nfiles: []\n";
+                    format!(
+                        "HTTP/1.1 200 OK\r\nETag: \"snapshot\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                };
+                stream.write_all(response.as_bytes()).expect("response");
+            }
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let mut remote = RemoteManifest::new(url, "token").expect("client");
+        runtime.block_on(async {
+            assert!(remote.fetch().await.expect("first fetch").is_some());
+            assert!(remote.fetch().await.expect("unchanged").is_none());
+            remote.reject();
+            assert!(
+                remote
+                    .fetch()
+                    .await
+                    .expect("retry rejected manifest")
+                    .is_some()
+            );
+        });
+        server.join().expect("server");
     }
 }

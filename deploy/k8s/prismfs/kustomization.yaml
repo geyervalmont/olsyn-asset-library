@@ -15,6 +15,7 @@ resources:
   - secret.yaml
   - deployment.yaml
   - service.yaml
+  - metrics-service.yaml
 
 labels:
   - includeSelectors: true

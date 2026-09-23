@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: opal
+resources:
+  - ..
+patches:
+  # Credentials are provisioned directly; never apply the example Secret.
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: prismfs-studio-share
+      $patch: delete
+  - patch: |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: prismfs-studio-share
+      spec:
+        type: ClusterIP
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: prismfs-studio-share
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              node-role: opal
+            imagePullSecrets:
+              - name: ghcr-secret

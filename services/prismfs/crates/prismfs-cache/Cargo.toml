@@ -9,6 +9,7 @@ authors.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 dashmap.workspace = true
+metrics.workspace = true
 prismfs-core.workspace = true
 
 [dev-dependencies]

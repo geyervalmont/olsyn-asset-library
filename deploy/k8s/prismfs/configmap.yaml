@@ -21,5 +21,6 @@ data:
   PRISMFS_MOUNTPOINT: /srv/prismfs
   PRISMFS_SMB_SHARE: opal
   PRISMFS_SMB_USER: opal
+  PRISMFS_METRICS_LISTEN: "0.0.0.0:9090"
   PRISMFS_LOG_FORMAT: json
   RUST_LOG: prismfs=info

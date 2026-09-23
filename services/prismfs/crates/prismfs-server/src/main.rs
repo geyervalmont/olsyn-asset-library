@@ -3,6 +3,7 @@ use std::{
     env,
     fs::{self, File},
     io::BufReader,
+    net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -72,6 +73,9 @@ enum Command {
     },
     /// Mount an S3-backed namespace as a read-only FUSE filesystem.
     Mount {
+        /// Private scrape listener. Disabled unless configured; never expose publicly.
+        #[arg(long, env = "PRISMFS_METRICS_LISTEN")]
+        metrics_listen: Option<SocketAddr>,
         /// Directory to create and use as the mountpoint.
         #[arg(long, env = "PRISMFS_MOUNTPOINT", default_value = "mnt")]
         mountpoint: PathBuf,
@@ -148,6 +152,7 @@ fn main() -> Result<()> {
             check_s3,
         ),
         Command::Mount {
+            metrics_listen,
             mountpoint,
             manifest,
             manifest_url,
@@ -161,6 +166,10 @@ fn main() -> Result<()> {
             audit_queue,
             audit_operations,
         } => {
+            if let Some(address) = metrics_listen {
+                prismfs_telemetry::install_metrics(address)
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            }
             let audit = AuditSettings::new(
                 audit_url,
                 manifest_url.as_deref(),
@@ -304,17 +313,32 @@ fn spawn_refresher(
                 loop {
                     tokio::time::sleep(interval).await;
                     match remote.fetch().await {
-                        Ok(None) => {}
+                        Ok(None) => prismfs_telemetry::record_manifest(true, None),
                         Ok(Some(manifest)) => match refresh(&manifest, &bucket) {
                             Ok(namespace) => match target.replace(namespace) {
                                 Ok(()) => {
+                                    prismfs_telemetry::record_manifest(
+                                        true,
+                                        Some(manifest.files.len()),
+                                    );
                                     info!(files = manifest.files.len(), "namespace refreshed")
                                 }
-                                Err(error) => warn!(%error, "namespace swap failed"),
+                                Err(error) => {
+                                    prismfs_telemetry::record_manifest(false, None);
+                                    remote.reject();
+                                    warn!(%error, "namespace swap failed");
+                                }
                             },
-                            Err(error) => warn!(%error, "refreshed manifest rejected"),
+                            Err(error) => {
+                                prismfs_telemetry::record_manifest(false, None);
+                                remote.reject();
+                                warn!(%error, "refreshed manifest rejected");
+                            }
                         },
-                        Err(error) => warn!(%error, "manifest refresh failed"),
+                        Err(error) => {
+                            prismfs_telemetry::record_manifest(false, None);
+                            warn!(%error, "manifest refresh failed");
+                        }
                     }
                 }
             });
@@ -415,8 +439,10 @@ fn mount(
     let manifest = source.load()?;
     let bucket = serving_bucket(&manifest)?;
     let swappable = Arc::new(SwappableNamespace::new(namespace(&manifest)?));
+    prismfs_telemetry::record_manifest(true, Some(manifest.files.len()));
     audit.start()?;
     if let ManifestSource::Remote(remote) = source {
+        prismfs_telemetry::record_remote_manifest();
         info!(
             url = remote.url(),
             interval_secs = refresh_interval.as_secs(),
