@@ -85,6 +85,8 @@ spec:
                 --guest-account root \
                 --user "$PRISMFS_SMB_USER" > /etc/samba/smb.conf
               testparm -s /etc/samba/smb.conf >/dev/null
+              umask 077
+              printf 'username = %s\npassword = %s\n' "$PRISMFS_SMB_USER" "$PRISMFS_SMB_PASSWORD" > /run/samba/health.auth
               exec smbd --foreground --no-process-group --debug-stdout
           envFrom:
             - configMapRef:
@@ -113,5 +115,15 @@ spec:
               memory: 512Mi
           readinessProbe:
             exec:
-              command: ["sh", "-c", "smbclient //127.0.0.1/$PRISMFS_SMB_SHARE -U \"$PRISMFS_SMB_USER%$PRISMFS_SMB_PASSWORD\" -c ls >/dev/null"]
-            periodSeconds: 10
+              command:
+                - sh
+                - -ec
+                - |
+                  if [ -n "${PRISMFS_PROBE_PATH:-}" ] && [ -n "${PRISMFS_PROBE_SHA256:-}" ]; then
+                    smbclient "//127.0.0.1/$PRISMFS_SMB_SHARE" -A /run/samba/health.auth -c "get \"$PRISMFS_PROBE_PATH\" /run/samba/probe.bin" >/dev/null
+                    printf '%s  %s\n' "$PRISMFS_PROBE_SHA256" /run/samba/probe.bin | sha256sum -c - >/dev/null
+                  else
+                    smbclient "//127.0.0.1/$PRISMFS_SMB_SHARE" -A /run/samba/health.auth -c ls >/dev/null
+                  fi
+            timeoutSeconds: 20
+            periodSeconds: 30

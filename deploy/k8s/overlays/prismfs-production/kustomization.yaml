@@ -30,3 +30,18 @@ patches:
               node-role: opal
             imagePullSecrets:
               - name: ghcr-secret
+
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: prismfs-studio-share
+      data:
+        PRISMFS_PROBE_PATH: "materials/by-id/01a0cc9b-850a-7443-8e2e-b4afb63683bb/01a0cc9b-8725-739b-8051-41333d1ec4e8/v1/revit/preview/01a0cc9b-891f-7c66-baa0-04b3a4046794/base_color.jpg"
+        PRISMFS_PROBE_SHA256: "ea7fd0b31e9a3e439a329be2ca66c715af6be7f77644fa9b44386cb76e780ae1"
+
+images:
+  - name: ghcr.io/geyervalmont/prismfs
+    newTag: sha-ec9322ecc1b7170d3b122d252d0f60c97c3e6729
+  - name: ghcr.io/geyervalmont/prismfs-samba
+    newTag: sha-ec9322ecc1b7170d3b122d252d0f60c97c3e6729

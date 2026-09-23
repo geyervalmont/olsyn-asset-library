@@ -30,10 +30,24 @@ The separate monitoring bundle requires Prometheus Operator CRDs, kube-state-met
 
 Metrics cover filesystem operations/results, read duration, bytes, cache hits/misses/bytes/entries, handles, manifest freshness/file count, and audit queue/delivery/loss. Only validated manifest loads or subsequent unchanged responses advance freshness. Invalid manifests retain the previous namespace and clear the ETag so a subsequent 304 cannot mask rejection.
 
-Alerts cover an absent/unreachable exporter, stale manifests, failed/slow reads, restarts, unavailable SMB replica, failed audit shipping, dropped audit events and memory pressure. They use the cluster's existing Alertmanager routing; no notification destination is configured here. SMB readiness performs an authenticated directory listing. This is not a file-content or workstation-to-share availability probe.
+Alerts cover an absent/unreachable exporter, stale manifests, failed/slow reads, restarts, unavailable SMB replica, failed audit shipping, dropped audit events and memory pressure. They use the cluster's existing Alertmanager routing; no notification destination is configured here. When `PRISMFS_PROBE_PATH` and `PRISMFS_PROBE_SHA256` are configured, SMB readiness downloads that file and verifies its SHA-256 every 30 seconds (otherwise it lists the directory). Production pins a 1,152-byte published texture. This verifies the SMB/FUSE read path, including cached reads; it is not a workstation-to-share availability probe or a forced S3 fetch on every run.
+
+## Production deployment — 23 September 2026
+
+The application is deployed as `ghcr.io/geyervalmont/opal:sha-ec9322e`. UUIDv7 backfill completed for 334 materials, 6,494 variants and 8,504 derivatives, with no missing, invalid or duplicate UUIDs. All four app workloads and the public health endpoint passed.
+
+`studio-share` is provisioned with stable paths and 12,291 manifest files. The private drive runs on the OPAL node using its S3 instance role and pinned PrismFS/Samba images from commit `ec9322ecc1b7170d3b122d252d0f60c97c3e6729`. The `prismfs-studio-share` Kubernetes Secret holds its generated drive token and SMB password. The production overlay excludes the example Secret, so redeploying does not overwrite credentials.
+
+```sh
+kubectl --context olsyn-edge apply -k deploy/k8s/overlays/prismfs-production
+kubectl --context olsyn-edge -n opal rollout status deployment/prismfs-studio-share
+kubectl --context olsyn-edge apply -k deploy/k8s/prismfs/monitoring
+```
+
+The service is ClusterIP only: `prismfs-studio-share.opal.svc.cluster.local:445`, share `opal`. It is not publicly exposed or yet reachable from ordinary designer workstations. A separate client pod downloaded the pinned file through this service and verified its SHA-256; the continuous readiness check also passed. Prometheus reported the scrape target up, the 12,291 files, successful audit delivery, and all nine alert rules healthy/inactive. Grafana loaded [OPAL · Material drive](https://grafana.olsyn.com/d/opal-prismfs).
 
 ## Remaining production work
 
-The production share is not provisioned by these changes. Confirm office/VPN reachability and a permanent private DNS/UNC name, provision credentials and the drive token, pin container images, deploy the drive, then install monitoring. Validate a real Windows/Revit client and a remote SMB canary that downloads a known published file and checks SHA-256. Exercise restart and control-plane/S3 outage recovery before relying on project paths.
+Confirm office/VPN reachability and a permanent private DNS/UNC name, then validate a real Windows/Revit client and a canary from that network. Exercise restart and control-plane/S3 outage recovery before relying on project paths.
 
 The existing in-memory range cache is still unbounded and nonpersistent; memory monitoring makes growth visible but does not fix it. Existing friendly-path open handles are not pinned across namespace replacement. The template is still one replica using Recreate, so deployments interrupt the share. These limitations need separate hardening before claiming production reliability or offline availability.

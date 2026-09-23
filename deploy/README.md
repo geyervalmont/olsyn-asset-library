@@ -232,3 +232,13 @@ goes anywhere near the cluster:
 
 Its namespace, registry and bucket now match the app, so when those three are
 settled it drops into the same overlay with one line.
+
+### Private production drive
+
+The drive is now deployed through `deploy/k8s/overlays/prismfs-production/`.
+That overlay pins the images, schedules on the OPAL node for its S3 instance
+role, keeps SMB behind a ClusterIP, and excludes the placeholder Secret.
+Credentials are already provisioned in `opal/prismfs-studio-share`; do not
+apply the base example Secret over them. Office/VPN access is still pending.
+See [identity and monitoring](../docs/material-identity-and-drive-monitoring.md)
+for deployment commands, the read/checksum probe, dashboard and remaining limits.

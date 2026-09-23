@@ -50,7 +50,7 @@ spec:
             severity: critical
           annotations:
             summary: The PrismFS SMB share has no ready replica
-            description: Readiness includes an authenticated SMB directory listing. Check Samba and the FUSE mount.
+            description: Readiness authenticates over SMB and, when a canary is configured, downloads it and checks SHA-256. Check Samba, the FUSE mount and object storage.
         - alert: PrismFSAuditDeliveryFailing
           expr: sum by (namespace, pod) (increase(prismfs_audit_batches_total{result="error"}[5m])) > 0
           for: 5m
