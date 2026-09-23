@@ -40,7 +40,7 @@ class UseCurrentTenant
 
             return redirect()
                 ->route('dashboard')
-                ->with('status', __('Choose a workspace to continue.'));
+                ->with('status', config('opal.workspace.single') ? __('Your team access needs to be set up.') : __('Choose a workspace to continue.'));
         }
 
         $tenant->makeCurrent();

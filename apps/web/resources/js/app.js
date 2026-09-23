@@ -1033,7 +1033,7 @@ document.addEventListener('alpine:init', () => {
             const [first] = this.live;
 
             if (! first) {
-                return this.sessions.length > 0 ? 'Revit lost' : 'No Revit';
+                return this.sessions.length > 0 ? 'Revit offline' : 'Connect Revit';
             }
 
             const extra = this.live.length > 1 ? ` +${this.live.length - 1}` : '';
@@ -1047,7 +1047,7 @@ document.addEventListener('alpine:init', () => {
             if (! first) {
                 return this.sessions.length > 0
                     ? 'Revit stopped sending heartbeats'
-                    : 'No Revit connected. Open OPAL → Connect in Revit.';
+                    : 'Connect Revit through OPAL → Settings → Connect account.';
             }
 
             return this.live.map((session) => [session.machine, session.document].filter(Boolean).join(' · ')).join('\n');

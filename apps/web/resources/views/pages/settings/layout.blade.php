@@ -3,9 +3,9 @@
         <flux:navlist aria-label="{{ __('Settings') }}">
             <flux:navlist.item :href="route('profile.edit')" wire:navigate>{{ __('Profile') }}</flux:navlist.item>
             <flux:navlist.item :href="route('security.edit')" wire:navigate>{{ __('Security') }}</flux:navlist.item>
-            <flux:navlist.item :href="route('api-tokens.edit')" wire:navigate>{{ __('API tokens') }}</flux:navlist.item>
+            <flux:navlist.item :href="route('connect')" wire:navigate>{{ __('Connect your tools') }}</flux:navlist.item>
+            <flux:navlist.item :href="route('api-tokens.edit')" wire:navigate>{{ __('Developer access') }}</flux:navlist.item>
             <flux:navlist.item :href="route('sessions.edit')" wire:navigate>{{ __('Revit sessions') }}</flux:navlist.item>
-            <flux:navlist.item :href="route('revit.edit')" wire:navigate>{{ __('Revit extension') }}</flux:navlist.item>
         </flux:navlist>
     </div>
 

@@ -71,15 +71,17 @@ test('the library uses consistent renders instead of raw maps and toggles to a t
     $this->actingAs($this->viewer)->get(route('materials.index', ['view' => 'table']))->assertOk()->assertSee('data-test="material-row"', false);
 });
 
-test('library files stream to signed-in users with immutable caching', function () {
+test('visible library files stream to signed-in users with access rechecked on each request', function () {
     $file = app(FileStore::class)->store("hello\n", 'note.txt', 'text/plain');
+    $variant = app(AddVariant::class)->handle(Material::factory()->create(), ['colourway' => 'Visible']);
+    app(CreateRepresentation::class)->handle($variant, 'pbr', '1k', ['base_color' => $file]);
 
     $this->get($file->url())->assertRedirect(route('login'));
 
     $this->actingAs($this->viewer)
         ->get($file->url())
         ->assertOk()
-        ->assertHeader('Cache-Control', 'immutable, max-age=31536000, private')
+        ->assertHeader('Cache-Control', 'no-store, private')
         ->assertStreamedContent("hello\n");
 });
 

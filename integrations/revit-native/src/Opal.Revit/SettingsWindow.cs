@@ -77,11 +77,18 @@ public sealed class SettingsWindow : Window
         body.Children.Add(activity);
         body.Children.Add(update);
 
-        body.Children.Add(Section("Material files"));
-        body.Children.Add(Label("OPAL drive"));
-        body.Children.Add(drive);
-        body.Children.Add(Label("Local mount or network path"));
-        body.Children.Add(mount);
+        var materialFiles = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+        materialFiles.Children.Add(Text("Use the material drive supplied by your workspace administrator.", 12));
+        materialFiles.Children.Add(Label("OPAL drive"));
+        materialFiles.Children.Add(drive);
+        materialFiles.Children.Add(Label("Local mount or network path"));
+        materialFiles.Children.Add(mount);
+        body.Children.Add(new Expander
+        {
+            Header = "Existing material drive settings",
+            Content = materialFiles,
+            Margin = new Thickness(0, 16, 0, 0),
+        });
 
         body.Children.Add(Section("Updates"));
         body.Children.Add(autoUpdate);

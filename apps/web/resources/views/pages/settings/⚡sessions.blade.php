@@ -56,7 +56,7 @@ new #[Title('Revit sessions')] class extends Component {
                     <flux:button wire:click="end({{ $session->id }})" size="sm" variant="ghost" data-test="end-session">{{ __('End') }}</flux:button>
                 </li>
             @empty
-                <li class="py-3 text-sm text-zinc-500" data-test="no-sessions">{{ __('No client is connected. In Revit, OPAL → Connect links this account and keeps a session open while Revit runs.') }}</li>
+                <li class="py-3 text-sm text-zinc-500" data-test="no-sessions">{{ __('No client is connected. In Revit, choose OPAL → Settings → Connect account.') }}</li>
             @endforelse
         </ul>
     </x-pages::settings.layout>

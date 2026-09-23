@@ -21,6 +21,9 @@ data:
   APP_ENV: production
   APP_DEBUG: "false"
   APP_URL: https://opal.olsyn.com
+  OPAL_SINGLE_WORKSPACE: "true"
+  OPAL_WORKSPACE_SLUG: olsyn
+  OPAL_WORKSPACE_AUTO_JOIN: "true"
   # Self-hosted R&D backend validated with a complete 1K photo job.
   OPAL_SYNTHESIS_ENABLED: "true"
   OPAL_SYNTHESIS_CLEANUP_ENABLED: "true"

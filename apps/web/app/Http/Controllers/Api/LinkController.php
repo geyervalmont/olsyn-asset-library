@@ -6,6 +6,7 @@ use App\Models\DeviceLink;
 use App\Support\Realtime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class LinkController
@@ -41,7 +42,7 @@ class LinkController
             'expires_at' => $link->expires_at->toIso8601String(),
             'verify_url' => route('link', ['code' => $link->code]),
             'poll_interval' => 2,
-        ], 201);
+        ], 201, ['Cache-Control' => 'no-store']);
     }
 
     /**
@@ -53,29 +54,31 @@ class LinkController
     {
         $validated = $request->validate(['secret' => ['required', 'string']]);
 
-        $link = DeviceLink::findByCode($code);
+        return DB::transaction(function () use ($code, $validated): JsonResponse {
+            $link = DeviceLink::query()->where('code', DeviceLink::normaliseCode($code))->lockForUpdate()->first();
 
-        abort_if($link === null || ! $link->secretMatches($validated['secret']), 404);
-        abort_if($link->isExpired(), 410, 'This link code has expired.');
+            abort_if($link === null || ! $link->secretMatches($validated['secret']), 404);
+            abort_if($link->isExpired(), 410, 'This link code has expired.');
 
-        if (! $link->isClaimed()) {
-            return response()->json(['status' => 'pending']);
-        }
+            if (! $link->isClaimed()) {
+                return response()->json(['status' => 'pending'], headers: ['Cache-Control' => 'no-store']);
+            }
 
-        if ($link->isDelivered() || $link->token_plain === null) {
-            return response()->json(['status' => 'delivered']);
-        }
+            if ($link->isDelivered() || $link->token_plain === null) {
+                return response()->json(['status' => 'delivered'], headers: ['Cache-Control' => 'no-store']);
+            }
 
-        $token = $link->token_plain;
-        $user = $link->user;
+            $token = $link->token_plain;
+            $user = $link->user;
 
-        $link->forceFill(['token_plain' => null, 'delivered_at' => now()])->save();
+            $link->forceFill(['token_plain' => null, 'delivered_at' => now()])->save();
 
-        return response()->json([
-            'status' => 'claimed',
-            'token' => $token,
-            'user' => ['name' => $user?->name, 'email' => $user?->email],
-            'realtime' => Realtime::clientConfig(),
-        ]);
+            return response()->json([
+                'status' => 'claimed',
+                'token' => $token,
+                'user' => ['name' => $user?->name, 'email' => $user?->email],
+                'realtime' => Realtime::clientConfig(),
+            ], headers: ['Cache-Control' => 'no-store']);
+        });
     }
 }

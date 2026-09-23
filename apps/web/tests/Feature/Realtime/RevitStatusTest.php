@@ -21,7 +21,7 @@ test('the shell says when no Revit is connected', function () {
         ->assertOk()
         ->assertSee('data-test="revit-status"', false)
         ->assertSee('data-state="off"', false)
-        ->assertSee('No Revit');
+        ->assertSee('Connect Revit');
 });
 
 test('the shell names the machine of a live Revit, and ignores a stale one', function () {

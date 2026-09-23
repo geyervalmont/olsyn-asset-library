@@ -35,6 +35,7 @@ new #[Title('Revit extension')] class extends Component
 
     <x-pages::settings.layout :heading="__('Revit extension')" :subheading="__('Connect Revit directly to OPAL. pyRevit and Python are not required.')">
         <div class="ui-stack" data-test="revit-download">
+            <x-ui.button href="{{ route('connect') }}" variant="quiet" wire:navigate>← {{ __('Connection setup and device status') }}</x-ui.button>
             <x-ui.panel tone="paper">
                 <div class="ui-panel__heading">
                     <div>

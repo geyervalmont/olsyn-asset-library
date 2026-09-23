@@ -187,6 +187,8 @@ test('the jobs page lists runs, filters by status and retries failures', functio
 
 test('every web read of a library file is recorded', function () {
     $file = app(FileStore::class)->store("hello\n", 'note.txt', 'text/plain');
+    $variant = app(AddVariant::class)->handle(Material::factory()->create(), ['colourway' => 'Visible']);
+    app(CreateRepresentation::class)->handle($variant, 'pbr', '1k', ['base_color' => $file]);
 
     $this->actingAs($this->editor)->withHeader('User-Agent', 'pyRevit/5.0')->get($file->url())->assertOk();
 

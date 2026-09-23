@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Actions\Workspace\JoinSharedWorkspace;
 use App\Enums\Permission;
 use App\Enums\Role;
 use App\Services\OlsynAccess;
@@ -119,6 +120,10 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
      */
     public function resolveCurrentTenant(): ?Tenant
     {
+        if (config('opal.workspace.single')) {
+            return app(JoinSharedWorkspace::class)->handle($this);
+        }
+
         $tenant = $this->currentTenant;
 
         if ($tenant !== null && $this->canAccessTenant($tenant)) {

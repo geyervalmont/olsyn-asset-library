@@ -8,7 +8,7 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Title('Link a client')] class extends Component {
+new #[Title('Connect a device')] class extends Component {
     #[Url]
     public string $code = '';
 
@@ -42,23 +42,24 @@ new #[Title('Link a client')] class extends Component {
 <section class="ui-narrow">
     <div class="ui-page-head">
         <div>
-            <x-ui.eyebrow>{{ __('Clients') }}</x-ui.eyebrow>
-            <h1>{{ __('Link a client') }}</h1>
+            <x-ui.eyebrow>{{ __('Connect') }}</x-ui.eyebrow>
+            <h1>{{ __('Connect a device') }}</h1>
         </div>
     </div>
 
     <x-ui.panel data-test="link-panel">
         @if ($linked)
-            <p class="ui-lede" data-test="link-done">{{ __('Linked. Back in the client, the link finishes on its own within a few seconds. The token is listed under Settings → API tokens and can be revoked there.') }}</p>
-            <x-ui.button href="{{ route('api-tokens.edit') }}" variant="secondary" size="sm">{{ __('API tokens') }}</x-ui.button>
+            <p class="ui-lede" data-test="link-done">{{ __('Your device is connected. Return to the application; it will finish signing in automatically.') }}</p>
+            <x-ui.button href="{{ route('connect') }}" variant="secondary" size="sm">{{ __('View your connections') }}</x-ui.button>
         @else
-            <p class="ui-lede">{{ __('Enter the code the client shows. Linking signs the client in as you: it can read what you can read and apply materials in your Revit sessions.') }}</p>
+            <p class="ui-lede">{{ __('Enter the code shown by your OPAL application. It will connect using your account and permissions.') }}</p>
 
+            <p class="ui-modal__note" style="margin-top: 12px">{{ __('Connecting as :email', ['email' => auth()->user()->email]) }}</p>
             <form wire:submit="claim" class="ui-form-row" style="margin-top: 16px">
                 <x-ui.field :label="__('Code')" for="link-code" :error="$errors->first('code')">
                     <input id="link-code" class="ui-input" wire:model.live.debounce.300ms="code" placeholder="XXXX-XXXX" autocomplete="off" spellcheck="false" style="font-family: 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase" data-test="link-code" />
                 </x-ui.field>
-                <x-ui.button type="submit" data-test="link-claim">{{ __('Link this client') }}</x-ui.button>
+                <x-ui.button type="submit" data-test="link-claim">{{ __('Connect this device') }}</x-ui.button>
             </form>
 
             @if ($this->link)

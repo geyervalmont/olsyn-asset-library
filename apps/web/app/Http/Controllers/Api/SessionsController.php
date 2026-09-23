@@ -68,9 +68,13 @@ class SessionsController
      */
     public function heartbeat(Request $request, int $session, TouchClientSession $touch): JsonResponse
     {
-        $validated = $request->validate(['document' => ['nullable', 'string', 'max:255']]);
+        $validated = $request->validate([
+            'document' => ['nullable', 'string', 'max:255'],
+            'drive_status' => ['sometimes', 'in:available,missing,unknown'],
+            'mount_path' => ['nullable', 'string', 'max:255'],
+        ]);
 
-        $touch->handle($this->mine($request, $session), array_key_exists('document', $validated) ? ['document' => $validated['document']] : []);
+        $touch->handle($this->mine($request, $session), $validated);
 
         return response()->json(['data' => ['ok' => true]]);
     }

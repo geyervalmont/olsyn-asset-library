@@ -13,9 +13,13 @@ use App\Http\Controllers\StudioArtifactController;
 use App\Http\Controllers\StudioLivePreviewController;
 use App\Http\Controllers\StudioPhotoController;
 use App\Http\Controllers\Tenants\SwitchTenantController;
+use App\Http\Controllers\WorkspaceHomeController;
+use App\Http\Controllers\WorkspaceJoinController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => auth()->check() ? redirect()->route('materials.index') : view('welcome'))->name('home');
+
+Route::get('join', WorkspaceJoinController::class)->name('workspace.join');
 
 Route::middleware(['signed', 'throttle:120,1'])->group(function () {
     Route::get('m/{material}/qr.svg', PublicMaterialQrCodeController::class)->name('materials.public.qr');
@@ -47,12 +51,15 @@ Route::get('downloads/revit/{channel}/{asset}', [RevitDownloadController::class,
     ->name('revit.download.legacy-channel');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::view('dashboard', 'dashboard')->name('dashboard');
+    Route::get('dashboard', WorkspaceHomeController::class)->name('dashboard');
     Route::livewire('link', 'pages::link')->name('link');
+    Route::livewire('connect', 'pages::connect')->middleware('tenant')->name('connect');
+    Route::view('connect/it', 'connect-it')->middleware('tenant')->name('connect.it');
     Route::post('tenants/{tenant}/switch', SwitchTenantController::class)->name('tenants.switch');
 });
 
 Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
+    Route::livewire('team', 'pages::team')->name('workspace.team');
     Route::livewire('materials', 'pages::materials.index')->name('materials.index');
     Route::livewire('materials/create', 'pages::materials.create')->name('materials.create');
     Route::livewire('materials/studio', 'pages::materials.studio')->name('materials.studio');

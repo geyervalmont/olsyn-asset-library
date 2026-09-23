@@ -4,16 +4,19 @@
 
 @php
     $shellUser = auth()->user();
-    $shellTenant = $shellUser?->currentTenant;
+    $singleWorkspace = config('opal.workspace.single');
+    $shellTenant = $singleWorkspace ? \App\Models\Tenant::current() : $shellUser?->currentTenant;
     $shellTenant = $shellTenant !== null && $shellUser->canAccessTenant($shellTenant) ? $shellTenant : null;
-    $shellTenants = $shellUser?->accessibleTenants()->get() ?? collect();
+    $shellTenants = $singleWorkspace ? collect() : ($shellUser?->accessibleTenants()->get() ?? collect());
     $navigation = array_values(array_filter([
-        ['route' => 'materials.index', 'match' => 'materials.*', 'label' => __('Library'), 'index' => '01', 'show' => $shellUser?->can('materials.view')],
-        ['route' => 'quality.index', 'match' => 'quality.*', 'label' => __('Quality'), 'index' => '02', 'show' => $shellUser?->can('materials.view')],
-        ['route' => 'drives.index', 'match' => 'drives.*', 'label' => __('Drives'), 'index' => '03', 'show' => $shellUser?->can('materials.publish')],
-        ['route' => 'jobs.index', 'match' => 'jobs.*', 'label' => __('Jobs'), 'index' => '04', 'show' => $shellUser?->can('materials.contribute')],
-        ['route' => 'dashboard', 'match' => 'dashboard', 'label' => __('Workspaces'), 'index' => '05', 'show' => true],
-        ['route' => 'profile.edit', 'match' => 'profile.edit|security.edit|api-tokens.edit', 'label' => __('Settings'), 'index' => '06', 'show' => true],
+        ['route' => 'materials.index', 'match' => 'materials.index|materials.show', 'label' => __('Library'), 'index' => '01', 'show' => $shellUser?->can('materials.view')],
+        ['route' => 'materials.create', 'match' => 'materials.create|materials.studio*', 'label' => __('Create'), 'index' => '02', 'show' => $shellUser?->can('materials.contribute')],
+        ['route' => 'connect', 'match' => 'connect*|link|revit.edit|sessions.edit', 'label' => __('Connect'), 'index' => '03', 'show' => true],
+    ], fn (array $item): bool => (bool) $item['show']));
+    $management = array_values(array_filter([
+        ['route' => 'quality.index', 'match' => 'quality.*', 'label' => __('Quality review'), 'show' => $shellUser?->can('materials.review')],
+        ['route' => 'jobs.index', 'match' => 'jobs.*', 'label' => __('Processing jobs'), 'show' => $shellUser?->can('materials.contribute')],
+        ['route' => 'drives.index', 'match' => 'drives.*', 'label' => __('Drive administration'), 'show' => $shellUser?->can('materials.publish')],
     ], fn (array $item): bool => (bool) $item['show']));
 @endphp
 
@@ -36,6 +39,9 @@
                     </button>
                 </div>
 
+                @if ($singleWorkspace)
+                    <div class="ui-shared-library" data-test="shared-library"><small>{{ __('Shared library') }}</small><strong>{{ $shellTenant?->name ?? 'OPAL' }}</strong></div>
+                @else
                 <details class="ui-sidebar__workspace ui-menu" data-test="workspace-switcher">
                     <summary>
                         <span>
@@ -56,6 +62,8 @@
                     </div>
                 </details>
 
+                @endif
+
                 <nav class="ui-sidebar__nav" aria-label="{{ __('Primary') }}">
                     <p>{{ __('OPAL') }}</p>
                     @foreach ($navigation as $item)
@@ -63,6 +71,26 @@
                             <span>{{ $item['index'] }}</span>{{ $item['label'] }}
                         </a>
                     @endforeach
+                </nav>
+
+                @if ($management !== [])
+                    <details class="ui-nav-management" @if(request()->routeIs('quality.*', 'jobs.*', 'drives.*')) open @endif>
+                        <summary>{{ __('Manage library') }}</summary>
+                        <nav class="ui-sidebar__nav" aria-label="{{ __('Library management') }}">
+                            @foreach ($management as $item)
+                                <a href="{{ route($item['route']) }}" @class(['is-active' => request()->routeIs($item['match'])]) wire:navigate>{{ $item['label'] }}</a>
+                            @endforeach
+                        </nav>
+                    </details>
+                @endif
+                <nav class="ui-sidebar__nav ui-nav-account" aria-label="{{ __('Account') }}">
+                    @if ($singleWorkspace)
+                        @can('members.manage')
+                            <a href="{{ route('workspace.team') }}" @class(['is-active' => request()->routeIs('workspace.team')]) wire:navigate>{{ __('Team') }}</a>
+                        @endcan
+                    @endif
+                    @unless($singleWorkspace)<a href="{{ route('dashboard') }}" @class(['is-active' => request()->routeIs('dashboard')]) wire:navigate>{{ __('Workspaces') }}</a>@endunless
+                    <a href="{{ route('profile.edit') }}" @class(['is-active' => request()->routeIs('profile.edit', 'security.edit', 'api-tokens.edit')]) wire:navigate>{{ __('Settings') }}</a>
                 </nav>
 
                 @if (Route::has('ui.index'))
@@ -83,7 +111,7 @@
                     </summary>
                     <div class="ui-menu__content">
                         <a href="{{ route('profile.edit') }}" wire:navigate>{{ __('Settings') }}</a>
-                        @if ($shellUser?->isSuperAdmin())
+                        @if (! $singleWorkspace && $shellUser?->isSuperAdmin())
                             <a href="{{ route('dashboard') }}" wire:navigate>{{ __('All workspaces') }}</a>
                         @endif
                         <hr>

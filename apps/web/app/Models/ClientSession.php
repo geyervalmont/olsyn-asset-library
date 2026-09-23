@@ -12,6 +12,9 @@ use Illuminate\Support\Carbon;
 /**
  * A running client (a Revit with the OPAL extension) that can take commands.
  *
+ * @property string|null $drive_status
+ * @property string|null $mount_path
+ * @property string|null $drive_error
  * @property int $id
  * @property int $user_id
  * @property string $platform
@@ -23,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $ended_at
  * @property-read User $user
  */
-#[Fillable(['user_id', 'platform', 'machine', 'app_version', 'document', 'token_id', 'last_seen_at', 'ended_at'])]
+#[Fillable(['user_id', 'platform', 'machine', 'app_version', 'document', 'token_id', 'last_seen_at', 'ended_at', 'drive_status', 'mount_path', 'drive_error'])]
 class ClientSession extends Model
 {
     /**

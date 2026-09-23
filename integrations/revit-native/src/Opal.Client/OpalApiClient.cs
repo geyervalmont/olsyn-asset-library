@@ -111,6 +111,14 @@ public sealed class OpalApiClient : IDisposable
     public Task HeartbeatAsync(int sessionId, string? document, CancellationToken cancellationToken = default) =>
         SendElementAsync(HttpMethod.Post, $"api/v1/sessions/{sessionId}/heartbeat", new { document }, dataEnvelope: true, cancellationToken);
 
+    public Task HeartbeatWithDriveAsync(int sessionId, string? document, string mountPath, bool available, CancellationToken cancellationToken = default) =>
+        SendElementAsync(HttpMethod.Post, $"api/v1/sessions/{sessionId}/heartbeat", new
+        {
+            document,
+            drive_status = available ? "available" : "missing",
+            mount_path = mountPath,
+        }, dataEnvelope: true, cancellationToken);
+
     public async Task EndSessionAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         using var response = await http.DeleteAsync($"api/v1/sessions/{sessionId}", cancellationToken).ConfigureAwait(false);

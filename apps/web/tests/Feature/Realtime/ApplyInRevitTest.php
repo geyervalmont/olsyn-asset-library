@@ -65,13 +65,13 @@ test('the material page keeps one apply button, and issues a command for the cho
         ->assertSeeHtml('aria-disabled="true"');
 
     $session = ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'HARRISON-VM', 'app_version' => '2027', 'document' => 'Tower A.rvt', 'last_seen_at' => now()]);
-    ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'OLD', 'last_seen_at' => now()->subMinutes(5)]);
+    ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'STALE-REVIT-WORKSTATION', 'last_seen_at' => now()->subMinutes(5)]);
 
     $page = Livewire::actingAs($this->viewer)
         ->test('pages::materials.show', ['material' => $this->material])
         ->assertSet('revitSessionId', $session->id)
         ->assertSee('Revit 2027 · HARRISON-VM · Tower A.rvt')
-        ->assertDontSee('OLD')
+        ->assertDontSee('STALE-REVIT-WORKSTATION')
         ->call('applyInRevit', $this->ashen->id)
         ->assertSee('Queued');
 

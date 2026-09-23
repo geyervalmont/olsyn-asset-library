@@ -1,6 +1,6 @@
 <x-layouts::auth :title="__('Log in')">
     <div class="flex flex-col gap-6">
-        <x-auth-header :title="__('Log in to your account')" :description="__('Enter your email and password below to log in')" />
+        <x-auth-header :title="config('olsyn_access.enabled') ? __('Welcome to OPAL') : __('Log in to your account')" :description="config('olsyn_access.enabled') ? __('Sign in with Olsyn to open your shared material library.') : __('Enter your email and password below to log in')" />
 
         @php
             $intended = session('url.intended');
@@ -22,7 +22,10 @@
 
         @if (config('olsyn_access.enabled'))
             <flux:button :href="route('olsyn.login')" variant="primary" class="w-full">Continue with Olsyn</flux:button>
-            <p class="text-sm text-center text-zinc-500">Your existing password or passkey also remains available.</p>
+            <p class="text-sm text-center text-zinc-500">{{ __('Need access? Ask your administrator to enable OPAL for your Olsyn account.') }}</p>
+            <details class="rounded-lg border border-zinc-200 p-4" @if($errors->any()) open @endif>
+                <summary class="cursor-pointer text-sm">{{ __('Use an existing OPAL password or passkey') }}</summary>
+                <div class="mt-5 flex flex-col gap-6">
         @endif
 
         <x-passkey-verify />
@@ -71,9 +74,14 @@
             </div>
         </form>
 
+        @if(config('olsyn_access.enabled'))
+                </div>
+            </details>
+        @else
         <div class="space-x-1 text-sm text-center rtl:space-x-reverse text-zinc-600 dark:text-zinc-400">
             <span>{{ __('Don\'t have an account?') }}</span>
             <flux:link :href="route('register')" wire:navigate>{{ __('Sign up') }}</flux:link>
         </div>
+        @endif
     </div>
 </x-layouts::auth>

@@ -86,13 +86,15 @@ Check("release models deserialize OPAL manifest names", () =>
     Require(release.MinimumRevit == 2027);
 });
 
+DriveTransportTests.Run(Check);
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
 
-Console.WriteLine("7 native client tests passed");
+Console.WriteLine("12 native client tests passed");
 return 0;
 
 void Check(string name, Action test)

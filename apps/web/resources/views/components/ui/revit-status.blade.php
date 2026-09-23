@@ -3,6 +3,7 @@
     $live = auth()->check()
         ? \App\Models\ClientSession::query()
             ->where('user_id', auth()->id())
+            ->where('platform', 'revit')
             ->live()
             ->orderByDesc('last_seen_at')
             ->get(['id', 'machine', 'document', 'last_seen_at'])
@@ -19,7 +20,7 @@
 @auth
     <a
         class="ui-revit-pill"
-        href="{{ route('sessions.edit') }}"
+        href="{{ route('connect') }}"
         wire:navigate
         data-test="revit-status"
         x-data="revitStatus(@js(['userId' => (int) auth()->id(), 'sessions' => $seeded, 'liveSeconds' => \App\Models\ClientSession::liveSeconds()]))"
@@ -28,6 +29,6 @@
         data-state="{{ $live->isEmpty() ? 'off' : 'live' }}"
     >
         <span class="ui-status-light" aria-hidden="true"></span>
-        <span class="ui-revit-pill__label" x-text="label">{{ $live->first()?->machine ?? __('No Revit') }}</span>
+        <span class="ui-revit-pill__label" x-text="label">{{ $live->first()?->machine ?? __('Connect Revit') }}</span>
     </a>
 @endauth

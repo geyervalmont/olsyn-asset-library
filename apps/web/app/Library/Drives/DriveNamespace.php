@@ -8,6 +8,7 @@ use App\Models\Material;
 use App\Models\Package;
 use App\Models\PackageDerivative;
 use App\Models\PackageDerivativeFile;
+use App\Models\User;
 use App\Models\Variant;
 
 /**
@@ -121,15 +122,17 @@ class DriveNamespace
      *
      * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string, current?: bool, latest_cache?: bool, material_uuid?: string, variant_uuid?: string, material_version?: int, derivative_uuid?: string}>
      */
-    private function stableEntries(Drive $drive): array
+    private function stableEntries(Drive $drive, ?User $user = null): array
     {
         $entries = [];
-        $materials = Material::query()->visibleToDrive($drive)->with([
-            'versions' => fn ($query) => $query->whereNotNull('published_at'),
-            'versions.packages.variant', 'versions.packages.derivatives.target',
-            'versions.packages.derivatives.quality', 'versions.packages.derivatives.derivativeFiles.file',
-            'versions.packages.derivatives.derivativeFiles.role',
-        ])->get();
+        $materials = Material::query()
+            ->when($user !== null, fn ($query) => $query->visibleTo($user), fn ($query) => $query->visibleToDrive($drive))
+            ->with([
+                'versions' => fn ($query) => $query->whereNotNull('published_at'),
+                'versions.packages.variant', 'versions.packages.derivatives.target',
+                'versions.packages.derivatives.quality', 'versions.packages.derivatives.derivativeFiles.file',
+                'versions.packages.derivatives.derivativeFiles.role',
+            ])->get();
         foreach ($materials as $material) {
             foreach ($material->versions as $version) {
                 foreach ($version->packages as $package) {
@@ -164,6 +167,16 @@ class DriveNamespace
         usort($entries, fn (array $a, array $b): int => strcmp($a['path'], $b['path']));
 
         return $entries;
+    }
+
+    /**
+     * A personal drive uses the user's grants, never a shared drive token.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function entriesForUser(User $user): array
+    {
+        return $this->stableEntries(new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user);
     }
 
     public function toYaml(Drive $drive): string

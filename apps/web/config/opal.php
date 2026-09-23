@@ -23,6 +23,12 @@ foreach ($revitMatrix['versions'] as $target) {
 
 return [
 
+    'workspace' => [
+        'single' => env('OPAL_SINGLE_WORKSPACE', true),
+        'slug' => env('OPAL_WORKSPACE_SLUG', 'olsyn'),
+        'auto_join' => env('OPAL_WORKSPACE_AUTO_JOIN', true),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Library file storage
@@ -186,6 +192,16 @@ return [
     | know where the binaries are hosted and we can move them later.
     |
     */
+
+    'drive' => [
+        // An adapter must pass Windows host validation before this is advertised.
+        'windows_client_available' => false,
+        'intake_disk' => env('OPAL_INTAKE_DISK', env('OPAL_FILES_DISK', 'local')),
+        'intake_file_bytes' => 256 * 1024 * 1024,
+        'intake_batch_bytes' => 2 * 1024 * 1024 * 1024,
+        'intake_max_files' => 500,
+        'intake_active_sessions' => 5,
+    ],
 
     'clients' => [
         'revit' => [
