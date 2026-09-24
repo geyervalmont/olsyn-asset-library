@@ -9,6 +9,8 @@ OPAL Drive mounts the signed-in person's visible materials as a real Windows dri
 3. Open the mounted folder. Keep OPAL Drive running in the system tray. It starts at Windows sign-in and reconnects automatically unless automatic mounting is disabled. Close the window to leave it running; choose **Quit and unmount** in the tray to stop it.
 4. Use the same drive letter across the team for portable material references. OPAL never silently substitutes a different letter when yours is occupied.
 
+Opening OPAL Drive again from Start restores its existing window, including when it is hidden in the tray or minimized. Windows sign-in also shows the connection window until an account has been connected; subsequent sign-ins reconnect in the background.
+
 Revit and Omniverse releases with drive discovery automatically find the mount when signed into the same OPAL server and account. Earlier releases can use it by entering `O:\` as the material root in their settings. Each application approves its own device connection; no bearer token is copied between apps.
 
 ## Private Incoming folders

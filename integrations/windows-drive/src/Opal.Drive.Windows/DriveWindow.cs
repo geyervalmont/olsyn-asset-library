@@ -35,6 +35,9 @@ public sealed class DriveWindow : Form
 
     public DriveWindow(bool background)
     {
+        SuspendLayout();
+        AutoScaleDimensions = new SizeF(96, 96);
+        AutoScaleMode = AutoScaleMode.Dpi;
         try { settings = DriveSettings.Load(); }
         catch { settings = new(); }
         Text = "OPAL Drive"; Width = 640; Height = 490; MinimumSize = new Size(600, 450);
@@ -86,14 +89,17 @@ public sealed class DriveWindow : Form
         };
         Shown += async (_, _) =>
         {
-            if (background) Hide();
+            // A first-time user needs the connection window even when Windows
+            // sign-in started the app with --background.
+            if (background && settings.ProtectedToken.Length > 0) Hide();
             UpdateControls();
             if (settings.ProtectedToken.Length > 0 && settings.AutoMount) await ActionAsync(MountAsync);
             timer.Start();
         };
         timer.Tick += async (_, _) => await TickAsync();
+        ResumeLayout(true);
     }
-    private void ShowWindow() { Show(); WindowState = FormWindowState.Normal; Activate(); }
+    internal void ShowWindow() { Show(); WindowState = FormWindowState.Normal; Activate(); }
     private static void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     private void OpenDrive() { if (filesystem?.IsMounted == true && session?.Online == true) OpenUrl(settings.Mount); else ShowWindow(); }
     private void SaveInputs()
