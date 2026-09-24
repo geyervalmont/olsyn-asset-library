@@ -9,10 +9,12 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
     private long validUntil;
     private string? etag;
     private readonly SemaphoreSlim refresh = new(1, 1);
+    private readonly CancellationTokenSource stopping = new();
     public OpalDriveClient Client { get; } = client;
     public DriveTree Tree { get { RequireOnline(); return Volatile.Read(ref tree); } }
     public bool Online => Environment.TickCount64 < Interlocked.Read(ref validUntil);
     public event Action<Exception>? Faulted;
+    public void Stop() { Invalidate(); stopping.Cancel(); }
     public void Invalidate(Exception? error = null)
     {
         Interlocked.Exchange(ref validUntil, 0);
@@ -22,6 +24,8 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
     }
     public async Task RefreshAsync(CancellationToken cancel = default)
     {
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancel, stopping.Token);
+        cancel = operation.Token;
         await refresh.WaitAsync(cancel).ConfigureAwait(false);
         try
         {
@@ -40,6 +44,8 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
     }
     public async Task<ReadHandle> OpenAsync(RemoteFile file, CancellationToken cancel = default)
     {
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancel, stopping.Token);
+        cancel = operation.Token;
         RequireFile(file);
         // Every new handle reauthorizes even when all bytes are cached.
         await AuthorizeAsync(file, cancel).ConfigureAwait(false);
@@ -64,6 +70,8 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
         public RemoteFile File { get; } = file;
         public async Task<int> ReadAsync(byte[] buffer, long offset, CancellationToken cancel = default)
         {
+            using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancel, session.stopping.Token);
+            cancel = operation.Token;
             if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
             await gate.WaitAsync(cancel).ConfigureAwait(false);
             try

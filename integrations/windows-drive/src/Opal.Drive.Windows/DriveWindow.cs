@@ -80,7 +80,7 @@ public sealed class DriveWindow : Form
         {
             if (e.CloseReason == CloseReason.WindowsShutDown)
             {
-                quitting = true; settings.PublishMount(false); session?.Invalidate(); lifetime.Cancel(); tray.Visible = false;
+                quitting = true; settings.PublishMount(false); session?.Stop(); lifetime.Cancel(); tray.Visible = false;
             }
             if (!quitting) { e.Cancel = true; Hide(); }
         };
@@ -237,7 +237,7 @@ public sealed class DriveWindow : Form
     }
     private async Task UnmountAsync()
     {
-        settings.PublishMount(false); session?.Invalidate(); mountCancellation?.Cancel();
+        settings.PublishMount(false); session?.Stop(); mountCancellation?.Cancel();
         if (uploadTask is not null) { try { await uploadTask; } catch (OperationCanceledException) { } uploadTask = null; }
         var old = instance; instance = null;
         if (old is not null) await Task.Run(old.Dispose);

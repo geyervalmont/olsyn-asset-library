@@ -56,6 +56,17 @@ try
         await Throws(() => state.RefreshAsync()); Check(!state.Online);
         await Throws(() => Task.FromResult(state.Tree)); remote.Offline = false; await state.RefreshAsync(); Check(state.Tree.FileCount == 1);
     });
+    await Test("unmount cancels pending network reads and leaves no partial cache file", async () =>
+    {
+        var remote = new Fake { SlowRead = true }; using var client = remote.Client(); var root = Path.Combine(temp,"stop");
+        var state = new DriveSession(client,new ContentCache(root)); await state.RefreshAsync();
+        using var handle = await state.OpenAsync(state.Tree.Find(remote.Entry.Path)!.File!);
+        var pending = handle.ReadAsync(new byte[32],0);
+        await remote.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        state.Stop();
+        await Throws(async () => await pending.WaitAsync(TimeSpan.FromSeconds(2)));
+        Check(pending.IsCompleted && !state.Online && !Directory.EnumerateFiles(root).Any());
+    });
     await Test("checksum mismatch cannot enter the cache", async () =>
     {
         var remote = new Fake { Corrupt = true }; using var client = remote.Client(); var root = Path.Combine(temp,"corrupt"); var state = new DriveSession(client, new ContentCache(root));
@@ -115,7 +126,8 @@ finally { Directory.Delete(temp,true); }
 sealed class Fake : HttpMessageHandler
 {
     public byte[] Bytes = Enumerable.Range(0, 300000).Select(i=>(byte)(i%251)).ToArray();
-    public bool Denied, Offline, Corrupt, Incoming, FailUpload;
+    public bool Denied, Offline, Corrupt, Incoming, FailUpload, SlowRead;
+    public TaskCompletionSource ReadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public int Reads, Heads, Uploads;
     public Guid Batch = Guid.NewGuid();
     public RemoteFile Entry => new("/materials/by-id/texture.bin", Bytes.Length, Convert.ToHexStringLower(SHA256.HashData(Bytes)), "/api/v1/drive/files/01951234-1234-7000-8000-000000000001/1");
@@ -130,7 +142,8 @@ sealed class Fake : HttpMessageHandler
         if(request.Method==HttpMethod.Head)
         { Heads++;var result=new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent([])};result.Content.Headers.ContentLength=Bytes.Length;result.Headers.ETag=new EntityTagHeaderValue('"'+Entry.Sha256+'"');return result; }
         if(request.Method==HttpMethod.Get)
-        { Reads++;var range=request.Headers.Range!.Ranges.Single();var data=Bytes[(int)range.From!.Value..((int)range.To!.Value+1)].ToArray();if(Corrupt)data[0]^=255;
+        { Reads++; ReadStarted.TrySetResult(); if (SlowRead) await Task.Delay(Timeout.Infinite,cancellationToken);
+          var range=request.Headers.Range!.Ranges.Single();var data=Bytes[(int)range.From!.Value..((int)range.To!.Value+1)].ToArray();if(Corrupt)data[0]^=255;
           var result=new HttpResponseMessage(HttpStatusCode.PartialContent){Content=new ByteArrayContent(data)};result.Content.Headers.ContentRange=new ContentRangeHeaderValue(range.From.Value,range.To.Value,Bytes.Length);result.Headers.ETag=new EntityTagHeaderValue('"'+Entry.Sha256+'"');return result; }
         if(request.Method==HttpMethod.Post) return Json(new{data=new{id="01951234-1234-7000-8000-000000000002"}});
         if(request.Method==HttpMethod.Put)
