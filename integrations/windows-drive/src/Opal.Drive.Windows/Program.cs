@@ -8,8 +8,14 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
-        Application.ThreadException += (_, e) => MessageBox.Show("OPAL Drive could not complete that action. Reopen the drive window and reconnect.\n" + e.Exception.GetType().Name, "OPAL Drive");
-        new DriveApplication().Run(args);
+        Application.ThreadException += (_, e) => ReportUnexpected(e.Exception);
+        try { new DriveApplication().Run(args); }
+        catch (Exception error) { ReportUnexpected(error); }
+    }
+    private static void ReportUnexpected(Exception error)
+    {
+        new DriveDiagnostics(Path.Combine(DriveSettings.Root, "logs")).Record(DriveStage.Startup, "error", error);
+        MessageBox.Show("OPAL Drive could not complete that action. Open Status & diagnostics and save a report.\n" + error.GetType().Name, "OPAL Drive");
     }
 }
 

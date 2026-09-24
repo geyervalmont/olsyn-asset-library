@@ -1,4 +1,5 @@
 using System.IO.MemoryMappedFiles;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -21,11 +22,14 @@ var filesystem = new MaterialFileSystem(session, staging);
 using var dokan = new Dokan(new NullLogger());
 var letter = Enumerable.Range('P', 11).Select(c => (char)c + @":\").First(p => !System.IO.DriveInfo.GetDrives().Any(d => d.Name.Equals(p, StringComparison.OrdinalIgnoreCase)));
 Console.WriteLine($"Dokan {dokan.Version}, driver {dokan.DriverVersion}, mount {letter}");
-using (var instance = new DokanInstanceBuilder(dokan).ConfigureOptions(o => { o.MountPoint = letter; o.Options = DokanOptions.CurrentSession; o.TimeOut = TimeSpan.FromMinutes(2); }).Build(filesystem))
+// Exercise the application's exact native options, including its per-user ACL.
+using (var instance = new DokanInstanceBuilder(dokan).ConfigureOptions(o => DriveMountOptions.Configure(o, letter)).Build(filesystem))
 {
     for (int i = 0; i < 100 && !filesystem.IsMounted; i++) await Task.Delay(50);
     if (!filesystem.IsMounted) throw new Exception("Mount never confirmed");
     var path = Path.Combine(letter, "materials", "by-id", "texture.bin");
+    var driverStatus = DriveDriverProbe.Read();
+    if (driverStatus.Driver == 0 || driverStatus.Library == 0) throw new Exception("Driver diagnostic check failed");
     if (!Directory.GetDirectories(letter).Any(d => d.EndsWith("materials", StringComparison.OrdinalIgnoreCase))) throw new Exception("Enumeration failed");
     var bytes = File.ReadAllBytes(path); if (!bytes.SequenceEqual(server.Bytes)) throw new Exception("Mounted read differs");
     using (var stream = File.OpenRead(path))
@@ -33,7 +37,7 @@ using (var instance = new DokanInstanceBuilder(dokan).ConfigureOptions(o => { o.
     using (var mapped = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
     using (var view = mapped.CreateViewAccessor(8192, 4096, MemoryMappedFileAccess.Read))
     { var data = new byte[4096]; view.ReadArray(0, data, 0, data.Length); if (!data.SequenceEqual(server.Bytes.Skip(8192).Take(data.Length))) throw new Exception("Memory mapped read failed"); }
-    Console.WriteLine("PASS actual Windows enumeration, sequential read, random seek and memory mapping");
+    Console.WriteLine("PASS read-only driver diagnostics preserve the mount; enumeration, sequential read, random seek and memory mapping");
     bool denied = false;
     try { File.WriteAllText(path, "overwrite"); } catch (UnauthorizedAccessException) { denied = true; } catch (IOException) { denied = true; }
     if (!denied) throw new Exception("Published material was writable");
@@ -60,6 +64,47 @@ for (int i = 0; i < 100 && filesystem.IsMounted; i++) await Task.Delay(50);
 if (filesystem.IsMounted) throw new Exception("Drive did not unmount");
 Directory.Delete(root, true);
 Console.WriteLine("PASS clean unmount; all Windows mount smoke checks passed");
+if (args.Length == 2 && args[0] == "--application")
+{
+    // Test the installed app's saved-account startup, not just its filesystem adapter.
+    if (Process.GetProcessesByName("OPAL-Drive").Length > 0 || DriveSettings.Load().ProtectedToken.Length > 0)
+        throw new InvalidOperationException("Use a test profile without a running or connected OPAL Drive.");
+    var settingsPath = Path.Combine(DriveSettings.Root, "settings.json");
+    var discoveryPath = Path.Combine(Directory.GetParent(DriveSettings.Root)!.FullName, "drive-connection.json");
+    var saved = File.Exists(settingsPath) ? File.ReadAllBytes(settingsPath) : null;
+    var discovery = File.Exists(discoveryPath) ? File.ReadAllBytes(discoveryPath) : null;
+    Process? app = null;
+    var partition = Path.Combine(DriveSettings.Root, "accounts", ContentCache.AccountPartition(server.Origin, "fixture-user"));
+    try
+    {
+        server.Denied = false;
+        var settings = new DriveSettings { Server = server.Origin, Mount = letter, AutoMount = true };
+        settings.SetToken("mount-test"); settings.Save();
+        app = Process.Start(new ProcessStartInfo(Path.GetFullPath(args[1]), "--background") { UseShellExecute = false })!;
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        bool mounted = false;
+        while (DateTime.UtcNow < deadline && !app.HasExited)
+        {
+            if (File.Exists(discoveryPath))
+            {
+                using var advertised = JsonDocument.Parse(File.ReadAllText(discoveryPath));
+                if (advertised.RootElement.GetProperty("device_id").GetGuid() == settings.DeviceId) { mounted = true; break; }
+            }
+            await Task.Delay(100);
+        }
+        if (!mounted) throw new Exception("Installed app did not complete account/bootstrap/manifest/driver/mount startup. Inspect its structured diagnostics log.");
+        if (!File.ReadAllBytes(Path.Combine(letter, "materials", "by-id", "texture.bin")).SequenceEqual(server.Bytes)) throw new Exception("Installed app returned different bytes.");
+        Console.WriteLine("PASS installed app decrypts saved credentials, validates account/library, mounts and reads through the production startup path");
+    }
+    finally
+    {
+        if (app is not null) { if (!app.HasExited) app.Kill(entireProcessTree: true); await app.WaitForExitAsync(); app.Dispose(); }
+        if (saved is null) File.Delete(settingsPath); else File.WriteAllBytes(settingsPath, saved);
+        if (discovery is null) File.Delete(discoveryPath); else File.WriteAllBytes(discoveryPath, discovery);
+        File.Delete(settingsPath + ".new"); File.Delete(discoveryPath + ".new");
+        if (Directory.Exists(partition)) Directory.Delete(partition, true);
+    }
+}
 
 sealed class Fixture : IAsyncDisposable
 {
@@ -90,6 +135,8 @@ sealed class Fixture : IAsyncDisposable
     {
         var r = c.Response;
         if (c.Request.Headers["Authorization"] != "Bearer mount-test" || Denied) { r.StatusCode = 403; r.Close(); return; }
+        if (c.Request.Url!.AbsolutePath.EndsWith("bootstrap"))
+        { await Json(r, new { data = new { contract = "opal-drive/1", account = new { id = "fixture-user", email = "fixture@example.invalid" } } }); return; }
         if (c.Request.Url!.AbsolutePath.EndsWith("manifest"))
         {
             var manifest = new { contract = "opal-drive/1", library_writable = false,

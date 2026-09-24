@@ -23,6 +23,7 @@ public sealed class IntakeStaging
     public const long FileLimit = 256L * 1024 * 1024;
     public const long TotalLimit = 2L * 1024 * 1024 * 1024;
     public event Action? Changed;
+    public event Action<Exception>? Faulted;
     public IntakeStaging(string root, DriveSession session)
     {
         this.root = root;
@@ -164,6 +165,7 @@ public sealed class IntakeStaging
                 }
                 catch (Exception error)
                 {
+                    if (error is not OperationCanceledException) Faulted?.Invoke(error);
                     lock (gate) Save(active with { State = "failed", Error = "Upload not confirmed. Keep the local copy and retry when connected." });
                     if (error is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden }) session.Invalidate(error);
                     if (error is OperationCanceledException) throw;

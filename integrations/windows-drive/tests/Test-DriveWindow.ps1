@@ -21,14 +21,15 @@ public static class DriveWindowTest {
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
-    public static IntPtr Find(int processId) {
+    public static IntPtr Find(int processId) { return FindNamed(processId, "OPAL Drive"); }
+    public static IntPtr FindNamed(int processId, string caption) {
         IntPtr result = IntPtr.Zero;
         EnumWindows((window, parameter) => {
             int owner;
             GetWindowThreadProcessId(window, out owner);
             var title = new StringBuilder(256);
             GetWindowText(window, title, title.Capacity);
-            if (owner == processId && title.ToString() == "OPAL Drive") { result = window; return false; }
+            if (owner == processId && (caption == "OPAL Drive" ? title.ToString() == caption : title.ToString().Contains(caption))) { result = window; return false; }
             return true;
         }, IntPtr.Zero);
         return result;
@@ -75,6 +76,31 @@ try {
     Wait-Until { [DriveWindowTest]::IsWindowVisible($window) -and ![DriveWindowTest]::IsIconic($window) } 'Reopening OPAL Drive did not restore its minimized window.'
     if ($app.HasExited) { throw 'The original application stopped during activation.' }
     Write-Output 'PASS: first sign-in window, close to tray, background relaunch, reopen, and restore minimized window.'
+    Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Windows.Forms
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($window)
+    $all = [System.Windows.Automation.Condition]::TrueCondition
+    $descendants = [System.Windows.Automation.TreeScope]::Descendants
+    $server = $root.FindAll($descendants,$all) | Where-Object {$_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Edit} | Select-Object -First 1
+    $server.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('https://private-user:private-password@opal.test/private-path?secret=private-secret')
+    $diagnostics = $root.FindAll($descendants,$all) | Where-Object {$_.Current.Name -like 'Status*diagnostics'} | Select-Object -First 1
+    $diagnostics.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    $script:diagnosticWindow = $null
+    Wait-Until {
+        $handle = [DriveWindowTest]::FindNamed($app.Id,'Status')
+        if ($handle -ne [IntPtr]::Zero) { $script:diagnosticWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle) }
+        $null -ne $script:diagnosticWindow
+    } 'Status and diagnostics did not open.'
+    $copy = $script:diagnosticWindow.FindAll($descendants,$all) | Where-Object {$_.Current.Name -eq 'Copy report'} | Select-Object -First 1
+    $oldClipboard = [System.Windows.Forms.Clipboard]::GetDataObject()
+    try {
+        $copy.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        $script:report = ''
+        Wait-Until { $script:report = [System.Windows.Forms.Clipboard]::GetText(); $script:report.Contains('OPAL Drive diagnostic report') } 'Copy report did not put a report on the clipboard.'
+        if (!$script:report.Contains('https://opal.test') -or $script:report.Contains('private-user') -or $script:report.Contains('private-password') -or $script:report.Contains('private-secret') -or $script:report.Contains('private-path')) { throw 'Report exposed private URL components or omitted the safe server origin.' }
+    } finally {
+        if ($null -ne $oldClipboard) { [System.Windows.Forms.Clipboard]::SetDataObject($oldClipboard,$true) } else { [System.Windows.Forms.Clipboard]::Clear() }
+    }
+    Write-Output 'PASS: diagnostic window opens and its copyable report excludes private URL components.'
 } finally {
     Stop-Process -Id $app.Id -ErrorAction SilentlyContinue
 }

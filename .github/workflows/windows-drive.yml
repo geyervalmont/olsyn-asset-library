@@ -52,6 +52,8 @@ jobs:
           $destination = Join-Path $env:RUNNER_TEMP 'OPAL Installed Drive'
           $setup = Start-Process './artifacts/drive/OPAL-Drive-Setup.exe' -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR="{0}"' -f $destination) -Wait -PassThru
           if ($setup.ExitCode -notin @(0, 3010)) { throw "Installer failed: $($setup.ExitCode)" }
+          dotnet run --project integrations/windows-drive/tests/Opal.Drive.MountTest -c Release -- --application (Join-Path $destination 'OPAL-Drive.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Installed application mount startup failed' }
           ./integrations/windows-drive/tests/Test-DriveWindow.ps1 -ApplicationPath (Join-Path $destination 'OPAL-Drive.exe')
           $startup = (Get-ItemProperty 'HKLM:/Software/Microsoft/Windows/CurrentVersion/Run').'OPAL Drive'
           if (!$startup.Contains($destination)) { throw 'Windows sign-in launch is not registered' }

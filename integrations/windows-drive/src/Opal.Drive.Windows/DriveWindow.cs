@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Net;
-using System.Security.AccessControl;
 using DokanNet;
 using DokanNet.Logging;
 using Opal.Client;
@@ -32,6 +30,14 @@ public sealed class DriveWindow : Form
     private bool busy, ticking, quitting;
     private long nextRefresh, nextUpload;
     private string? lastError;
+    private readonly DriveDiagnostics diagnostics = new(Path.Combine(DriveSettings.Root, "logs"));
+    private DiagnosticsWindow? diagnosticsWindow;
+    private DriveStage phase = DriveStage.Startup;
+    private readonly Stopwatch stepTime = new();
+    private DateTimeOffset? lastLibraryRefresh, lastHeartbeat;
+    private DriveFailure? failure;
+    private DriveStage failedPhase;
+    private int fileCount;
 
     public DriveWindow(bool background)
     {
@@ -39,8 +45,9 @@ public sealed class DriveWindow : Form
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         try { settings = DriveSettings.Load(); }
-        catch { settings = new(); }
-        Text = "OPAL Drive"; Width = 640; Height = 490; MinimumSize = new Size(600, 450);
+        catch (Exception error) { settings = new(); diagnostics.Record(DriveStage.Settings, "error", error); }
+        diagnostics.Record(DriveStage.Startup, "ok");
+        Text = "OPAL Drive"; Width = 680; Height = 550; MinimumSize = new Size(600, 490);
         StartPosition = FormStartPosition.CenterScreen; Icon = SystemIcons.Application;
         var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(24), AutoScroll = true };
         layout.Controls.Add(new Label { Text = "Your material library, mounted.", Font = new Font(Font.FontFamily, 18, FontStyle.Bold), AutoSize = true, Margin = new Padding(0, 0, 0, 16) });
@@ -59,13 +66,16 @@ public sealed class DriveWindow : Form
         layout.Controls.Add(uploads);
         var links = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 12, 0, 0) };
         var open = new Button { Text = "Open drive", AutoSize = true };
-        var website = new Button { Text = "Manage uploads & devices", AutoSize = true };
+        var website = new Button { Text = "Manage uploads && devices", AutoSize = true };
         links.Controls.Add(open); links.Controls.Add(website); layout.Controls.Add(links);
+        var diagnosticButton = new Button { Text = "Status && diagnostics", AutoSize = true };
+        diagnosticButton.Click += (_, _) => ShowDiagnostics(); layout.Controls.Add(diagnosticButton);
         layout.Controls.Add(new Label { Text = "Materials are read-only. Drop textures into a prepared Incoming folder.\nKeep OPAL Drive running while your design tools use the drive.", AutoSize = true, MaximumSize = new Size(530, 0), Margin = new Padding(0, 14, 0, 0) });
         Controls.Add(layout);
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open OPAL Drive", null, (_, _) => ShowWindow());
         menu.Items.Add("Open material folder", null, (_, _) => OpenDrive());
+        menu.Items.Add("Status && diagnostics", null, (_, _) => ShowDiagnostics());
         menu.Items.Add("Quit and unmount", null, async (_, _) => await QuitAsync());
         tray = new NotifyIcon { Icon = Icon, Text = "OPAL Drive", ContextMenuStrip = menu, Visible = true };
         tray.DoubleClick += (_, _) => ShowWindow();
@@ -100,6 +110,25 @@ public sealed class DriveWindow : Form
         ResumeLayout(true);
     }
     internal void ShowWindow() { Show(); WindowState = FormWindowState.Normal; Activate(); }
+    private void ShowDiagnostics()
+    {
+        if (diagnosticsWindow is null || diagnosticsWindow.IsDisposed)
+            diagnosticsWindow = new(diagnostics, DiagnosticStatus,
+                () => new AppSettings { UseCustomServer = true, ServerUrl = settings.ProtectedToken.Length > 0 ? settings.Server : server.Text.Trim(), Token = settings.Token() },
+                () => ((string)mount.SelectedItem!, filesystem?.IsMounted == true));
+        diagnosticsWindow.Show(this); diagnosticsWindow.Activate();
+    }
+    private string DiagnosticStatus()
+    {
+        var count = staging?.Counts;
+        return $"Server: {DriveDiagnostics.SafeOrigin(settings.ProtectedToken.Length > 0 ? settings.Server : server.Text.Trim())}\r\nDevice ID: {settings.DeviceId}\r\nAccount connected: {settings.ProtectedToken.Length > 0}\r\nDrive letter: {mount.SelectedItem}\r\nWindows mount active: {filesystem?.IsMounted == true}\r\nLibrary access current: {session?.Online == true}\r\nAutomatic reconnect: {settings.AutoMount}\r\nCurrent step: {DriveFailure.StageName(phase)}{(busy || ticking ? $" ({stepTime.Elapsed.TotalSeconds:N0} s)" : "")}\r\nLast library refresh (UTC): {lastLibraryRefresh?.ToString("O") ?? "Never"}\r\nLast heartbeat (UTC): {lastHeartbeat?.ToString("O") ?? "Never"}\r\nLast library file count: {fileCount:N0}\r\nUploads: {count?.Pending ?? 0} pending, {count?.Uploaded ?? 0} confirmed, {count?.Failed ?? 0} awaiting retry\r\nNext automatic retry: {(settings.AutoMount && settings.ProtectedToken.Length > 0 && failure is not null ? Math.Max(0, (nextRefresh - Environment.TickCount64) / 1000) + " s" : "None")}\r\nLast failure: {(failure is null ? "None" : DriveFailure.StageName(failedPhase) + " / " + failure.Code + "\r\n" + failure.Advice + $"\r\nType: {failure.ExceptionTypes}; HTTP: {failure.HttpStatus?.ToString() ?? "-"}; HRESULT: {failure.HResult}")}";
+    }
+    private void BeginStep(DriveStage stage, string? message = null)
+    {
+        phase = stage; stepTime.Restart(); diagnostics.Record(stage, "started");
+        if (message is not null) state.Text = message;
+    }
+    private void StepSucceeded() => diagnostics.Record(phase, "ok", elapsedMs: stepTime.ElapsedMilliseconds);
     private static void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     private void OpenDrive() { if (filesystem?.IsMounted == true && session?.Online == true) OpenUrl(settings.Mount); else ShowWindow(); }
     private void SaveInputs()
@@ -118,11 +147,16 @@ public sealed class DriveWindow : Form
     }
     private async Task LinkAsync()
     {
+        BeginStep(DriveStage.Settings);
         SaveInputs();
         using var linkClient = new OpalDriveClient(ApiSettings());
+        BeginStep(DriveStage.SignIn, "Requesting browser sign-in…");
         var link = await linkClient.StartLinkAsync(Environment.MachineName, lifetime.Token);
+        StepSucceeded();
         state.Text = $"Approve code {link.Code} in your browser. Waiting for sign-in…";
+        BeginStep(DriveStage.Browser);
         OpenUrl(link.VerifyUrl);
+        StepSucceeded(); BeginStep(DriveStage.SignIn);
         using var poll = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         poll.CancelAfter(TimeSpan.FromMinutes(10));
         while (true)
@@ -131,6 +165,7 @@ public sealed class DriveWindow : Form
             var result = await linkClient.PollLinkAsync(link, poll.Token);
             if (result.Status == "delivered") throw new InvalidOperationException("The connection code was already collected. Start again.");
             if (result.Status != "claimed" || string.IsNullOrWhiteSpace(result.Token)) continue;
+            StepSucceeded(); BeginStep(DriveStage.Credentials);
             settings.SetToken(result.Token); settings.AccountEmail = result.User?.Email ?? ""; settings.Save();
             await MountAsync(); return;
         }
@@ -138,41 +173,45 @@ public sealed class DriveWindow : Form
     private async Task MountAsync()
     {
         if (instance is not null) return;
+        BeginStep(DriveStage.Settings);
         SaveInputs();
+        BeginStep(DriveStage.Credentials);
         if (settings.Token().Length == 0) { state.Text = "Connect your account first."; return; }
-        state.Text = "Connecting and loading your material library…";
         client?.Dispose(); client = new OpalDriveClient(ApiSettings(settings.Token()));
+        BeginStep(DriveStage.Account, "Checking your account access…");
         var bootstrap = await client.BootstrapAsync(lifetime.Token);
         if (bootstrap.GetProperty("contract").GetString() != "opal-drive/1") throw new InvalidDataException("Unsupported drive service.");
         settings.AccountId = bootstrap.GetProperty("account").GetProperty("id").GetString()!;
         settings.AccountEmail = bootstrap.GetProperty("account").GetProperty("email").GetString()!; settings.Save();
+        StepSucceeded(); BeginStep(DriveStage.Heartbeat);
         await client.HeartbeatAsync(settings.DeviceId, Environment.MachineName, "connecting", null, cancellationToken: lifetime.Token);
+        lastHeartbeat = DateTimeOffset.UtcNow; StepSucceeded(); BeginStep(DriveStage.Mount);
         if (System.IO.DriveInfo.GetDrives().Any(d => d.Name.Equals(settings.Mount, StringComparison.OrdinalIgnoreCase)))
-            throw new MountInUseException();
+            throw new DriveMountInUseException();
+        BeginStep(DriveStage.LocalStorage, "Preparing your local material cache…");
         var partition = Path.Combine(DriveSettings.Root, "accounts", ContentCache.AccountPartition(settings.Server, settings.AccountId));
         session = new(client, new ContentCache(Path.Combine(partition, "cache")));
+        session.Faulted += error => { if (phase != DriveStage.Library) diagnostics.Record(DriveStage.FileRead, "error", error); };
+        StepSucceeded(); BeginStep(DriveStage.Library, "Loading and validating your material library…");
         await session.RefreshAsync(lifetime.Token);
+        lastLibraryRefresh = DateTimeOffset.UtcNow; fileCount = session.Tree.FileCount; StepSucceeded();
+        BeginStep(DriveStage.LocalStorage);
         staging = new IntakeStaging(Path.Combine(partition, "uploads"), session);
+        staging.Faulted += error => diagnostics.Record(DriveStage.Uploads, "error", error);
         filesystem = new MaterialFileSystem(session, staging);
-        var descriptor = new RawSecurityDescriptor(MaterialFileSystem.OwnerSddl());
-        var descriptorBytes = new byte[descriptor.BinaryLength]; descriptor.GetBinaryForm(descriptorBytes, 0);
-        await Task.Run(() =>
+        StepSucceeded(); BeginStep(DriveStage.Driver, "Starting the Windows filesystem driver…");
+        dokan = await Task.Run(() => new Dokan(new NullLogger()));
+        StepSucceeded(); BeginStep(DriveStage.Mount, $"Mounting {settings.Mount}…");
+        try { await Task.Run(() =>
         {
-            dokan = new Dokan(new NullLogger());
-            instance = new DokanInstanceBuilder(dokan).ConfigureOptions(options =>
-            {
-                options.MountPoint = settings.Mount;
-                // No MountManager fallback: silently picking another letter would break material paths.
-                options.Options = DokanOptions.CurrentSession;
-                options.TimeOut = TimeSpan.FromMinutes(5);
-                options.VolumeSecurityDescriptor = descriptorBytes;
-                options.VolumeSecurityDescriptorLength = descriptorBytes.Length;
-            }).Build(filesystem);
-        });
+            instance = new DokanInstanceBuilder(dokan).ConfigureOptions(options => DriveMountOptions.Configure(options, settings.Mount)).Build(filesystem);
+        }); }
+        catch (DokanException error) { throw new DriveDriverException((int)error.ErrorStatus, error); }
         for (var attempt = 0; attempt < 100 && !filesystem.IsMounted; attempt++) await Task.Delay(50, lifetime.Token);
         if (!filesystem.IsMounted) throw new IOException("Windows did not confirm the mount.");
         mountCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         settings.PublishMount(true); lastError = null; nextRefresh = 0; nextUpload = 0;
+        StepSucceeded(); phase = DriveStage.Ready; failure = null;
         state.Text = $"Mounted {settings.Mount} · {settings.AccountEmail} · {session.Tree.FileCount:N0} files";
         tray.ShowBalloonTip(4000, "OPAL Drive connected", $"Your materials are available at {settings.Mount}", ToolTipIcon.Info);
     }
@@ -192,15 +231,19 @@ public sealed class DriveWindow : Form
             if (Environment.TickCount64 >= nextRefresh)
             {
                 nextRefresh = Environment.TickCount64 + 30000;
+                BeginStep(DriveStage.Library);
                 await session!.RefreshAsync(lifetime.Token);
+                lastLibraryRefresh = DateTimeOffset.UtcNow; fileCount = session.Tree.FileCount; StepSucceeded();
+                BeginStep(DriveStage.Heartbeat);
                 await client!.HeartbeatAsync(settings.DeviceId, Environment.MachineName, "mounted", settings.Mount, cancellationToken: lifetime.Token);
+                lastHeartbeat = DateTimeOffset.UtcNow; StepSucceeded(); phase = DriveStage.Ready; failure = null;
                 settings.PublishMount(true); lastError = null;
                 state.Text = $"Mounted {settings.Mount} · {settings.AccountEmail} · {session.Tree.FileCount:N0} files";
             }
-            if (uploadTask is { IsCompleted: true }) { await uploadTask; uploadTask = null; }
+            if (uploadTask is { IsCompleted: true }) { phase = DriveStage.Uploads; var completed = uploadTask; uploadTask = null; await completed; phase = DriveStage.Ready; }
             if (Environment.TickCount64 >= nextUpload && uploadTask is null)
             { nextUpload = Environment.TickCount64 + 15000; uploadTask = staging!.UploadPendingAsync(mountCancellation!.Token); }
-            if (session is { Online: false }) throw new IOException("OPAL is offline.");
+            if (session is { Online: false }) { phase = DriveStage.FileRead; throw session.LastFault ?? new IOException("OPAL is offline."); }
             var count = staging!.Counts;
             uploads.Text = $"Uploads: {count.Pending} pending · {count.Uploaded} confirmed · {count.Failed} awaiting retry\nProcessing and publishing are not enabled yet.";
         }
@@ -210,39 +253,34 @@ public sealed class DriveWindow : Form
     private async Task HandleErrorAsync(Exception error)
     {
         if (quitting) return;
-        var code = error switch
-        {
-            MountInUseException => "mount_in_use",
-            DllNotFoundException or BadImageFormatException => "driver_missing",
-            DokanException => "driver_missing",
-            HttpRequestException { StatusCode: HttpStatusCode.Unauthorized } => "sign_in",
-            HttpRequestException { StatusCode: HttpStatusCode.Forbidden } => "access_denied",
-            System.Security.Cryptography.CryptographicException => "sign_in",
-            _ => "network",
-        };
-        session?.Invalidate(); settings.PublishMount(false);
-        var text = code switch
-        {
-            "mount_in_use" => "That drive letter is in use. Choose a free letter, then Mount drive.",
-            "driver_missing" => "The Windows drive component is unavailable. Run the OPAL Drive installer or ask IT to install it.",
-            "sign_in" or "access_denied" => "Your connection is no longer authorized. Sign in again or contact your workspace administrator.",
-            _ => "Cannot reach your OPAL drive. Check your network or company proxy. OPAL will retry automatically.",
-        };
+        failure = DriveFailure.From(error, phase); failedPhase = phase;
+        diagnostics.Record(phase, "error", error, stepTime.ElapsedMilliseconds);
+        var code = failure.Code;
+        session?.Invalidate();
+        try { settings.PublishMount(false); } catch (Exception cleanup) { diagnostics.Record(DriveStage.LocalStorage, "error", cleanup); }
+        var text = $"{DriveFailure.StageName(failedPhase)}: {failure.Advice} [{code}]";
         state.Text = text;
         if (lastError != code) { tray.ShowBalloonTip(5000, "OPAL Drive needs attention", text, ToolTipIcon.Warning); lastError = code; }
         if (client is not null)
         {
-            try { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await client.HeartbeatAsync(settings.DeviceId, Environment.MachineName, "error", settings.Mount, code, timeout.Token); } catch { }
+            try { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await client.HeartbeatAsync(settings.DeviceId, Environment.MachineName, "error", settings.Mount, failure.HeartbeatCode, timeout.Token); lastHeartbeat = DateTimeOffset.UtcNow; }
+            catch (Exception heartbeatError) { diagnostics.Record(DriveStage.Heartbeat, "error", heartbeatError); }
         }
         if (code is "sign_in" or "access_denied")
         {
             await UnmountAsync(); settings.SetToken(""); settings.Save(); state.Text = text;
         }
-        else if (instance is not null && filesystem?.IsMounted != true) await UnmountAsync();
+        else if (instance is not null && filesystem?.IsMounted != true) { await UnmountAsync(); state.Text = text; }
+        else if (instance is null)
+        {
+            // Failed mount attempts must release the native driver/cache session before retrying.
+            session?.Stop(); dokan?.Dispose(); dokan = null; filesystem = null; staging = null; session = null;
+        }
         nextRefresh = Environment.TickCount64 + 30000;
     }
     private async Task UnmountAsync()
     {
+        BeginStep(DriveStage.Unmount);
         settings.PublishMount(false); session?.Stop(); mountCancellation?.Cancel();
         if (uploadTask is not null) { try { await uploadTask; } catch (OperationCanceledException) { } uploadTask = null; }
         var old = instance; instance = null;
@@ -254,6 +292,7 @@ public sealed class DriveWindow : Form
             try { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)); await client.HeartbeatAsync(settings.DeviceId, Environment.MachineName, "offline", null, cancellationToken: timeout.Token); } catch { }
         }
         state.Text = "Drive unmounted. Your staged uploads are retained on this computer.";
+        StepSucceeded();
     }
     private async Task SignOutAsync()
     {
@@ -282,5 +321,4 @@ public sealed class DriveWindow : Form
         server.Enabled = !busy && !ticking && !linked; mount.Enabled = !busy && !ticking && instance is null;
         tray.Text = session?.Online == true && filesystem?.IsMounted == true ? $"OPAL Drive · {settings.Mount}" : "OPAL Drive · Disconnected";
     }
-    private sealed class MountInUseException : IOException { }
 }

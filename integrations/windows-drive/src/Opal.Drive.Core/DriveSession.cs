@@ -10,6 +10,8 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
     private string? etag;
     private readonly SemaphoreSlim refresh = new(1, 1);
     private readonly CancellationTokenSource stopping = new();
+    private Exception? lastFault;
+    public Exception? LastFault => Volatile.Read(ref lastFault);
     public OpalDriveClient Client { get; } = client;
     public DriveTree Tree { get { RequireOnline(); return Volatile.Read(ref tree); } }
     public bool Online => Environment.TickCount64 < Interlocked.Read(ref validUntil);
@@ -20,8 +22,9 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
         Interlocked.Exchange(ref validUntil, 0);
         Volatile.Write(ref tree, DriveTree.Empty);
         etag = null;
-        if (error is not null) Faulted?.Invoke(error);
+        if (error is not null) ReportFault(error);
     }
+    private void ReportFault(Exception error) { Volatile.Write(ref lastFault, error); Faulted?.Invoke(error); }
     public async Task RefreshAsync(CancellationToken cancel = default)
     {
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancel, stopping.Token);
@@ -33,6 +36,7 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
             if (result.Manifest is { } json) Volatile.Write(ref tree, DriveTree.Parse(json));
             else if (etag is null) throw new InvalidDataException("Missing initial drive manifest.");
             etag = result.ETag;
+            Volatile.Write(ref lastFault, null);
             Interlocked.Exchange(ref validUntil, Environment.TickCount64 + 45000);
         }
         catch (Exception error) { Invalidate(error); throw; }
@@ -90,6 +94,8 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
             }
             catch (HttpRequestException error) when (error.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
             { session.Invalidate(error); throw; }
+            catch (Exception error) when (error is not OperationCanceledException)
+            { session.ReportFault(error); throw; }
             finally { gate.Release(); }
         }
         public void Dispose()

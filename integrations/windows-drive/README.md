@@ -11,6 +11,18 @@ OPAL Drive mounts the signed-in person's visible materials as a real Windows dri
 
 Opening OPAL Drive again from Start restores its existing window, including when it is hidden in the tray or minimized. Windows sign-in also shows the connection window until an account has been connected; subsequent sign-ins reconnect in the background.
 
+## Status and troubleshooting
+
+Open **Status & diagnostics** from the main window or tray menu. Status shows the current connection step, Windows mount and library availability, last successful library refresh and heartbeat, file/upload counts, next retry, and the last failure. The warning now identifies the failed operation and distinguishes DNS, TLS, proxy authentication, account access, server responses, local storage and Windows mount failures.
+
+Use **Run checks** to test local storage, the installed driver, drive-letter availability, DNS/system proxy selection, HTTPS, account access, the complete library manifest, and one authorized 64-byte file read. Checks are read-only apart from a temporary local storage probe and diagnostics logs; they do not change the account, mount, or uploads. Cancel is available while checks run. A DNS failure can coexist with successful HTTPS when a company proxy resolves names remotely.
+
+Use **Copy report** or **Save report** to share status, timed check results, and recent activity with support. Reports include the app/Windows/runtime versions, server origin and device ID; they exclude credentials, browser sign-in codes, email addresses, material filenames, HTTP bodies and exception messages. Nothing is uploaded automatically. Structured logs survive restarts under `%LOCALAPPDATA%\Olsyn\OPAL\Drive\logs`; rotation retains two approximately 256 KiB files and reports include at most 200 events. Logging failures do not stop the drive.
+
+Version 0.1.2 fixes a native security-buffer sizing error in 0.1.0–0.1.1 that prevented mounting after successful browser approval and was misleadingly reported as a network problem. Upgrade the installer; the existing account connection is retained. The Windows mount test uses the same per-user security configuration as the application.
+
+Updates currently use the installer from Connect. The fixed installer identity updates the existing Program Files installation and keeps account settings, caches and staged uploads in the user's profile. There is no automatic software updater in OPAL Drive yet; automatic reconnect at Windows sign-in is separate.
+
 Revit and Omniverse releases with drive discovery automatically find the mount when signed into the same OPAL server and account. Earlier releases can use it by entering `O:\` as the material root in their settings. Each application approves its own device connection; no bearer token is copied between apps.
 
 ## Private Incoming folders

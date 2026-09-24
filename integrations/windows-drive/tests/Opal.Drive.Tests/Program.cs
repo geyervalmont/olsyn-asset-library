@@ -13,6 +13,47 @@ async Task Throws(Func<Task> action) { try { await action(); } catch { return; }
 var temp = Path.Combine(Path.GetTempPath(), "opal-drive-tests-" + Guid.NewGuid()); Directory.CreateDirectory(temp);
 try
 {
+    await Test("diagnostics distinguish transport, authorization, data and local failures", () =>
+    {
+        Check(DriveFailure.From(new HttpRequestException(HttpRequestError.NameResolutionError, "private"), DriveStage.Account).Code == "dns");
+        Check(DriveFailure.From(new HttpRequestException(HttpRequestError.SecureConnectionError, "private"), DriveStage.Account).Code == "tls");
+        Check(DriveFailure.From(new HttpRequestException("private", null, HttpStatusCode.ProxyAuthenticationRequired), DriveStage.Account).Code == "proxy");
+        Check(DriveFailure.From(new HttpRequestException("private", null, HttpStatusCode.Unauthorized), DriveStage.Library).Code == "sign_in");
+        Check(DriveFailure.From(new HttpRequestException("private", null, HttpStatusCode.ServiceUnavailable), DriveStage.Library).Code == "server");
+        Check(DriveFailure.From(new JsonException("private"), DriveStage.Library).Code == "invalid_response");
+        Check(DriveFailure.From(new InvalidOperationException("private"), DriveStage.Account).Code == "invalid_response");
+        Check(DriveFailure.From(new IOException("private"), DriveStage.LocalStorage).Code == "local_storage");
+        Check(DriveFailure.From(new Exception("private"), DriveStage.Ready).Code == "unknown");
+        Check(DriveFailure.From(new DriveDriverException(-5, new Exception("private")), DriveStage.Mount).DriverStatus == -5);
+        Check(DriveFailure.From(new DriveMountInUseException(), DriveStage.Mount).HeartbeatCode == "mount_in_use");
+        return Task.CompletedTask;
+    });
+    await Test("reports persist structured errors without credentials, personal paths or response bodies", () =>
+    {
+        const string secret = "secret-token-and-email@example.test";
+        var root = Path.Combine(temp, "diagnostics");
+        var journal = new DriveDiagnostics(root);
+        journal.Record(DriveStage.Library, "error", new HttpRequestException("https://opal.test?token=" + secret, new IOException("C:\\Users\\" + secret), HttpStatusCode.BadGateway), 123);
+        var reopened = new DriveDiagnostics(root);
+        var report = reopened.ExportHistory();
+        Check(!report.Contains(secret) && report.Contains("502") && report.Contains("123") && report.Contains("Library"));
+        Check(!File.ReadAllText(Path.Combine(root, "diagnostics.jsonl")).Contains(secret));
+        Check(DriveDiagnostics.SafeOrigin("https://user:password@opal.test/path?secret=token#fragment") == "https://opal.test");
+        Check(DriveDiagnostics.SafeOrigin("invalid secret input") == "Invalid server address");
+        return Task.CompletedTask;
+    });
+    await Test("diagnostic history is bounded and a log write failure cannot stop the drive", () =>
+    {
+        var root = Path.Combine(temp, "bounded-diagnostics"); var journal = new DriveDiagnostics(root);
+        for (int i = 0; i < 1600; i++) journal.Record(DriveStage.Account, "error", new HttpRequestException("private", null, HttpStatusCode.BadGateway));
+        Check(journal.Events().Length == 200 && Directory.GetFiles(root).Length == 2);
+        Check(Directory.GetFiles(root).All(p => new FileInfo(p).Length <= DriveDiagnostics.FileLimit + 8192));
+        Check(journal.ExportHistory().Split(Environment.NewLine).Length <= 200);
+        var blocked = Path.Combine(temp, "blocked-log"); File.WriteAllText(blocked, "existing file");
+        journal = new DriveDiagnostics(blocked); journal.Record(DriveStage.Library, "error", new JsonException("secret"));
+        Check(!journal.LogAvailable && journal.Events().Length == 1 && !journal.ExportHistory().Contains("secret"));
+        return Task.CompletedTask;
+    });
     await Test("namespace handles nested folders and case-insensitive lookup", () =>
     {
         var source = new Fake(); var tree = new DriveTree([source.Entry], []);
@@ -54,7 +95,8 @@ try
         var remote = new Fake(); using var client = remote.Client(); var state = new DriveSession(client, new ContentCache(Path.Combine(temp,"network")));
         await state.RefreshAsync(); remote.Offline = true;
         await Throws(() => state.RefreshAsync()); Check(!state.Online);
-        await Throws(() => Task.FromResult(state.Tree)); remote.Offline = false; await state.RefreshAsync(); Check(state.Tree.FileCount == 1);
+        Check(state.LastFault is HttpRequestException);
+        await Throws(() => Task.FromResult(state.Tree)); remote.Offline = false; await state.RefreshAsync(); Check(state.Tree.FileCount == 1 && state.LastFault is null);
     });
     await Test("unmount cancels pending network reads and leaves no partial cache file", async () =>
     {
