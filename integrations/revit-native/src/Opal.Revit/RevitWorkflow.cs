@@ -33,6 +33,7 @@ public static class RevitWorkflow
         string variantCode,
         string? requestedQuality = null)
     {
+        settings.MountPath = DriveMountDiscovery.Find(settings) ?? settings.MountPath;
         var host = new RevitMaterialHost(application);
         using var api = new OpalApiClient(settings);
         var variant = api.VariantAsync(variantCode).GetAwaiter().GetResult();

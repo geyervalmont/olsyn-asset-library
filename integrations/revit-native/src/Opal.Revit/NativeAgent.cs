@@ -92,6 +92,7 @@ public sealed class NativeAgent : IDisposable
             {
                 if (DateTimeOffset.UtcNow - heartbeatAt > TimeSpan.FromSeconds(30))
                 {
+                    settings.MountPath = DriveMountDiscovery.Find(settings) ?? settings.MountPath;
                     await sessionApi.HeartbeatWithDriveAsync(sessionId, status.Document, settings.MountPath, System.IO.Directory.Exists(settings.MountPath), cancellationToken).ConfigureAwait(false);
                     heartbeatAt = DateTimeOffset.UtcNow;
                 }
