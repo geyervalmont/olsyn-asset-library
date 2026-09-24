@@ -17,7 +17,7 @@ class EnsureOlsynAccess
                 return $next($request);
             }
             if ($request->hasSession() && $expires = $request->session()->get('olsyn.login_expires_at')) {
-                if ($expires <= time()) {
+                if ($expires <= now()->timestamp) {
                     auth()->logout();
                     $request->session()->invalidate();
                     abort(401, 'Please sign in again.');

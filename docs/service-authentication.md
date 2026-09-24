@@ -48,12 +48,15 @@ Render's `olsyn-access` secret holds `RENDER_ACCESS_TOKEN` and `RENDER_SESSION_S
 
 Opal's `olsyn-access` secret holds `OLSYN_ACCESS_TOKEN`. Non-secret OIDC values and `OLSYN_ACCESS_ENABLED=true` are in its ConfigMap. All web/auth-capable workloads read the same config. The additive migration adds a unique nullable `users.workos_id` field. Existing password/passkey login remains at `/login` alongside Continue with Olsyn. Restricting service access also restricts these local sessions; recovery authentication does not override a deliberate grant revocation.
 
+Opal browser sessions use `SESSION_LIFETIME=43200` minutes (30 days) and survive closing the browser. A new SSO login also gets a fixed absolute deadline of 30 days; activity does not extend that deadline. The ID token's expiry is validated during login and does not cap the local browser session. Central grants are still rechecked within 15 seconds. Sessions created before a lifetime change retain their existing absolute deadline, so one fresh sign-in is needed to adopt the new policy.
+
 WorkOS outage: already authenticated sessions last until their configured absolute expiry; use independent service recovery authentication when necessary. Policy checks themselves do not call WorkOS. Main-site **new login still depends on WorkOS**; this change does not add an independent main-site login provider. AWS IAM, VPN, SSM and SSH administrative recovery remain separate. If the main policy service is unavailable, services deny after the short decision cache expires. Recover that service through the existing infrastructure paths; never replace failed authorization with allow-all.
 
 Rollback: restore the recorded previous service image and corresponding config; retain additive database columns/tables and grants. Do not drop grant history or rotate signing/session secrets as part of a routine rollback. Do not disable authentication to diagnose an outage.
 
 ## Sources
 
+- [OpenID Connect ID token validation and session lifetime](https://openid.net/specs/openid-connect-core-1_0.html#IDToken)
 - [WorkOS Connect OAuth](https://workos.com/docs/authkit/connect/oauth)
 - [WorkOS application API](https://workos.com/docs/reference/workos-connect/applications)
 - [Authlib Starlette OIDC](https://docs.authlib.org/en/latest/client/starlette.html)

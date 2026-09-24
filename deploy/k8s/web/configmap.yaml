@@ -59,7 +59,9 @@ data:
   REDIS_PORT: "6379"
 
   SESSION_DRIVER: database
-  SESSION_LIFETIME: "120"
+  # Minutes: persistent browser sessions and Olsyn SSO logins last 30 days.
+  SESSION_LIFETIME: "43200"
+  SESSION_EXPIRE_ON_CLOSE: "false"
   SESSION_ENCRYPT: "false"
   SESSION_PATH: /
   SESSION_DOMAIN: opal.olsyn.com

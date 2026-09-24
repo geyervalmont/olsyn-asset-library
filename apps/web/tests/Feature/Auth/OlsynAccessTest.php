@@ -123,6 +123,54 @@ it('returns to a pending device link after OIDC authentication', function () {
     $this->assertAuthenticatedAs($user);
 });
 
+it('keeps SSO sessions for 30 days independently of the login token expiry', function () {
+    config(['session.lifetime' => 43200, 'session.expire_on_close' => false]);
+    $this->freezeTime();
+    $user = User::factory()->create(['workos_id' => 'workos-owner']);
+    $deadline = now()->addDays(30)->timestamp;
+    $mock = Mockery::mock(OlsynOidc::class);
+    $mock->shouldReceive('exchange')->once()->andReturn([
+        'sub' => 'workos-owner', 'email' => $user->email, 'exp' => now()->addMinutes(30)->timestamp,
+    ]);
+    app()->instance(OlsynOidc::class, $mock);
+    Http::fake(['policy.example.test/*' => Http::response(policyResponse())]);
+    $flow = ['state' => 'expected', 'nonce' => 'nonce', 'verifier' => 'verifier', 'created_at' => time()];
+
+    $response = $this->withSession(['olsyn.oidc' => $flow])
+        ->get('/auth/callback?code=code&state=expected')
+        ->assertRedirect('/dashboard')->assertSessionHas('olsyn.login_expires_at', $deadline);
+    $cookie = collect($response->headers->getCookies())->first(fn ($cookie) => $cookie->getName() === config('session.cookie'));
+    expect($cookie->getExpiresTime())->toBe($deadline)->and($cookie->isHttpOnly())->toBeTrue();
+
+    $this->travel(1)->hours();
+    $this->get('/dashboard')->assertOk()->assertSessionHas('olsyn.login_expires_at', $deadline);
+    $this->travel(7)->days();
+    $this->get('/dashboard')->assertOk()->assertSessionHas('olsyn.login_expires_at', $deadline);
+    $this->travel(22)->days();
+    $this->get('/dashboard')->assertOk()->assertSessionHas('olsyn.login_expires_at', $deadline);
+    $this->assertAuthenticatedAs($user);
+
+    $this->travel(1)->days();
+    $this->get('/dashboard')->assertUnauthorized();
+    $this->assertGuest();
+});
+
+it('still revokes a long lived SSO session when central access is removed', function () {
+    $user = User::factory()->create(['workos_id' => 'workos-owner']);
+    Http::fake(['policy.example.test/*' => Http::sequence()->push(policyResponse())->push(policyResponse(false, []))]);
+    $this->actingAs($user)->withSession(['olsyn.login_expires_at' => now()->addDays(30)->timestamp])
+        ->get('/dashboard')->assertOk();
+    $this->travel(16)->seconds();
+    $this->get('/dashboard')->assertForbidden();
+});
+
+it('allows explicitly signing out of a long lived SSO session', function () {
+    $user = User::factory()->create(['workos_id' => 'workos-owner']);
+    $this->actingAs($user)->withSession(['olsyn.login_expires_at' => now()->addDays(30)->timestamp])
+        ->post('/logout')->assertRedirect()->assertSessionMissing('olsyn.login_expires_at');
+    $this->assertGuest();
+});
+
 it('validates signed ID token issuer audience expiry and nonce', function () {
     $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
     openssl_pkey_export($key, $private);

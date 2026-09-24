@@ -60,8 +60,10 @@ class OlsynLoginController extends Controller
         }
         Auth::login($user);
         $request->session()->regenerate();
-        // Absolute lifetime; activity does not prolong the WorkOS-authenticated session.
-        $request->session()->put('olsyn.login_expires_at', min((int) $claims['exp'], time() + 28800));
+        // The ID token must be valid when establishing the session, not for its
+        // entire lifetime. OPAL owns its browser session; central access is
+        // still checked on subsequent requests, including after revocation.
+        $request->session()->put('olsyn.login_expires_at', now()->addMinutes((int) config('session.lifetime'))->timestamp);
 
         if (is_string($flow['return_to'] ?? null)) {
             return redirect()->to($flow['return_to']);
