@@ -15,9 +15,29 @@ function quickOpen(component, event, code, variantId = null) {
 }
 
 document.addEventListener('alpine:init', () => {
-    /**
-     * A material swatch previews only the colourway being inspected.
-     */
+    window.Alpine.data('appNavigation', () => ({
+        navigationOpen: false,
+        sidebarCollapsed: false,
+
+        init() {
+            try {
+                this.sidebarCollapsed = localStorage.getItem('opal.sidebar.collapsed') === 'true';
+            } catch {
+                // Navigation still works when browser storage is unavailable.
+            }
+        },
+
+        toggleSidebar() {
+            this.sidebarCollapsed = ! this.sidebarCollapsed;
+            try {
+                localStorage.setItem('opal.sidebar.collapsed', String(this.sidebarCollapsed));
+            } catch {
+                // Keep the current choice for this page even without persistence.
+            }
+        },
+    }));
+
+    /** A material swatch previews only the colourway being inspected. */
     window.Alpine.data('swatchCard', (config, qrOptions = []) => ({
         variants: config.variants ?? [],
         // The committed choice: what apply acts on, and what shows at rest.
