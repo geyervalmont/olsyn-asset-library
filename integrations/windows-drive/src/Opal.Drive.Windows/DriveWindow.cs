@@ -76,7 +76,14 @@ public sealed class DriveWindow : Form
         automatic.CheckedChanged += (_, _) => { settings.AutoMount = automatic.Checked; settings.Save(); };
         open.Click += (_, _) => OpenDrive();
         website.Click += (_, _) => OpenUrl(settings.Server.TrimEnd('/') + "/connect");
-        FormClosing += (_, e) => { if (!quitting) { e.Cancel = true; Hide(); } };
+        FormClosing += (_, e) =>
+        {
+            if (e.CloseReason == CloseReason.WindowsShutDown)
+            {
+                quitting = true; settings.PublishMount(false); session?.Invalidate(); lifetime.Cancel(); tray.Visible = false;
+            }
+            if (!quitting) { e.Cancel = true; Hide(); }
+        };
         Shown += async (_, _) =>
         {
             if (background) Hide();
@@ -97,7 +104,7 @@ public sealed class DriveWindow : Form
     private AppSettings ApiSettings(string token = "") => new() { UseCustomServer = true, ServerUrl = settings.Server, Token = token };
     private async Task ActionAsync(Func<Task> action)
     {
-        if (busy) return;
+        if (busy || ticking || quitting) return;
         busy = true; UpdateControls();
         try { await action(); }
         catch (Exception error) { await HandleErrorAsync(error); }
@@ -166,13 +173,13 @@ public sealed class DriveWindow : Form
     private async Task TickAsync()
     {
         if (busy || ticking || quitting) return;
-        ticking = true;
+        ticking = true; UpdateControls();
         try
         {
             if (instance is null)
             {
                 if (settings.AutoMount && settings.ProtectedToken.Length > 0 && Environment.TickCount64 >= nextRefresh)
-                { nextRefresh = Environment.TickCount64 + 30000; await ActionAsync(MountAsync); }
+                { nextRefresh = Environment.TickCount64 + 30000; await MountAsync(); }
                 return;
             }
             if (filesystem?.IsMounted != true) throw new IOException("The drive was unmounted by Windows.");
@@ -196,6 +203,7 @@ public sealed class DriveWindow : Form
     }
     private async Task HandleErrorAsync(Exception error)
     {
+        if (quitting) return;
         var code = error switch
         {
             MountInUseException => "mount_in_use",
@@ -255,15 +263,17 @@ public sealed class DriveWindow : Form
     }
     private async Task QuitAsync()
     {
-        if (busy || quitting) return;
-        quitting = true; timer.Stop(); lifetime.Cancel(); await UnmountAsync(); client?.Dispose(); tray.Visible = false; tray.Dispose(); Close(); Application.Exit();
+        if (quitting) return;
+        quitting = true; timer.Stop(); lifetime.Cancel();
+        while (busy || ticking) await Task.Delay(50);
+        await UnmountAsync(); client?.Dispose(); tray.Visible = false; tray.Dispose(); Close(); Application.Exit();
     }
     private void UpdateControls()
     {
         var linked = settings.ProtectedToken.Length > 0;
-        connect.Enabled = !busy && !linked; disconnect.Enabled = !busy && linked;
-        toggle.Enabled = !busy && linked; toggle.Text = instance is null ? "Mount drive" : "Unmount";
-        server.Enabled = !busy && !linked; mount.Enabled = !busy && instance is null;
+        connect.Enabled = !busy && !ticking && !linked; disconnect.Enabled = !busy && !ticking && linked;
+        toggle.Enabled = !busy && !ticking && linked; toggle.Text = instance is null ? "Mount drive" : "Unmount";
+        server.Enabled = !busy && !ticking && !linked; mount.Enabled = !busy && !ticking && instance is null;
         tray.Text = session?.Online == true && filesystem?.IsMounted == true ? $"OPAL Drive · {settings.Mount}" : "OPAL Drive · Disconnected";
     }
     private sealed class MountInUseException : IOException { }

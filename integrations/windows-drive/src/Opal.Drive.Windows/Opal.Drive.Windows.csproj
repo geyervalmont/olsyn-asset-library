@@ -9,6 +9,5 @@
   <ItemGroup>
     <ProjectReference Include="../Opal.Drive.Core/Opal.Drive.Core.csproj" />
     <PackageReference Include="DokanNet" Version="2.3.0.3" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
   </ItemGroup>
 </Project>
