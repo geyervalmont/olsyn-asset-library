@@ -14,17 +14,16 @@ under Manage. Contributor-only upload batches are explicitly marked as a preview
 - Private intake sessions with UUIDv7 identifiers, bounded file reservations,
   checksum-verified staging, whole-file retry, expiry, cancellation and submission.
 - Device heartbeats, token revocation, and a shared .NET transport
-  (`OpalDriveClient`) ready for a filesystem adapter.
+  (`OpalDriveClient`) used by the Windows filesystem adapter.
 - Revit heartbeat support for the configured material folder being available or
   missing. This is a directory availability check, not a verified mount/read test.
   Previously released connectors show “status has not been reported” until updated.
 
-**There is no Windows mount implementation in this change.** The existing Linux
-PrismFS/Samba service continues to use its existing drive principal. This change
-does not convert that service to per-user SMB authentication. The Windows driver,
-filesystem callbacks, signed installer, credential vault, bounded on-disk cache,
-and enterprise proxy/host validation remain a separate delivery. The capability
-`windows_client_available` remains false and the website says so explicitly.
+The Windows mount is implemented in `integrations/windows-drive`. It ships as a
+separate OPAL Drive installer with the upstream-signed Dokany driver, browser
+account linking, user-scoped DPAPI credentials, bounded verified caching, private
+Incoming staging and device status. See [Windows setup and operating limits](../integrations/windows-drive/README.md).
+The Linux PrismFS/Samba service retains its existing shared drive principal.
 
 There is also **no ingestion processor**. Submitted textures do not create a
 material, generate maps, run a model, or publish anything.
@@ -46,6 +45,7 @@ Use the bearer token over HTTPS on the selected OPAL origin:
 | `GET /api/v1/drive/bootstrap` | Contract `opal-drive/1`, account, capabilities, limits, relative endpoint URLs, suggested mount and refresh periods |
 | `GET /api/v1/drive/manifest` | Visible published files and the user's open Incoming folders; ETag/If-None-Match supported |
 | `GET` / `HEAD /api/v1/drive/files/{derivative_uuid}/{file_id}` | Authorized immutable bytes, length, SHA-256 ETag and single `Range: bytes=…` support |
+| `GET` / `HEAD /api/v1/drive/packages/{id}` | Authorized canonical USDZ at the same UUID/version path as the Omniverse resolver, with range support |
 | `POST /api/v1/drive/heartbeat` | Device status, every 30 seconds |
 
 The current workspace is resolved before checking local role permissions. Material
@@ -68,11 +68,11 @@ access decisions are recorded in `file_accesses` with channel `drive_https`.
 `OpalDriveClient` uses the operating system's proxy and certificate trust, refuses
 cross-origin file URLs and redirects, bounds each range read to 4 MiB, and checks
 status, Content-Range, Content-Length and ETag before returning bytes. It rejects
-truncated reads. Partial reads do not independently verify a full-file hash; a
-future full-file cache must verify SHA-256 before committing an entry. Construct
+truncated reads. Partial reads do not independently verify a full-file hash; the
+Windows full-file cache verifies SHA-256 before committing an entry. Construct
 a new client with the saved token after completing device linking.
 
-The future adapter must:
+The Windows adapter enforces the following transport requirements:
 
 - Partition all metadata and cached bytes by server/account; clear the visible
   namespace on sign-out, 401 or 403. No offline authorization is implemented.
@@ -81,8 +81,8 @@ The future adapter must:
   network failure into a successful empty file.
 - Pin open handles to an immutable manifest entry. New handles use refreshed
   entries. Never serve a different derivative through an existing handle.
-- Fetch file ranges on demand; implement bounded cache eviction and correct
-  Windows file-operation semantics before declaring mounting available.
+- Fetch files on first read using bounded ranges, verify the complete SHA-256,
+  then serve random reads from the cache. Eviction never removes an open file.
 - Report `device_id` (persistent UUID per installation), `machine`, `version`,
   `state` (`connecting`, `mounted`, `error`, `offline`), `mount_path` and optional
   `error_code` (`network`, `sign_in`, `driver_missing`, `mount_in_use`,

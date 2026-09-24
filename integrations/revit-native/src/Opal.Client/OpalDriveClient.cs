@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace Opal.Client;
 
 /// <summary>
-/// HTTPS transport for a future filesystem adapter. This does not mount a drive.
+/// Account-scoped HTTPS transport shared by the Windows filesystem adapter and clients.
 /// Uses the system proxy/certificate trust and never redirects bearer credentials.
 /// </summary>
 public sealed class OpalDriveClient : IDisposable
@@ -24,7 +24,7 @@ public sealed class OpalDriveClient : IDisposable
         if (!string.IsNullOrEmpty(origin.UserInfo) || origin.AbsolutePath != "/" || !string.IsNullOrEmpty(origin.Query) || !string.IsNullOrEmpty(origin.Fragment))
             throw new ArgumentException("Use the OPAL server origin without a path or credentials.");
 
-        http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false }, disposeHandler: true)
+        http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false, DefaultProxyCredentials = CredentialCache.DefaultCredentials }, disposeHandler: true)
         {
             BaseAddress = origin,
             Timeout = TimeSpan.FromMinutes(5),
@@ -48,6 +48,22 @@ public sealed class OpalDriveClient : IDisposable
 
     public Task<JsonElement> BootstrapAsync(CancellationToken cancellationToken = default) =>
         JsonAsync(HttpMethod.Get, "/api/v1/drive/bootstrap", null, cancellationToken);
+
+    public async Task RevokeAsync(CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, ApiUri("/api/v1/account/token"));
+        using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task AuthorizeFileAsync(string contentUrl, string sha256, long bytes, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Head, ApiUri(contentUrl));
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        if (response.StatusCode != HttpStatusCode.OK || response.Content.Headers.ContentLength != bytes || response.Headers.ETag?.Tag != $"\"{sha256}\"")
+            throw new IOException("The published file changed. Refresh the drive before retrying.");
+    }
 
     // A null manifest means 304. The adapter must partition its cache by account
     // and discard the namespace on sign-out, 401 or 403; no offline authorization.
@@ -104,7 +120,7 @@ public sealed class OpalDriveClient : IDisposable
         if (sha256.Length != 64 || sha256.Any(c => !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))))
             throw new ArgumentException("A manifest SHA-256 is required.", nameof(sha256));
         var uri = ApiUri(contentUrl);
-        if (!uri.AbsolutePath.StartsWith("/api/v1/drive/files/", StringComparison.Ordinal))
+        if (!uri.AbsolutePath.StartsWith("/api/v1/drive/files/", StringComparison.Ordinal) && !uri.AbsolutePath.StartsWith("/api/v1/drive/packages/", StringComparison.Ordinal))
             throw new ArgumentException("Content must be an OPAL drive file.", nameof(contentUrl));
         var length = (int)Math.Min(count, fileBytes - offset);
         var end = offset + length - 1;

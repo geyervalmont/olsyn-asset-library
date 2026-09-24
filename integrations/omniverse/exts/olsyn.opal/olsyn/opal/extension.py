@@ -10,7 +10,7 @@ import omni.ext
 import omni.ui as ui
 import omni.usd
 
-from .client import APP_VERSION, Client
+from .client import APP_VERSION, Client, discover_drive
 from . import credentials, materials
 
 class Extension(omni.ext.IExt):
@@ -30,6 +30,7 @@ class Extension(omni.ext.IExt):
         self.categories = [{'code': '', 'name': 'All categories'}]
         self.busy = False
         self.session_id = None
+        self.account_email = ''
         self.window = ui.Window('OPAL Materials', width=790, height=720)
         with self.window.frame:
             with ui.VStack(spacing=8):
@@ -129,10 +130,15 @@ class Extension(omni.ext.IExt):
             return
         result = await asyncio.to_thread(self.client.request, '/api/v1/sessions', {'platform': 'omniverse', 'machine': socket.gethostname(), 'app_version': 'OPAL Omniverse ' + APP_VERSION})
         self.session_id = result['data']['id']
+        account = await asyncio.to_thread(self.client.request, '/api/v1/me')
+        self.account_email = account['email']
         while self.client.token:
             try:
                 stage = omni.usd.get_context().get_stage()
                 document = stage.GetRootLayer().GetDisplayName() if stage else None
+                discovered = await asyncio.to_thread(discover_drive, self.client.server, self.account_email)
+                if discovered:
+                    self.mount.model.set_value(discovered)
                 mount = self.mount.model.as_string.strip()
                 await asyncio.to_thread(self.client.request, f'/api/v1/sessions/{self.session_id}/heartbeat', {'document': document, 'mount_path': mount, 'drive_status': 'available' if mount and Path(mount).is_dir() else 'missing'})
             except Exception:

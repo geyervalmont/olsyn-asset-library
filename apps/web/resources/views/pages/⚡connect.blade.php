@@ -49,6 +49,19 @@ new #[Title('Connect')] class extends Component
     }
 
     #[Computed]
+    public function driveRelease(): ?array
+    {
+        return collect($this->versions)->firstWhere('client', 'drive');
+    }
+
+    public function submitBatch(string $uuid, ManageIntake $intake): void
+    {
+        abort_unless(Auth::user()->can('materials.contribute'), 403);
+        $intake->submit(DriveIntakeSession::query()->where('user_id', Auth::id())->where('uuid', $uuid)->firstOrFail());
+        unset($this->batches);
+    }
+
+    #[Computed]
     public function release(): ?array
     {
         try {
@@ -93,7 +106,7 @@ new #[Title('Connect')] class extends Component
         <div>
             <x-ui.eyebrow>{{ __('Your workspace, connected') }}</x-ui.eyebrow>
             <h1>{{ __('Take your materials into Revit and Omniverse.') }}</h1>
-            <p>{{ __('One installation. Sign in with your OPAL account. Manage your connections here.') }}</p>
+            <p>{{ __('Mount your material drive, install your extension, and sign in with your OPAL account.') }}</p>
         </div>
         <div class="ui-connect__account">
             <span class="ui-avatar" aria-hidden="true">{{ auth()->user()->initials() }}</span>
@@ -101,6 +114,23 @@ new #[Title('Connect')] class extends Component
             <x-ui.badge tone="success" dot>{{ __('Signed in') }}</x-ui.badge>
         </div>
     </div>
+
+    <x-ui.panel class="ui-connect__versions" data-test="connect-windows-drive">
+        <h2>{{ __('Your material folder in Windows') }}</h2>
+        <p>{{ __('Install OPAL Drive, choose a drive letter (O: by default), and approve the account connection in your browser. Your materials then open from a normal drive in Explorer, Revit and Omniverse over HTTPS.') }}</p>
+        @if ($this->driveRelease)
+            @foreach ($this->driveRelease['downloads'] as $download)
+                @if (str_ends_with($download['name'], '.exe'))
+                    <x-ui.button href="{{ $download['url'] }}" data-test="drive-download">{{ __('Download OPAL Drive') }} ↓</x-ui.button>
+                @endif
+            @endforeach
+            <p><small>{{ __('Version :version · Windows 10/11 x64', ['version' => $this->driveRelease['version']]) }}</small></p>
+        @else
+            <p>{{ __('The Windows drive installer will appear here when its release is available. Existing material-drive connections continue to work.') }}</p>
+        @endif
+        <p>{{ __('Installation needs administrator rights once for the filesystem component. Keep OPAL Drive running in the system tray and use the same drive letter across your team. Each app connects with your own account; no VPN or API token to copy.') }}</p>
+        <a href="{{ route('connect.it') }}">{{ __('IT installation and network notes') }} →</a>
+    </x-ui.panel>
 
     <ol class="ui-connect__steps" aria-label="{{ __('Connection steps') }}">
         <li>
@@ -136,7 +166,7 @@ new #[Title('Connect')] class extends Component
         <p>{{ __('In either extension, choose Connect account and approve it in your browser. Use Browse Library to search and apply materials.') }}</p>
         @forelse ($this->versions as $version)
             <div class="ui-team__row" wire:key="release-{{ $version['tag'] }}">
-                <div class="ui-team__person"><strong>{{ ucfirst($version['client']) }} {{ $version['version'] }}</strong><small>{{ \Illuminate\Support\Carbon::parse($version['published_at'])->format('j M Y') }}</small></div>
+                <div class="ui-team__person"><strong>{{ $version['client'] === 'drive' ? 'OPAL Drive' : ucfirst($version['client']) }} {{ $version['version'] }}</strong><small>{{ \Illuminate\Support\Carbon::parse($version['published_at'])->format('j M Y') }}</small></div>
                 @foreach ($version['downloads'] as $download)
                     @if (str_ends_with($download['name'], '.exe') || ($version['client'] === 'omniverse' && str_ends_with($download['name'], '.zip')))
                         <x-ui.button variant="secondary" size="sm" href="{{ $download['url'] }}">{{ __('Download') }}</x-ui.button>
@@ -204,7 +234,7 @@ new #[Title('Connect')] class extends Component
     @can('materials.contribute')
         <details wire:ignore.self class="ui-connect__help" data-test="connect-intake">
             <summary>{{ __('Upload batches · Preview') }}</summary>
-            <p>{{ __('Prepare a private Incoming folder for the future OPAL Drive client. Only you can access your batch. Drag-and-drop uploading requires the upcoming desktop client; processing and publishing are not available yet.') }}</p>
+            <p>{{ __('Prepare a private Incoming folder, then copy textures into it through OPAL Drive. Wait until every file is confirmed below before submitting the batch. Only you can access it. Processing and publishing are not available yet.') }}</p>
             <form wire:submit="createBatch" class="ui-connect__batch-form">
                 <div><label for="batch-name">{{ __('Batch name') }}</label><input id="batch-name" class="ui-input" wire:model="batchName" maxlength="120" required placeholder="{{ __('e.g. September timber collection') }}">@error('batchName')<p role="alert">{{ $message }}</p>@enderror</div>
                 <x-ui.button type="submit" variant="secondary" wire:loading.attr="disabled" wire:target="createBatch">{{ __('Prepare upload folder') }}</x-ui.button>
@@ -216,6 +246,7 @@ new #[Title('Connect')] class extends Component
                         @if ($batch->acceptsUploads())<code>/Incoming/{{ $batch->uuid }}</code>@endif
                     </div>
                     <x-ui.badge>{{ $batch->status === 'open' && ! $batch->acceptsUploads() ? __('Expired') : ucfirst($batch->status) }}</x-ui.badge>
+                    @if ($batch->acceptsUploads() && $batch->files_count > 0 && $batch->uploaded_count === $batch->files_count)<x-ui.button variant="secondary" size="sm" wire:click="submitBatch('{{ $batch->uuid }}')" wire:confirm="{{ __('Submit this completed batch? No more files can be added. It will wait for the future ingestion processor.') }}">{{ __('Submit batch') }}</x-ui.button>@endif
                     @if ($batch->acceptsUploads())<x-ui.button variant="quiet" size="sm" wire:click="cancelBatch('{{ $batch->uuid }}')" wire:confirm="{{ __('Close this upload folder? Staged files will be retained.') }}">{{ __('Close folder') }}</x-ui.button>@endif
                 </article>
             @endforeach
@@ -231,8 +262,8 @@ new #[Title('Connect')] class extends Component
         </details>
         <details wire:ignore.self class="ui-connect__help">
             <summary>{{ __('Where is the OPAL virtual drive?') }}</summary>
-            <p>{{ __('The Windows virtual-drive client is being prepared. It is not included in the Revit installer yet. Existing material-drive connections continue to work.') }}</p>
-            <p>{{ __('You can connect Revit now. Automatic drive mounting and drag-and-drop intake will be added through the desktop client; ingestion processing is not available yet.') }}</p>
+            <p>{{ __('Install OPAL Drive from this page. It is a separate application from the Revit connector and mounts your account’s materials over HTTPS.') }}</p>
+            <p>{{ __('OPAL Drive reconnects at Windows sign-in. Current extensions discover the same-account mount automatically; in earlier extensions, set the material root to your chosen drive letter. Ingestion processing is not available yet.') }}</p>
         </details>
         <details wire:ignore.self class="ui-connect__help">
             <summary>{{ __('Trouble connecting?') }}</summary>

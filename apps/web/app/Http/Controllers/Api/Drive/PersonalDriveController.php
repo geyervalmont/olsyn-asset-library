@@ -6,6 +6,7 @@ use App\Library\Drives\DriveNamespace;
 use App\Library\Drives\HttpFileResponse;
 use App\Models\DriveIntakeSession;
 use App\Models\Material;
+use App\Models\Package;
 use App\Models\PackageDerivative;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,6 +39,8 @@ final class PersonalDriveController
             'material_uuid' => $entry['material_uuid'], 'variant_uuid' => $entry['variant_uuid'], 'material_version' => $entry['material_version'],
             'derivative_uuid' => $entry['derivative_uuid'], 'target' => $entry['target'], 'quality' => $entry['quality'], 'role' => $entry['role'],
         ], $namespace->entriesForUser($request->user()));
+        $files = array_merge($files, $namespace->canonicalEntriesForUser($request->user()));
+        usort($files, fn ($a, $b) => strcmp($a['path'], $b['path']));
         $incoming = $request->user()->can('materials.contribute') && $request->user()->tokenCan('drive:write')
             ? DriveIntakeSession::query()->where('user_id', $request->user()->id)->open()->orderBy('uuid')->get()->map(fn ($session): array => [
                 'id' => $session->uuid, 'path' => '/Incoming/'.$session->uuid, 'label' => $session->name, 'writable' => true,
@@ -64,5 +67,13 @@ final class PersonalDriveController
         $entry = $projection->derivativeFiles()->where('file_id', $file)->with('file')->firstOrFail();
 
         return $stream->send($request, $entry->file);
+    }
+
+    public function package(Request $request, int $package, HttpFileResponse $stream): Response
+    {
+        $package = Package::query()->whereKey($package)->whereHas('versions', fn ($query) => $query->whereNotNull('published_at'))
+            ->whereHas('variant', fn ($query) => $query->whereIn('material_id', Material::query()->visibleTo($request->user())->select('id')))->firstOrFail();
+
+        return $stream->sendPackage($request, $package);
     }
 }

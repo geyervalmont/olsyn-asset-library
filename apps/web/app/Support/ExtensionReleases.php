@@ -18,7 +18,7 @@ class ExtensionReleases
             $releases = $response->json();
 
             return collect($releases)->filter(fn ($release) => ! $release['draft'] && ! $release['prerelease']
-                && preg_match('~^(revit|omniverse)/v[0-9]+\.[0-9]+\.[0-9]+$~', $release['tag_name']))
+                && preg_match('~^(revit|omniverse|drive)/v[0-9]+\.[0-9]+\.[0-9]+$~', $release['tag_name']))
                 ->map(fn ($release): array => [
                     'client' => explode('/', $release['tag_name'])[0], 'tag' => $release['tag_name'],
                     'version' => explode('/v', $release['tag_name'])[1], 'published_at' => $release['published_at'],

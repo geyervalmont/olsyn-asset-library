@@ -16,7 +16,8 @@ class RestrictBenderToken
         }
 
         if (! $token->can('*') && ($token->can('drive:read') || $token->can('drive:write'))) {
-            abort_unless($request->is('api/v1/drive/*') || $request->is('api/v1/me'), 403, 'This token is restricted to the personal drive.');
+            abort_unless($request->is('api/v1/drive/*') || $request->is('api/v1/me')
+                || ($request->is('api/v1/account/token') && $request->isMethod('DELETE')), 403, 'This token is restricted to the personal drive.');
         }
 
         return $next($request);

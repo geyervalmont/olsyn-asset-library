@@ -17,6 +17,8 @@ services/prismfs/mnt/*
 # .NET / Revit release output
 integrations/revit-native/**/bin/
 integrations/revit-native/**/obj/
+integrations/windows-drive/**/bin/
+integrations/windows-drive/**/obj/
 artifacts/*
 !artifacts/opal-canonical-material-data-flow.pdf
 

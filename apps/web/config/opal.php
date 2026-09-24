@@ -195,7 +195,7 @@ return [
 
     'drive' => [
         // An adapter must pass Windows host validation before this is advertised.
-        'windows_client_available' => false,
+        'windows_client_available' => true,
         'intake_disk' => env('OPAL_INTAKE_DISK', env('OPAL_FILES_DISK', 'local')),
         'intake_file_bytes' => 256 * 1024 * 1024,
         'intake_batch_bytes' => 2 * 1024 * 1024 * 1024,

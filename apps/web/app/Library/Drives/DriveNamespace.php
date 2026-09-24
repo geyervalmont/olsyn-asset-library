@@ -180,6 +180,32 @@ class DriveNamespace
         return $this->stableEntries(new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user);
     }
 
+    /** Canonical packages use the exact same immutable paths as the Omniverse resolver.
+     * @return list<array<string, mixed>>
+     */
+    public function canonicalEntriesForUser(User $user): array
+    {
+        $files = [];
+        $materials = Material::query()->visibleTo($user)->with([
+            'versions' => fn ($query) => $query->whereNotNull('published_at'), 'versions.packages.variant',
+        ])->get();
+        foreach ($materials as $material) {
+            foreach ($material->versions as $version) {
+                foreach ($version->packages as $package) {
+                    $files[] = [
+                        'path' => '/materials/by-id/'.$material->uuid.'/'.$package->variant->uuid.'/v'.$version->number.'/canonical/'.$package->sha256.'.usdz',
+                        'bytes' => $package->bytes, 'sha256' => $package->sha256,
+                        'content_url' => route('api.drive.package', ['package' => $package->id], false),
+                        'material_uuid' => $material->uuid, 'variant_uuid' => $package->variant->uuid,
+                        'material_version' => $version->number, 'target' => 'omniverse', 'quality' => 'canonical', 'role' => 'package',
+                    ];
+                }
+            }
+        }
+
+        return $files;
+    }
+
     /** @return list<array<string, mixed>> */
     public function entriesForUserVariant(User $user, Variant $variant, ?int $version = null): array
     {

@@ -4,6 +4,7 @@ namespace App\Library\Drives;
 
 use App\Models\File;
 use App\Models\FileAccess;
+use App\Models\Package;
 use GuzzleHttp\Psr7\Utils;
 use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Http\Request;
@@ -13,6 +14,15 @@ use Symfony\Component\HttpFoundation\Response;
 /** Same-origin authenticated reads, including single HTTP byte ranges. */
 final class HttpFileResponse
 {
+    public function sendPackage(Request $request, Package $package): Response
+    {
+        // A virtual file descriptor reuses the bounded range stream. The audit path identifies the package.
+        return $this->send($request, new File([
+            'disk' => config('opal.packages_disk'), 'object_key' => $package->object_key,
+            'bytes' => $package->bytes, 'sha256' => $package->sha256, 'mime_type' => 'model/vnd.usdz+zip',
+        ]));
+    }
+
     public function send(Request $request, File $file): Response
     {
         $size = $file->bytes;

@@ -86,6 +86,23 @@ Check("release models deserialize OPAL manifest names", () =>
     Require(release.MinimumRevit == 2027);
 });
 
+Check("drive discovery requires the same server, account and a live mount", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "opal-drive-discovery", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    File.WriteAllText(Path.Combine(root, "drive-connection.json"), """
+        {"server":"https://opal.olsyn.com","account_email":"designer@example.com","mount_path":"O:\\"}
+        """);
+    var settings = new AppSettings { AccountEmail = "designer@example.com" };
+    Require(DriveMountDiscovery.Find(settings, root, _ => true) == @"O:\");
+    Require(DriveMountDiscovery.Find(settings, root, _ => false) == null);
+    settings.AccountEmail = "another@example.com";
+    Require(DriveMountDiscovery.Find(settings, root, _ => true) == null);
+    settings.AccountEmail = "designer@example.com"; settings.UseCustomServer = true; settings.ServerUrl = "https://another.test";
+    Require(DriveMountDiscovery.Find(settings, root, _ => true) == null);
+    Directory.Delete(root, recursive: true);
+});
+
 DriveTransportTests.Run(Check);
 MaterialAssetsTests.Run(Check);
 
@@ -95,7 +112,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("14 native client tests passed");
+Console.WriteLine("15 native client tests passed");
 return 0;
 
 void Check(string name, Action test)

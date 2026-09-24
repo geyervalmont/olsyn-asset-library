@@ -81,6 +81,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class, Restr
         Route::get('bootstrap', [PersonalDriveController::class, 'bootstrap'])->name('api.drive.bootstrap');
         Route::get('manifest', [PersonalDriveController::class, 'manifest'])->name('api.drive.manifest');
         Route::get('files/{derivative}/{file}', [PersonalDriveController::class, 'file'])->whereUuid('derivative')->whereNumber('file')->name('api.drive.files');
+        Route::get('packages/{package}', [PersonalDriveController::class, 'package'])->whereNumber('package')->name('api.drive.package');
         Route::post('heartbeat', DriveHeartbeatController::class)->name('api.drive.heartbeat');
         $intake = IntakeController::class;
         Route::get('intake', [$intake, 'index'])->name('api.drive.intake.index');

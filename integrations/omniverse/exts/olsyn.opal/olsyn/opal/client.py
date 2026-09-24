@@ -128,3 +128,20 @@ def verified(path, file):
         for block in iter(lambda: stream.read(65536), b''):
             digest.update(block)
         return digest.hexdigest() == file['sha256']
+
+
+def discover_drive(server, account_email, root=None):
+    """Read only the same-account mount advertisement; it never carries a token."""
+    if not account_email:
+        return ''
+    root = Path(root) if root is not None else Path(os.environ.get('LOCALAPPDATA', Path.home() / '.cache')) / 'Olsyn' / 'OPAL'
+    try:
+        info = json.loads((root / 'drive-connection.json').read_text(encoding='utf-8'))
+        mount = info['mount_path']
+        if (info['server'].rstrip('/').lower() != server.rstrip('/').lower()
+                or info['account_email'].lower() != account_email.lower()
+                or not re.fullmatch(r'[D-Z]:\\', mount, re.I)):
+            return ''
+        return mount if Path(mount).is_dir() else ''
+    except (OSError, ValueError, KeyError, TypeError):
+        return ''

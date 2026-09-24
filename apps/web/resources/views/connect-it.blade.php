@@ -17,9 +17,11 @@
                 <p>{{ __('Browser sign-in also follows your organisation’s identity provider. Permit the identity domains used by your OPAL account.') }}</p>
                 <p>{{ __('Validate the connector under your proxy and certificate-inspection policy. OPAL does not bypass certificate validation.') }}</p>
             </x-ui.panel>
-            <x-ui.panel><h2>{{ __('Material-drive availability') }}</h2>
-                <p>{{ __('The current Revit connector uses a configured local or network material path. The production SMB service is private inside the cluster and is not automatically reachable from workstations.') }}</p>
-                <p>{{ __('The Windows virtual drive over HTTPS is not included in the current installer. Its account-scoped file API and upload staging are being prepared separately. Do not open public SMB ports to connect to OPAL.') }}</p>
+            <x-ui.panel><h2>{{ __('Install OPAL Drive') }}</h2>
+                <p>{{ __('OPAL Drive mounts an account-scoped Windows drive using HTTPS. Install OPAL-Drive-Setup.exe as an administrator; it includes the upstream-signed Dokany filesystem driver and a self-contained Windows x64 app. Restart if requested by the driver installer.') }}</p>
+                <p>{{ __('For managed deployment use /VERYSILENT /SUPPRESSMSGBOXES /NORESTART. The app installs under Program Files and starts in each user’s Windows session at sign-in. The user approves their account in the browser. Run the tray app without elevation; choose the same free drive letter across the team. No public SMB ports or VPN are required.') }}</p>
+                <p>{{ __('The drive uses Windows proxy settings, current-user proxy authentication and the system certificate store. Validate PAC, TLS inspection and endpoint-security policies on your managed image. New file opens check access online; revoked or unavailable accounts cannot continue reading through the adapter. Previously downloaded or copied files remain in the user profile.') }}</p>
+                <p>{{ __('The OPAL installer signing status and SHA-256 are recorded in each release manifest. Uninstall leaves the shared Dokany driver and user caches/upload staging in place. Closing the window keeps the drive running; Quit and unmount stops it.') }}</p>
             </x-ui.panel>
             <x-ui.panel><h2>{{ __('Accounts and support') }}</h2>
                 <p>{{ __('Each person signs in with their own account. No shared drive token or object-storage credentials should be distributed to designers.') }}</p>

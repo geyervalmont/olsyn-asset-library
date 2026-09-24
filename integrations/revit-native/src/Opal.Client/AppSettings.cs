@@ -66,6 +66,7 @@ public sealed class ConfigStore
                 settings.AccountEmail = string.Empty;
                 Save(settings);
             }
+            settings.MountPath = DriveMountDiscovery.Find(settings) ?? settings.MountPath;
             return settings;
         }
         catch (JsonException)

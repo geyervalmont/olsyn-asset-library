@@ -1,0 +1,58 @@
+name: Windows drive
+on:
+  push:
+    branches: [main]
+    tags: ['drive/v*']
+    paths: ['integrations/windows-drive/**', 'integrations/revit-native/src/Opal.Client/**', 'tools/extensions/**', '.github/workflows/windows-drive.yml']
+  pull_request:
+    paths: ['integrations/windows-drive/**', 'integrations/revit-native/src/Opal.Client/**', 'tools/extensions/**', '.github/workflows/windows-drive.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: drive-${{ startsWith(github.ref, 'refs/tags/') && 'release' || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install signed filesystem driver
+        run: ./integrations/windows-drive/install-driver.ps1 -Destination "$env:RUNNER_TEMP/opal-dokan"
+      - name: Test filesystem core
+        run: dotnet run --project integrations/windows-drive/tests/Opal.Drive.Tests -c Release
+      - name: Exercise a real mounted Windows drive
+        timeout-minutes: 8
+        run: dotnet run --project integrations/windows-drive/tests/Opal.Drive.MountTest -c Release
+      - run: choco install innosetup --yes --no-progress
+      - name: Build installer
+        env:
+          SIGNING_CERTIFICATE: ${{ secrets.REVIT_SIGNING_CERTIFICATE_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.REVIT_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $version = "0.0.0.${env:GITHUB_RUN_NUMBER}"
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            if ($env:GITHUB_REF_NAME -notmatch '^drive/v(\d+\.\d+\.\d+)$') { throw 'Use drive/vMAJOR.MINOR.PATCH' }
+            $version = $Matches[1]
+          }
+          ./integrations/windows-drive/build-release.ps1 -Version $version -Commit $env:GITHUB_SHA -DriverInstaller "$env:RUNNER_TEMP/opal-dokan/DokanSetup.exe" -SigningCertificateBase64 $env:SIGNING_CERTIFICATE -SigningPassword $env:SIGNING_PASSWORD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opal-windows-drive
+          path: artifacts/drive/*
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/drive/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/extensions/publish.py drive artifacts/drive

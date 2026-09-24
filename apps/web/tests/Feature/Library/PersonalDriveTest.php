@@ -48,7 +48,7 @@ test('the personal drive uses user grants and never exposes storage credentials 
     app(PublishVersion::class)->handle($version);
     $this->get($url)->assertNotFound();
     $material->grants()->create(['grantee_type' => $this->user->getMorphClass(), 'grantee_id' => $this->user->id]);
-    $response = $this->getJson('/api/v1/drive/manifest')->assertOk()->assertJsonCount(1, 'files');
+    $response = $this->getJson('/api/v1/drive/manifest')->assertOk()->assertJsonCount(2, 'files');
     expect($response->json('files.0'))->toHaveKeys(['content_url', 'material_uuid', 'sha256'])
         ->not->toHaveKeys(['object', 'bucket', 'disk', 'key']);
     $this->withHeader('If-None-Match', $response->headers->get('ETag'))->getJson('/api/v1/drive/manifest')->assertStatus(304);
@@ -162,4 +162,37 @@ test('legacy browser file URLs cannot bypass personal-drive material visibility'
     $this->get($file->url())->assertNotFound();
     $orphan = File::factory()->create();
     $this->get($orphan->url())->assertNotFound();
+});
+
+test('drive-scoped tokens can revoke themselves without gaining consumer API access', function () {
+    $token = $this->user->createToken('Drive', ['drive:read', 'drive:write']);
+    $this->app['auth']->forgetGuards();
+    $this->withToken($token->plainTextToken);
+    $this->getJson('/api/v1/library')->assertForbidden();
+    $this->deleteJson('/api/v1/account/token')->assertNoContent();
+    $this->app['auth']->forgetGuards();
+    $this->getJson('/api/v1/drive/bootstrap')->assertUnauthorized();
+});
+
+test('canonical USDZ drive paths retain identity and enforce grants on range and HEAD reads', function () {
+    Storage::fake(config('opal.packages_disk'));
+    $material = Material::factory()->create(['visibility' => Visibility::Restricted]);
+    $variant = app(AddVariant::class)->handle($material, ['colourway' => 'Full resolution']);
+    $package = Package::factory()->for($variant)->create(['bytes' => 10, 'sha256' => hash('sha256', '0123456789')]);
+    Storage::disk(config('opal.packages_disk'))->put($package->object_key, '0123456789');
+    PackageDerivative::factory()->for($package)->create();
+    $version = $material->versions()->create(['number' => 1, 'status' => VersionStatus::Draft]);
+    $version->packages()->attach($package->id, ['variant_id' => $variant->id]);
+    $url = '/api/v1/drive/packages/'.$package->id;
+    $this->get($url)->assertNotFound();
+    app(PublishVersion::class)->handle($version);
+    $this->head($url)->assertNotFound();
+    $material->grants()->create(['grantee_type' => $this->user->getMorphClass(), 'grantee_id' => $this->user->id]);
+    $this->getJson('/api/v1/drive/manifest')->assertJsonPath('files.0.path', '/materials/by-id/'.$material->uuid.'/'.$variant->uuid.'/v1/canonical/'.$package->sha256.'.usdz')
+        ->assertJsonPath('files.0.content_url', $url);
+    $this->head($url)->assertOk()->assertHeader('Content-Length', '10')->assertHeader('ETag', '"'.$package->sha256.'"');
+    $this->get($url, ['Range' => 'bytes=2-5'])->assertStatus(206)->assertHeader('Content-Range', 'bytes 2-5/10')->assertStreamedContent('2345');
+    $material->grants()->delete();
+    $this->get($url, ['Range' => 'bytes=2-5'])->assertNotFound();
+    $this->head($url)->assertNotFound();
 });

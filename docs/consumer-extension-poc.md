@@ -14,7 +14,7 @@ The existing repository is a monorepo: `apps/web` owns the API/site, `integratio
 
 An administrator opens Team, enters an email and role, and sends the invitation. A queued job sends the setup email after the access transaction commits. Team displays queued/sent/failed and supports resending with a one-minute limit. Cancelled, expired and superseded invitations are checked before sending. Sending a message does not bypass central Olsyn service access. Invitations expire after seven days.
 
-`php artisan opal:onboarding:test recipient@example.com` sends a clearly labelled test of the same template without granting access. A successful SMTP submission confirms transport acceptance; inbox delivery requires checking the receiving mailbox.
+`php artisan opal:onboarding:test recipient@example.com` sends a clearly labelled test of the same template without granting access. A successful mail submission confirms transport acceptance; inbox delivery requires checking the receiving mailbox.
 
 Use Connect for extension downloads and installation instructions. Both extensions start `/api/v1/link`, open the browser approval page and receive the bearer token exactly once. Omniverse reports its session and drive state to Connect. Disconnect revokes that device's token. Windows Omniverse tokens use user-scoped DPAPI; Linux sessions do not persist tokens.
 
@@ -41,7 +41,7 @@ Consumer pages eager-load their parent/category/supplier/version in a bounded nu
 
 Revit applies a 512 px representation. Omniverse resolves the same published version to high-resolution textures; it does not silently upgrade to a newer artistic revision. If only the canonical USDZ exists, the Kit extension reads its neutral manifest, selects the highest available texture tier for each input, and authors a UsdPreviewSurface network. Texture channel/colour space, scalar constants, modulation and DirectX normal orientation are retained for the supported PBR inputs.
 
-Both clients prefer an existing material mount. If it is unavailable, they download only selected material content over normal HTTPS into a per-user cache. Downloads are bounded, written atomically and verified before use. Cache paths include UUIDs and version; they do not change when material names change. Cached content is not retroactively erased by account revocation. A managed cache is not the future Windows virtual drive adapter. For portable scenes, use a common drive path or package the cached assets with the scene.
+Both clients prefer an existing material mount. If it is unavailable, they download only selected material content over normal HTTPS into a per-user cache. Downloads are bounded, written atomically and verified before use. Cache paths include UUIDs and version; they do not change when material names change. Cached content is not retroactively erased by account revocation. Install the separate [OPAL Drive Windows client](../integrations/windows-drive/README.md) to mount these paths over HTTPS. Both extensions discover its same-account mount automatically. For portable scenes, use a common drive path or package the cached assets with the scene.
 
 ## Host proof of concept
 
