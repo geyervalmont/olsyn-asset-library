@@ -7,6 +7,8 @@ use App\Actions\Versions\PublishVersion;
 use App\Enums\Role;
 use App\Enums\VersionStatus;
 use App\Enums\Visibility;
+use App\Library\Drives\DriveNamespace;
+use App\Library\Drives\DrivePath;
 use App\Models\DriveConnection;
 use App\Models\File;
 use App\Models\MapRole;
@@ -48,7 +50,7 @@ test('the personal drive uses user grants and never exposes storage credentials 
     app(PublishVersion::class)->handle($version);
     $this->get($url)->assertNotFound();
     $material->grants()->create(['grantee_type' => $this->user->getMorphClass(), 'grantee_id' => $this->user->id]);
-    $response = $this->getJson('/api/v1/drive/manifest')->assertOk()->assertJsonCount(2, 'files');
+    $response = $this->getJson('/api/v1/drive/manifest')->assertOk()->assertJsonCount(4, 'files');
     expect($response->json('files.0'))->toHaveKeys(['content_url', 'material_uuid', 'sha256'])
         ->not->toHaveKeys(['object', 'bucket', 'disk', 'key']);
     $this->withHeader('If-None-Match', $response->headers->get('ETag'))->getJson('/api/v1/drive/manifest')->assertStatus(304);
@@ -195,4 +197,60 @@ test('canonical USDZ drive paths retain identity and enforce grants on range and
     $material->grants()->delete();
     $this->get($url, ['Range' => 'bytes=2-5'])->assertNotFound();
     $this->head($url)->assertNotFound();
+});
+
+test('by-name offers the latest published files while renames leave every by-id reference intact', function () {
+    $material = Material::factory()->create(['name' => 'Limestone']);
+    $variant = app(AddVariant::class)->handle($material, ['colourway' => 'Warm grey']);
+    $package = Package::factory()->for($variant)->create();
+    $old = PackageDerivative::factory()->for($package)->create();
+    $file = File::factory()->create(['disk' => config('opal.files_disk'), 'bytes' => 10, 'extension' => 'png', 'sha256' => hash('sha256', '0123456789')]);
+    Storage::disk($file->disk)->put($file->object_key, '0123456789');
+    $old->derivativeFiles()->create(['file_id' => $file->id, 'map_role_id' => MapRole::fromSlug('base_color')->id]);
+    $first = $material->versions()->create(['number' => 1, 'status' => VersionStatus::Draft]);
+    $first->packages()->attach($package->id, ['variant_id' => $variant->id]);
+    app(PublishVersion::class)->handle($first);
+    $original = collect($this->getJson('/api/v1/drive/manifest')->assertOk()->json('files'))->filter(fn ($f) => str_contains($f['path'], '/by-id/'))->pluck('path')->all();
+    $latest = PackageDerivative::factory()->for($package)->create(['converter_version' => '2.0.0', 'built_at' => now()->addMinute()]);
+    $latest->derivativeFiles()->create(['file_id' => $file->id, 'map_role_id' => MapRole::fromSlug('base_color')->id]);
+    $second = $material->versions()->create(['number' => 2, 'status' => VersionStatus::Draft]);
+    $second->packages()->attach($package->id, ['variant_id' => $variant->id]);
+    app(PublishVersion::class)->handle($second);
+    $response = $this->getJson('/api/v1/drive/manifest')->assertOk();
+    $named = collect($response->json('files'))->filter(fn ($f) => str_contains($f['path'], '/by-name/'))->values();
+    expect($named)->toHaveCount(2)->and($named->pluck('material_version')->unique()->all())->toBe([2]);
+    $texture = $named->firstWhere('role', 'base_color');
+    expect($texture['path'])->toContain('/Limestone/Warm grey/revit/2k/base_color.png')
+        ->and($texture['derivative_uuid'])->toBe($latest->uuid)->and($texture['sha256'])->toBe($file->sha256);
+    expect($named->firstWhere('role', 'package')['path'])->toEndWith('/canonical/material.usdz');
+    $this->get($texture['content_url'], ['Range' => 'bytes=2-5'])->assertStatus(206)->assertStreamedContent('2345');
+    $material->update(['name' => 'Renamed limestone']);
+    $variant->update(['name' => 'Renamed grey']);
+    $this->withHeader('If-None-Match', $response->headers->get('ETag'));
+    $renamed = collect($this->getJson('/api/v1/drive/manifest')->assertOk()->json('files'));
+    expect($renamed->where('path', $texture['path']))->toHaveCount(0)
+        ->and($renamed->filter(fn ($f) => str_contains($f['path'], '/Renamed limestone/Renamed grey/')))->toHaveCount(2)
+        ->and(array_diff($original, $renamed->pluck('path')->all()))->toBe([]);
+});
+
+test('by-name handles reserved Windows names, punctuation, case collisions and long Unicode labels', function () {
+    $one = Material::factory()->create(['name' => 'CON']);
+    $two = Material::factory()->create(['name' => '_CON', 'category_id' => $one->category_id]);
+    $a = app(AddVariant::class)->handle($one, ['colourway' => 'Sand:grey']);
+    $b = app(AddVariant::class)->handle($one, ['colourway' => 'sand?grey']);
+    $c = app(AddVariant::class)->handle($two, ['colourway' => 'Long']);
+    $c->update(['name' => str_repeat('木', 80)]);
+    $files = collect([$a, $b, $c])->map(fn ($variant) => [
+        'path' => '/materials/by-id/test/base_color.png', 'material_uuid' => $variant->material->uuid,
+        'variant_uuid' => $variant->uuid, 'target' => 'revit', 'quality' => '2k', 'role' => 'base_color',
+    ])->all();
+    $named = app(DriveNamespace::class)->namedEntriesForUser($this->user, $files);
+    expect($named)->toHaveCount(3);
+    $paths = array_column($named, 'path');
+    expect(array_unique(array_map(fn ($p) => mb_convert_case($p, MB_CASE_FOLD, 'UTF-8'), $paths)))->toHaveCount(3);
+    foreach ($paths as $path) {
+        expect(DrivePath::validate(ltrim($path, '/')))->toBe(ltrim($path, '/'));
+    }
+    expect($paths[0])->toContain('['.$one->uuid.']')->toContain('['.$a->uuid.']');
+    expect($paths[2])->toContain(str_repeat('木', 20));
 });

@@ -54,6 +54,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', WorkspaceHomeController::class)->name('dashboard');
     Route::livewire('link', 'pages::link')->name('link');
     Route::livewire('connect', 'pages::connect')->middleware('tenant')->name('connect');
+    Route::livewire('connect/health', 'pages::drive-health')->middleware('tenant')->name('connect.health');
     Route::view('connect/it', 'connect-it')->middleware('tenant')->name('connect.it');
     Route::post('tenants/{tenant}/switch', SwitchTenantController::class)->name('tenants.switch');
 });

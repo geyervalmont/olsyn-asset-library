@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\DriveTelemetryEvent;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -14,3 +15,10 @@ Schedule::command('opal:embeddings:index --stale')
     ->when(fn (): bool => (bool) config('opal.embeddings.enabled'));
 
 Schedule::command('opal:synthesis:reconcile')->everyMinute()->withoutOverlapping();
+
+Artisan::command('opal:drive:prune-telemetry', function () {
+    $deleted = DriveTelemetryEvent::query()->where('received_at', '<', now()->subDays(30))->delete();
+    $this->info("Pruned {$deleted} drive telemetry events.");
+})->purpose('Remove drive telemetry older than 30 days');
+
+Schedule::command('opal:drive:prune-telemetry')->daily()->withoutOverlapping();

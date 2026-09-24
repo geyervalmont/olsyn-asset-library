@@ -2,6 +2,8 @@
 
 OPAL Drive mounts the signed-in person's visible materials as a real Windows drive over HTTPS. Revit, Omniverse and Explorer open ordinary paths such as `O:\materials\by-id\<material UUID>\<variant UUID>\v1\…`. The drive includes published texture projections and canonical USDZ packages. Names may change without changing these paths.
 
+For browsing in Explorer, use `O:\materials\by-name\<category>\<material name>\<variant name>\revit\<quality>\…` or `canonical\material.usdz`. These read-only aliases show the latest published version and converter output with the same access checks and content cache. Names are made safe for Windows; ambiguous labels receive an identity suffix. Renames or publishing a new version update this browsing view. Keep references saved by Revit, Omniverse and the RVT → USD workflow on the immutable `by-id` paths. Existing 0.1.2 clients receive this folder on their next library refresh after the server update.
+
 ## Install and connect
 
 1. Install **OPAL-Drive-Setup.exe** from OPAL → Connect. Windows 10/11 x64 is supported. The installer requires administrator rights to install the bundled, upstream-signed Dokany filesystem driver. IT can deploy the installer once for the machine.
@@ -17,7 +19,17 @@ Open **Status & diagnostics** from the main window or tray menu. Status shows th
 
 Use **Run checks** to test local storage, the installed driver, drive-letter availability, DNS/system proxy selection, HTTPS, account access, the complete library manifest, and one authorized 64-byte file read. Checks are read-only apart from a temporary local storage probe and diagnostics logs; they do not change the account, mount, or uploads. Cancel is available while checks run. A DNS failure can coexist with successful HTTPS when a company proxy resolves names remotely.
 
-Use **Copy report** or **Save report** to share status, timed check results, and recent activity with support. Reports include the app/Windows/runtime versions, server origin and device ID; they exclude credentials, browser sign-in codes, email addresses, material filenames, HTTP bodies and exception messages. Nothing is uploaded automatically. Structured logs survive restarts under `%LOCALAPPDATA%\Olsyn\OPAL\Drive\logs`; rotation retains two approximately 256 KiB files and reports include at most 200 events. Logging failures do not stop the drive.
+Use **Copy report** or **Save report** to share status, timed check results, and recent activity with support. Reports include the app/Windows/runtime versions, server origin and device ID; they exclude credentials, browser sign-in codes, email addresses, material filenames, HTTP bodies and exception messages. Manual connection checks stay local. Structured logs survive restarts under `%LOCALAPPDATA%\Olsyn\OPAL\Drive\logs`; rotation retains two approximately 256 KiB files and reports include at most 200 events. Logging failures do not stop the drive.
+
+### Automatic error reporting (0.1.3+)
+
+**Send error codes and app versions to OPAL support** is enabled by default after account connection. It sends operational errors and transitions to a ready drive to the same OPAL server over authenticated HTTPS. Reports contain a random event ID, device ID, app/Windows versions, stage, error category, HRESULT/HTTP/Win32/Dokan status codes and elapsed time. There are no exception messages, stacks, URLs, filenames, material contents or credentials in the payload. The server associates the report with the authenticated account.
+
+The background worker keeps up to 200 reports for 14 days in `logs/telemetry-outbox.json`, scoped to the server, device and current credential using a one-way hash. Identical errors are sampled once per five minutes. Batches contain at most 20 reports; retries back off from 15 seconds to 15 minutes with jitter and a five-second network timeout. Acknowledged event IDs prevent duplicate ingestion. The filesystem and UI do not wait for telemetry. Storage failures fall back to the bounded in-memory queue.
+
+**Status & diagnostics** shows queue/delivery status. Turning reporting off cancels pending delivery and clears the local queue; sign-out or a different credential also clears it. Database history expires after 30 days; structured server logs follow the deployment’s log retention. Manual diagnostic checks are never automatically uploaded. Failures before account connection, an unusable/revoked token, process termination before queue persistence, and computers that cannot reach OPAL require a manually shared report; this is not native crash-dump collection.
+
+OPAL **Connect → Drive health & error history** shows each person's reports and recent device heartbeats. Super-admins can inspect all accounts, filter a device ID and see the most frequent errors by app version over 24 hours. The page refreshes every 15 seconds; stale heartbeats are labelled offline, not inferred failures. New error events also emit the structured server log `drive.client_error`. No email or Slack notifications are configured. `opal:drive:prune-telemetry` runs daily for retention. The API accepts only allowlisted fields/codes, with a 32 KiB request limit and 12 batches/minute/account.
 
 Version 0.1.2 fixes a native security-buffer sizing error in 0.1.0–0.1.1 that prevented mounting after successful browser approval and was misleadingly reported as a network problem. Upgrade the installer; the existing account connection is retained. The Windows mount test uses the same per-user security configuration as the application.
 

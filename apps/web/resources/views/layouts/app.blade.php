@@ -11,9 +11,10 @@
     $navigation = array_values(array_filter([
         ['route' => 'materials.index', 'match' => 'materials.index|materials.show', 'label' => __('Library'), 'index' => '01', 'show' => $shellUser?->can('materials.view')],
         ['route' => 'materials.create', 'match' => 'materials.create|materials.studio*', 'label' => __('Create'), 'index' => '02', 'show' => $shellUser?->can('materials.contribute')],
-        ['route' => 'connect', 'match' => 'connect*|link|revit.edit|sessions.edit', 'label' => __('Connect'), 'index' => '03', 'show' => true],
+        ['route' => 'connect', 'match' => 'connect|connect.it|link|revit.edit|sessions.edit', 'label' => __('Connect'), 'index' => '03', 'show' => true],
     ], fn (array $item): bool => (bool) $item['show']));
     $management = array_values(array_filter([
+        ['route' => 'connect.health', 'match' => 'connect.health', 'label' => __('Drive health'), 'show' => $shellUser?->isSuperAdmin()],
         ['route' => 'quality.index', 'match' => 'quality.*', 'label' => __('Quality review'), 'show' => $shellUser?->can('materials.review')],
         ['route' => 'jobs.index', 'match' => 'jobs.*', 'label' => __('Processing jobs'), 'show' => $shellUser?->can('materials.contribute')],
         ['route' => 'drives.index', 'match' => 'drives.*', 'label' => __('Drive administration'), 'show' => $shellUser?->can('materials.publish')],

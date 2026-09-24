@@ -114,7 +114,8 @@ public sealed class DriveDiagnostics(string directory)
     private readonly string path = Path.Combine(directory, "diagnostics.jsonl");
     private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
     public bool LogAvailable { get; private set; } = true;
-    public void Record(DriveStage stage, string result, Exception? error = null, long? elapsedMs = null)
+    public event Action<DriveDiagnosticEvent>? Recorded;
+    public void Record(DriveStage stage, string result, Exception? error = null, long? elapsedMs = null, bool report = true)
     {
         // Callers supply fixed result codes, never server/user-provided text.
         if (result is not ("started" or "ok" or "error" or "stopped")) throw new ArgumentException("Unknown diagnostic event.");
@@ -132,6 +133,7 @@ public sealed class DriveDiagnostics(string directory)
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException) { LogAvailable = false; }
         }
+        if (report) Recorded?.Invoke(entry);
     }
     public DriveDiagnosticEvent[] Events() { lock (gate) return recent.ToArray(); }
     public string ExportHistory()

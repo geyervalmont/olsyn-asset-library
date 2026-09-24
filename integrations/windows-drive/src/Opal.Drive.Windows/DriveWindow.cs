@@ -17,6 +17,8 @@ public sealed class DriveWindow : Form
     private readonly Button disconnect = new() { Text = "Sign out", AutoSize = true };
     private readonly Button toggle = new() { Text = "Mount drive", AutoSize = true };
     private readonly CheckBox automatic = new() { Text = "Mount automatically when I sign in to Windows", AutoSize = true };
+    private readonly CheckBox reporting = new() { Text = "Send error codes and app versions to OPAL support", AutoSize = true };
+    private readonly DriveTelemetryReporter telemetry = new(Path.Combine(DriveSettings.Root, "logs"), BuildInfo.Version, Environment.OSVersion.Version.ToString());
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 1000 };
     private readonly CancellationTokenSource lifetime = new();
     private OpalDriveClient? client;
@@ -46,8 +48,9 @@ public sealed class DriveWindow : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         try { settings = DriveSettings.Load(); }
         catch (Exception error) { settings = new(); diagnostics.Record(DriveStage.Settings, "error", error); }
+        diagnostics.Recorded += telemetry.Record;
         diagnostics.Record(DriveStage.Startup, "ok");
-        Text = "OPAL Drive"; Width = 680; Height = 550; MinimumSize = new Size(600, 490);
+        Text = "OPAL Drive"; Width = 680; Height = 600; MinimumSize = new Size(600, 540);
         StartPosition = FormStartPosition.CenterScreen; Icon = SystemIcons.Application;
         var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(24), AutoScroll = true };
         layout.Controls.Add(new Label { Text = "Your material library, mounted.", Font = new Font(Font.FontFamily, 18, FontStyle.Bold), AutoSize = true, Margin = new Padding(0, 0, 0, 16) });
@@ -60,6 +63,7 @@ public sealed class DriveWindow : Form
         mount.SelectedItem = settings.Mount; if (mount.SelectedIndex < 0) mount.SelectedItem = @"O:\";
         driveRow.Controls.Add(mount); layout.Controls.Add(driveRow);
         automatic.Checked = settings.AutoMount; layout.Controls.Add(automatic);
+        reporting.Checked = settings.TelemetryEnabled; layout.Controls.Add(reporting);
         var buttons = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 14, 0, 12) };
         buttons.Controls.Add(connect); buttons.Controls.Add(toggle); buttons.Controls.Add(disconnect);
         layout.Controls.Add(buttons);
@@ -87,6 +91,10 @@ public sealed class DriveWindow : Form
         });
         disconnect.Click += async (_, _) => await ActionAsync(SignOutAsync);
         automatic.CheckedChanged += (_, _) => { settings.AutoMount = automatic.Checked; settings.Save(); };
+        reporting.CheckedChanged += (_, _) =>
+        {
+            settings.TelemetryEnabled = reporting.Checked; settings.Save(); ConfigureTelemetry();
+        };
         open.Click += (_, _) => OpenDrive();
         website.Click += (_, _) => OpenUrl(settings.Server.TrimEnd('/') + "/connect");
         FormClosing += (_, e) =>
@@ -102,12 +110,18 @@ public sealed class DriveWindow : Form
             // A first-time user needs the connection window even when Windows
             // sign-in started the app with --background.
             if (background && settings.ProtectedToken.Length > 0) Hide();
-            UpdateControls();
+            ConfigureTelemetry(); UpdateControls();
             if (settings.ProtectedToken.Length > 0 && settings.AutoMount) await ActionAsync(MountAsync);
             timer.Start();
         };
         timer.Tick += async (_, _) => await TickAsync();
         ResumeLayout(true);
+    }
+    private void ConfigureTelemetry()
+    {
+        try { telemetry.Configure(settings.Server, settings.Token(), settings.DeviceId, settings.TelemetryEnabled); }
+        catch (System.Security.Cryptography.CryptographicException) { telemetry.Configure(settings.Server, "", settings.DeviceId, settings.TelemetryEnabled); }
+        catch (FormatException) { telemetry.Configure(settings.Server, "", settings.DeviceId, settings.TelemetryEnabled); }
     }
     internal void ShowWindow() { Show(); WindowState = FormWindowState.Normal; Activate(); }
     private void ShowDiagnostics()
@@ -121,7 +135,7 @@ public sealed class DriveWindow : Form
     private string DiagnosticStatus()
     {
         var count = staging?.Counts;
-        return $"Server: {DriveDiagnostics.SafeOrigin(settings.ProtectedToken.Length > 0 ? settings.Server : server.Text.Trim())}\r\nDevice ID: {settings.DeviceId}\r\nAccount connected: {settings.ProtectedToken.Length > 0}\r\nDrive letter: {mount.SelectedItem}\r\nWindows mount active: {filesystem?.IsMounted == true}\r\nLibrary access current: {session?.Online == true}\r\nAutomatic reconnect: {settings.AutoMount}\r\nCurrent step: {DriveFailure.StageName(phase)}{(busy || ticking ? $" ({stepTime.Elapsed.TotalSeconds:N0} s)" : "")}\r\nLast library refresh (UTC): {lastLibraryRefresh?.ToString("O") ?? "Never"}\r\nLast heartbeat (UTC): {lastHeartbeat?.ToString("O") ?? "Never"}\r\nLast library file count: {fileCount:N0}\r\nUploads: {count?.Pending ?? 0} pending, {count?.Uploaded ?? 0} confirmed, {count?.Failed ?? 0} awaiting retry\r\nNext automatic retry: {(settings.AutoMount && settings.ProtectedToken.Length > 0 && failure is not null ? Math.Max(0, (nextRefresh - Environment.TickCount64) / 1000) + " s" : "None")}\r\nLast failure: {(failure is null ? "None" : DriveFailure.StageName(failedPhase) + " / " + failure.Code + "\r\n" + failure.Advice + $"\r\nType: {failure.ExceptionTypes}; HTTP: {failure.HttpStatus?.ToString() ?? "-"}; HRESULT: {failure.HResult}")}";
+        return $"Server: {DriveDiagnostics.SafeOrigin(settings.ProtectedToken.Length > 0 ? settings.Server : server.Text.Trim())}\r\nDevice ID: {settings.DeviceId}\r\nAccount connected: {settings.ProtectedToken.Length > 0}\r\nDrive letter: {mount.SelectedItem}\r\nWindows mount active: {filesystem?.IsMounted == true}\r\nLibrary access current: {session?.Online == true}\r\nAutomatic reconnect: {settings.AutoMount}\r\nError reporting: {telemetry.Status}\r\nCurrent step: {DriveFailure.StageName(phase)}{(busy || ticking ? $" ({stepTime.Elapsed.TotalSeconds:N0} s)" : "")}\r\nLast library refresh (UTC): {lastLibraryRefresh?.ToString("O") ?? "Never"}\r\nLast heartbeat (UTC): {lastHeartbeat?.ToString("O") ?? "Never"}\r\nLast library file count: {fileCount:N0}\r\nUploads: {count?.Pending ?? 0} pending, {count?.Uploaded ?? 0} confirmed, {count?.Failed ?? 0} awaiting retry\r\nNext automatic retry: {(settings.AutoMount && settings.ProtectedToken.Length > 0 && failure is not null ? Math.Max(0, (nextRefresh - Environment.TickCount64) / 1000) + " s" : "None")}\r\nLast failure: {(failure is null ? "None" : DriveFailure.StageName(failedPhase) + " / " + failure.Code + "\r\n" + failure.Advice + $"\r\nType: {failure.ExceptionTypes}; HTTP: {failure.HttpStatus?.ToString() ?? "-"}; HRESULT: {failure.HResult}")}";
     }
     private void BeginStep(DriveStage stage, string? message = null)
     {
@@ -177,6 +191,7 @@ public sealed class DriveWindow : Form
         SaveInputs();
         BeginStep(DriveStage.Credentials);
         if (settings.Token().Length == 0) { state.Text = "Connect your account first."; return; }
+        ConfigureTelemetry();
         client?.Dispose(); client = new OpalDriveClient(ApiSettings(settings.Token()));
         BeginStep(DriveStage.Account, "Checking your account access…");
         var bootstrap = await client.BootstrapAsync(lifetime.Token);
@@ -191,7 +206,7 @@ public sealed class DriveWindow : Form
         BeginStep(DriveStage.LocalStorage, "Preparing your local material cache…");
         var partition = Path.Combine(DriveSettings.Root, "accounts", ContentCache.AccountPartition(settings.Server, settings.AccountId));
         session = new(client, new ContentCache(Path.Combine(partition, "cache")));
-        session.Faulted += error => { if (phase != DriveStage.Library) diagnostics.Record(DriveStage.FileRead, "error", error); };
+        session.Faulted += error => { if (!quitting && phase is not (DriveStage.Library or DriveStage.Unmount)) diagnostics.Record(DriveStage.FileRead, "error", error); };
         StepSucceeded(); BeginStep(DriveStage.Library, "Loading and validating your material library…");
         await session.RefreshAsync(lifetime.Token);
         lastLibraryRefresh = DateTimeOffset.UtcNow; fileCount = session.Tree.FileCount; StepSucceeded();
@@ -211,7 +226,7 @@ public sealed class DriveWindow : Form
         if (!filesystem.IsMounted) throw new IOException("Windows did not confirm the mount.");
         mountCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         settings.PublishMount(true); lastError = null; nextRefresh = 0; nextUpload = 0;
-        StepSucceeded(); phase = DriveStage.Ready; failure = null;
+        StepSucceeded(); phase = DriveStage.Ready; failure = null; diagnostics.Record(DriveStage.Ready, "ok");
         state.Text = $"Mounted {settings.Mount} · {settings.AccountEmail} · {session.Tree.FileCount:N0} files";
         tray.ShowBalloonTip(4000, "OPAL Drive connected", $"Your materials are available at {settings.Mount}", ToolTipIcon.Info);
     }
@@ -236,14 +251,16 @@ public sealed class DriveWindow : Form
                 lastLibraryRefresh = DateTimeOffset.UtcNow; fileCount = session.Tree.FileCount; StepSucceeded();
                 BeginStep(DriveStage.Heartbeat);
                 await client!.HeartbeatAsync(settings.DeviceId, Environment.MachineName, "mounted", settings.Mount, cancellationToken: lifetime.Token);
-                lastHeartbeat = DateTimeOffset.UtcNow; StepSucceeded(); phase = DriveStage.Ready; failure = null;
+                lastHeartbeat = DateTimeOffset.UtcNow; StepSucceeded(); phase = DriveStage.Ready; failure = null; diagnostics.Record(DriveStage.Ready, "ok");
                 settings.PublishMount(true); lastError = null;
                 state.Text = $"Mounted {settings.Mount} · {settings.AccountEmail} · {session.Tree.FileCount:N0} files";
             }
             if (uploadTask is { IsCompleted: true }) { phase = DriveStage.Uploads; var completed = uploadTask; uploadTask = null; await completed; phase = DriveStage.Ready; }
             if (Environment.TickCount64 >= nextUpload && uploadTask is null)
             { nextUpload = Environment.TickCount64 + 15000; uploadTask = staging!.UploadPendingAsync(mountCancellation!.Token); }
-            if (session is { Online: false }) { phase = DriveStage.FileRead; throw session.LastFault ?? new IOException("OPAL is offline."); }
+            // An already reported outage waits for the scheduled refresh. Re-reporting
+            // it every tick would continually postpone nextRefresh and prevent recovery.
+            if (session is { Online: false } && failure is null) { phase = DriveStage.FileRead; throw session.LastFault ?? new IOException("OPAL is offline."); }
             var count = staging!.Counts;
             uploads.Text = $"Uploads: {count.Pending} pending · {count.Uploaded} confirmed · {count.Failed} awaiting retry\nProcessing and publishing are not enabled yet.";
         }
@@ -268,7 +285,7 @@ public sealed class DriveWindow : Form
         }
         if (code is "sign_in" or "access_denied")
         {
-            await UnmountAsync(); settings.SetToken(""); settings.Save(); state.Text = text;
+            await UnmountAsync(); settings.SetToken(""); settings.Save(); ConfigureTelemetry(); state.Text = text;
         }
         else if (instance is not null && filesystem?.IsMounted != true) { await UnmountAsync(); state.Text = text; }
         else if (instance is null)
@@ -303,7 +320,7 @@ public sealed class DriveWindow : Form
             await client.RevokeAsync(lifetime.Token);
         }
         catch (HttpRequestException) { MessageBox.Show("The local connection was removed. If OPAL is unreachable, revoke this device from Connect when you are online.", "OPAL Drive"); }
-        finally { settings.SetToken(""); settings.AccountId = ""; settings.AccountEmail = ""; settings.Save(); client?.Dispose(); client = null; }
+        finally { settings.SetToken(""); settings.AccountId = ""; settings.AccountEmail = ""; settings.Save(); ConfigureTelemetry(); client?.Dispose(); client = null; }
         state.Text = "Signed out. This computer retains previously downloaded and staged files.";
     }
     private async Task QuitAsync()
@@ -311,7 +328,7 @@ public sealed class DriveWindow : Form
         if (quitting) return;
         quitting = true; timer.Stop(); lifetime.Cancel();
         while (busy || ticking) await Task.Delay(50);
-        await UnmountAsync(); client?.Dispose(); tray.Visible = false; tray.Dispose(); Close(); Application.Exit();
+        await UnmountAsync(); await telemetry.DisposeAsync(); client?.Dispose(); tray.Visible = false; tray.Dispose(); Close(); Application.Exit();
     }
     private void UpdateControls()
     {

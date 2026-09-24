@@ -81,6 +81,9 @@ public sealed class OpalDriveClient : IDisposable
     public Task<JsonElement> HeartbeatAsync(Guid deviceId, string machine, string state, string? mountPath, string? errorCode = null, CancellationToken cancellationToken = default) =>
         JsonAsync(HttpMethod.Post, "/api/v1/drive/heartbeat", new { device_id = deviceId, machine, version = BuildInfo.Version, state, mount_path = mountPath, error_code = errorCode }, cancellationToken);
 
+    public Task<JsonElement> TelemetryAsync(Guid deviceId, JsonElement events, CancellationToken cancellationToken = default) =>
+        JsonAsync(HttpMethod.Post, "/api/v1/drive/telemetry", new { device_id = deviceId, events }, cancellationToken);
+
     public Task<JsonElement> CreateIntakeAsync(string name, CancellationToken cancellationToken = default) =>
         JsonAsync(HttpMethod.Post, "/api/v1/drive/intake", new { name }, cancellationToken);
 

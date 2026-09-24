@@ -54,6 +54,73 @@ try
         Check(!journal.LogAvailable && journal.Events().Length == 1 && !journal.ExportHistory().Contains("secret"));
         return Task.CompletedTask;
     });
+    await Test("telemetry survives restart, samples repeats and acknowledges only confirmed IDs", () =>
+    {
+        var now = DateTimeOffset.UtcNow;
+        var path = Path.Combine(temp, "telemetry", "queue.json");
+        var scope = DriveTelemetryOutbox.Scope("https://opal.test", "secret-token", Guid.Empty);
+        var error = new DriveDiagnosticEvent(now, DriveStage.Mount, "error", DriveFailure.From(new ArgumentException("private-email@example.test C:\\secret"), DriveStage.Mount), 120);
+        var queue = new DriveTelemetryOutbox(path, scope, () => now);
+        queue.Record(error, "0.1.3.0", "10.0.26200.0"); var id = queue.Batch().Single().EventId;
+        for (int n = 0; n < 100; n++) queue.Record(error, "0.1.3.0", "10.0.26200.0");
+        Check(queue.Count == 1);
+        var content = File.ReadAllText(path); Check(!content.Contains("private-email") && !content.Contains("secret-token") && !content.Contains("C:"));
+        queue = new(path, scope, () => now); Check(queue.Batch().Single().EventId == id);
+        queue.Acknowledge([Guid.NewGuid()]); Check(queue.Count == 1);
+        queue.Record(new(now, DriveStage.Ready, "ok"), "0.1.3.0", "10.0.26200.0");
+        queue.Record(new(now, DriveStage.Ready, "ok"), "0.1.3.0", "10.0.26200.0"); Check(queue.Count == 2);
+        queue.Acknowledge([id]); Check(queue.Count == 1 && queue.Batch()[0].Kind == "ready");
+        now = now.AddMinutes(6); queue.Record(error with { Utc = now }, "0.1.3.0", "10.0.26200.0"); Check(queue.Count == 2);
+        return Task.CompletedTask;
+    });
+    await Test("telemetry is bounded, expires offline records and cannot replay to a different account", () =>
+    {
+        var now = DateTimeOffset.UtcNow; var path = Path.Combine(temp, "telemetry-bounded", "queue.json");
+        var scope = DriveTelemetryOutbox.Scope("https://opal.test", "one", Guid.Empty);
+        var queue = new DriveTelemetryOutbox(path, scope, () => now);
+        for (int n = 0; n < 240; n++)
+        {
+            queue.Record(new(now, DriveStage.Library, "error", DriveFailure.From(new HttpRequestException(), DriveStage.Library)), "0.1.3.0", "10.0.1");
+            now = now.AddMinutes(6);
+        }
+        Check(queue.Count == 200 && queue.Batch().Length == 20 && new FileInfo(path).Length < 256 * 1024);
+        queue = new(path, DriveTelemetryOutbox.Scope("https://opal.test", "two", Guid.Empty), () => now); Check(queue.Count == 0);
+        queue.Record(new(now, DriveStage.Ready, "ok"), "0.1.3.0", "10.0.1"); now = now.AddDays(15);
+        Check(new DriveTelemetryOutbox(path, DriveTelemetryOutbox.Scope("https://opal.test", "two", Guid.Empty), () => now).Count == 0);
+        var blocked = Path.Combine(temp, "telemetry-blocked"); File.WriteAllText(blocked, "file");
+        queue = new(Path.Combine(blocked, "queue.json"), scope); queue.Record(new(now, DriveStage.Ready, "ok"), "0.1.3.0", "10.0.1");
+        Check(!queue.StorageAvailable && queue.Count == 1);
+        return Task.CompletedTask;
+    });
+    await Test("background telemetry retries transport failures with the same event ID and never changes drive diagnostics", async () =>
+    {
+        var transport = new TelemetryFake { FailFirst = true }; var root = Path.Combine(temp, "telemetry-retry");
+        await using var reporter = new DriveTelemetryReporter(root, "0.1.3.0", "10.0.26200.0", settings => new(settings, transport));
+        var journal = new DriveDiagnostics(Path.Combine(temp, "telemetry-log")); journal.Recorded += reporter.Record;
+        reporter.Configure("https://opal.test", "telemetry-test", Guid.Empty, true);
+        journal.Record(DriveStage.Library, "error", new HttpRequestException("NEVER-UPLOAD-THIS", null, HttpStatusCode.ServiceUnavailable));
+        await transport.Accepted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        Check(transport.Ids.Count == 2 && transport.Ids.Distinct().Count() == 1 && !transport.Payload.Contains("NEVER-UPLOAD-THIS"));
+        Check(journal.Events().Length == 1);
+        reporter.Configure("https://opal.test", "telemetry-test", Guid.Empty, false);
+        await Task.Delay(1500);
+        Check(!File.Exists(Path.Combine(root, "telemetry-outbox.json")));
+        journal.Record(DriveStage.Mount, "error", new DriveMountInUseException());
+        await Task.Delay(1200); Check(transport.Ids.Count == 2);
+    });
+    await Test("manual connection checks stay local and disabling reporting cancels an active request", async () =>
+    {
+        var transport = new TelemetryFake { Block = true };
+        await using var reporter = new DriveTelemetryReporter(Path.Combine(temp, "telemetry-cancel"), "0.1.3.0", "10.0.1", settings => new(settings, transport));
+        var journal = new DriveDiagnostics(Path.Combine(temp, "manual-log")); journal.Recorded += reporter.Record;
+        reporter.Configure("https://opal.test", "telemetry-test", Guid.Empty, true);
+        journal.Record(DriveStage.Library, "error", new HttpRequestException(), report: false);
+        await Task.Delay(1200); Check(transport.Ids.Count == 0);
+        journal.Record(DriveStage.Mount, "error", new DriveMountInUseException());
+        await transport.Started.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        reporter.Configure("https://opal.test", "", Guid.Empty, false);
+        await transport.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(3));
+    });
     await Test("namespace handles nested folders and case-insensitive lookup", () =>
     {
         var source = new Fake(); var tree = new DriveTree([source.Entry], []);
@@ -193,4 +260,30 @@ sealed class Fake : HttpMessageHandler
         throw new Exception("Unexpected request");
     }
     private static HttpResponseMessage Json(object value)=>new(HttpStatusCode.OK){Content=new StringContent(JsonSerializer.Serialize(value),Encoding.UTF8,"application/json")};
+}
+
+sealed class TelemetryFake : HttpMessageHandler
+{
+    public bool FailFirst, Block;
+    public List<Guid> Ids { get; } = [];
+    public string Payload = "";
+    public TaskCompletionSource Accepted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (request.RequestUri?.AbsolutePath != "/api/v1/drive/telemetry" || request.Headers.Authorization?.Parameter != "telemetry-test") throw new Exception("Unexpected telemetry destination/credential");
+        Payload = await request.Content!.ReadAsStringAsync(cancellationToken);
+        using var json = JsonDocument.Parse(Payload);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetProperty("event_id").GetGuid()).ToArray();
+        Ids.AddRange(events); Started.TrySetResult();
+        if (Block)
+        {
+            try { await Task.Delay(Timeout.Infinite, cancellationToken); }
+            catch (OperationCanceledException) { Cancelled.TrySetResult(); throw; }
+        }
+        if (FailFirst) { FailFirst = false; return new(HttpStatusCode.ServiceUnavailable); }
+        Accepted.TrySetResult();
+        return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { data = new { accepted = events } }), Encoding.UTF8, "application/json") };
+    }
 }

@@ -33,13 +33,23 @@ final class PersonalDriveController
 
     public function manifest(Request $request, DriveNamespace $namespace): JsonResponse|Response
     {
+        $entries = $namespace->entriesForUser($request->user());
         $files = array_map(fn ($entry): array => [
             'path' => $entry['path'], 'bytes' => $entry['object']['size'], 'sha256' => $entry['sha256'],
             'content_url' => route('api.drive.files', ['derivative' => $entry['derivative_uuid'], 'file' => $entry['file_id']], false),
             'material_uuid' => $entry['material_uuid'], 'variant_uuid' => $entry['variant_uuid'], 'material_version' => $entry['material_version'],
             'derivative_uuid' => $entry['derivative_uuid'], 'target' => $entry['target'], 'quality' => $entry['quality'], 'role' => $entry['role'],
-        ], $namespace->entriesForUser($request->user()));
-        $files = array_merge($files, $namespace->canonicalEntriesForUser($request->user()));
+        ], $entries);
+        $currentFiles = array_values(array_filter($files, fn ($file, $index): bool => $entries[$index]['current'], ARRAY_FILTER_USE_BOTH));
+        foreach ($namespace->canonicalEntriesForUser($request->user()) as $file) {
+            $current = $file['current'];
+            unset($file['current']);
+            $files[] = $file;
+            if ($current) {
+                $currentFiles[] = $file;
+            }
+        }
+        $files = array_merge($files, $namespace->namedEntriesForUser($request->user(), $currentFiles));
         usort($files, fn ($a, $b) => strcmp($a['path'], $b['path']));
         $incoming = $request->user()->can('materials.contribute') && $request->user()->tokenCan('drive:write')
             ? DriveIntakeSession::query()->where('user_id', $request->user()->id)->open()->orderBy('uuid')->get()->map(fn ($session): array => [

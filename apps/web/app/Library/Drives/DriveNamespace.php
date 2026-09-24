@@ -197,6 +197,7 @@ class DriveNamespace
                         'bytes' => $package->bytes, 'sha256' => $package->sha256,
                         'content_url' => route('api.drive.package', ['package' => $package->id], false),
                         'material_uuid' => $material->uuid, 'variant_uuid' => $package->variant->uuid,
+                        'current' => $material->current_version_id === $version->id,
                         'material_version' => $version->number, 'target' => 'omniverse', 'quality' => 'canonical', 'role' => 'package',
                     ];
                 }
@@ -204,6 +205,77 @@ class DriveNamespace
         }
 
         return $files;
+    }
+
+    /**
+     * A readable view of the latest published files. The caller supplies only
+     * current derivatives/packages; permanent references still use by-id.
+     *
+     * @param  list<array<string, mixed>>  $currentFiles
+     * @return list<array<string, mixed>>
+     */
+    public function namedEntriesForUser(User $user, array $currentFiles): array
+    {
+        if ($currentFiles === []) {
+            return [];
+        }
+        $materials = Material::query()->visibleTo($user)
+            ->whereIn('uuid', array_unique(array_column($currentFiles, 'material_uuid')))
+            ->with(['category', 'variants'])->get();
+        $materialLabels = $this->browseLabels($materials->pluck('name', 'uuid')->all());
+        $directories = [];
+        foreach ($materials as $material) {
+            $variantLabels = $this->browseLabels($material->variants->pluck('name', 'uuid')->all());
+            foreach ($variantLabels as $uuid => $label) {
+                $directories[$material->uuid][$uuid] = '/materials/by-name/'.$this->browseComponent($material->category->name)
+                    .'/'.$materialLabels[$material->uuid].'/'.$label;
+            }
+        }
+        $files = [];
+        foreach ($currentFiles as $file) {
+            $directory = $directories[$file['material_uuid']][$file['variant_uuid']] ?? null;
+            if ($directory === null) {
+                continue;
+            }
+            $suffix = $file['role'] === 'package' ? '/canonical/material.usdz'
+                : '/'.$file['target'].'/'.$file['quality'].'/'.basename($file['path']);
+            $files[] = array_replace($file, ['path' => $directory.$suffix]);
+        }
+
+        return $files;
+    }
+
+    /** @param array<string, string> $names
+     * @return array<string, string>
+     */
+    private function browseLabels(array $names): array
+    {
+        $labels = array_map($this->browseComponent(...), $names);
+        $keys = array_map(fn (string $label): string => mb_convert_case($label, MB_CASE_FOLD, 'UTF-8'), $labels);
+        $counts = array_count_values($keys);
+        foreach ($labels as $uuid => &$label) {
+            // Full identity only for ambiguous names. Brackets are reserved in
+            // browseComponent, so a literal name cannot impersonate this suffix.
+            if ($counts[$keys[$uuid]] > 1) {
+                $label .= ' ['.$uuid.']';
+            }
+        }
+
+        return $labels;
+    }
+
+    private function browseComponent(string $value): string
+    {
+        $value = trim((string) preg_replace('/[\\\\\/\x00-\x1f\x7f<>:"|?*\[\]]+/u', '-', $value), '. ');
+        $value = rtrim(mb_strcut($value, 0, 60, 'UTF-8'), '. ');
+        if ($value === '') {
+            return 'Unnamed';
+        }
+        if (preg_match('/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i', $value)) {
+            $value = '_'.$value;
+        }
+
+        return $value;
     }
 
     /** @return list<array<string, mixed>> */

@@ -127,6 +127,9 @@ class AppServiceProvider extends ServiceProvider
         // Offices share one public IP. Starting a link is limited by address,
         // while polling is limited by the unguessable device code so several
         // designers can connect at once without exhausting one shared bucket.
+        RateLimiter::for('drive-telemetry', fn (Request $request) => Limit::perMinute(12)
+            ->by('drive-telemetry:'.$request->user()?->id));
+
         RateLimiter::for('device-link-start', fn (Request $request) => Limit::perMinute(30)
             ->by((string) $request->ip()));
         RateLimiter::for('device-link-poll', fn (Request $request) => Limit::perMinute(45)

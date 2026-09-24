@@ -12,6 +12,7 @@ public sealed class DriveSettings
     public string AccountId { get; set; } = "";
     public string AccountEmail { get; set; } = "";
     public string ProtectedToken { get; set; } = "";
+    public bool TelemetryEnabled { get; set; } = true;
     public bool AutoMount { get; set; } = true;
     public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Olsyn", "OPAL", "Drive");
     private byte[] Entropy => SHA256.HashData(Encoding.UTF8.GetBytes(Server.TrimEnd('/').ToLowerInvariant()));

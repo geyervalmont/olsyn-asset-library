@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Laravel\Sanctum\PersonalAccessToken;
 
 /**
+ * @property User $user
  * @property int $id
  * @property int $user_id
  * @property string $device_id
@@ -25,6 +27,12 @@ class DriveConnection extends Model
     protected function casts(): array
     {
         return ['last_seen_at' => 'datetime'];
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function isLive(): bool

@@ -128,8 +128,10 @@ new #[Title('Connect')] class extends Component
         @else
             <p>{{ __('The Windows drive installer will appear here when its release is available. Existing material-drive connections continue to work.') }}</p>
         @endif
+        <p>{{ __('In Explorer, open materials → by-name to browse by category, material and colourway. Design applications keep their permanent references under by-id.') }}</p>
         <p>{{ __('Installation needs administrator rights once for the filesystem component. Keep OPAL Drive running in the system tray and use the same drive letter across your team. Each app connects with your own account; no VPN or API token to copy.') }}</p>
         <a href="{{ route('connect.it') }}">{{ __('IT installation and network notes') }} →</a>
+        <p><a href="{{ route('connect.health') }}" wire:navigate>{{ __('Drive health & error history') }} →</a></p>
     </x-ui.panel>
 
     <ol class="ui-connect__steps" aria-label="{{ __('Connection steps') }}">

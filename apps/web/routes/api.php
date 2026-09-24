@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\ClientReleasesController;
 use App\Http\Controllers\Api\CommandsController;
 use App\Http\Controllers\Api\ConsumerLibraryController;
 use App\Http\Controllers\Api\Drive\DriveHeartbeatController;
+use App\Http\Controllers\Api\Drive\DriveTelemetryController;
 use App\Http\Controllers\Api\Drive\IntakeController;
 use App\Http\Controllers\Api\Drive\PersonalDriveController;
 use App\Http\Controllers\Api\DrivesController;
@@ -83,6 +84,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class, Restr
         Route::get('files/{derivative}/{file}', [PersonalDriveController::class, 'file'])->whereUuid('derivative')->whereNumber('file')->name('api.drive.files');
         Route::get('packages/{package}', [PersonalDriveController::class, 'package'])->whereNumber('package')->name('api.drive.package');
         Route::post('heartbeat', DriveHeartbeatController::class)->name('api.drive.heartbeat');
+        Route::post('telemetry', DriveTelemetryController::class)->middleware('throttle:drive-telemetry')->name('api.drive.telemetry');
         $intake = IntakeController::class;
         Route::get('intake', [$intake, 'index'])->name('api.drive.intake.index');
         Route::post('intake', [$intake, 'store'])->name('api.drive.intake.store');

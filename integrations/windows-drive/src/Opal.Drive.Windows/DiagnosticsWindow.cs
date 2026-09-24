@@ -37,7 +37,7 @@ internal sealed class DiagnosticsWindow : Form
         var copy = new Button { Text = "Copy report", AutoSize = true };
         var save = new Button { Text = "Save report…", AutoSize = true };
         buttons.Controls.AddRange([run, cancel, copy, save]);
-        var privacy = new Label { Dock = DockStyle.Bottom, Height = 48, Padding = new(10, 4, 10, 4), Text = "Reports include app/Windows versions, server address, device ID and error codes. Tokens, sign-in codes, email addresses and material filenames are excluded. Nothing is uploaded automatically." };
+        var privacy = new Label { Dock = DockStyle.Bottom, Height = 48, Padding = new(10, 4, 10, 4), Text = "Reports include app/Windows versions, server address, device ID and error codes. Tokens, sign-in codes, email addresses and material filenames are excluded. Automatic error reporting is controlled in the main window. Manual checks stay local." };
         Controls.Add(tabs); Controls.Add(privacy); Controls.Add(buttons);
         run.Click += async (_, _) => { tabs.SelectedTab = checksTab; await RunChecksAsync(); };
         cancel.Click += (_, _) => checking?.Cancel();
@@ -79,7 +79,7 @@ internal sealed class DiagnosticsWindow : Form
         {
             row.SubItems[3].Text = await check(timeout.Token);
             row.SubItems[1].Text = "Pass";
-            journal.Record(stage, "ok", elapsedMs: elapsed.ElapsedMilliseconds);
+            journal.Record(stage, "ok", elapsedMs: elapsed.ElapsedMilliseconds, report: false);
             return true;
         }
         catch (OperationCanceledException) when (checking.IsCancellationRequested)
@@ -88,7 +88,7 @@ internal sealed class DiagnosticsWindow : Form
         {
             var failure = DriveFailure.From(e, stage);
             row.SubItems[1].Text = "Fail"; row.SubItems[3].Text = $"{failure.Code}: {failure.Advice} ({failure.ExceptionTypes}; HTTP {failure.HttpStatus?.ToString() ?? "-"}; {failure.HResult})";
-            journal.Record(stage, "error", e, elapsed.ElapsedMilliseconds);
+            journal.Record(stage, "error", e, elapsed.ElapsedMilliseconds, report: false);
             return false;
         }
         finally { if (!IsDisposed) row.SubItems[2].Text = $"{elapsed.ElapsedMilliseconds:N0} ms"; }
