@@ -22,7 +22,7 @@
 >
     <button type="button" class="ui-modal__scrim" wire:click="closeQuick" tabindex="-1" aria-label="{{ __('Close') }}"></button>
 
-    <div class="ui-modal__panel" role="dialog" aria-modal="true" aria-labelledby="quick-title" tabindex="-1" x-init="$el.focus()">
+    <div class="ui-modal__panel" role="dialog" aria-modal="true" aria-labelledby="quick-title" tabindex="-1" x-trap.inert.noscroll="true">
         <header class="ui-modal__head">
             <div>
                 <x-ui.eyebrow>{{ $material->category->name }}</x-ui.eyebrow>
@@ -49,13 +49,17 @@
                         <div
                             class="ui-swatch-card__stage"
                             wire:ignore
-                            x-data="materialViewer(@js(['sets' => $sets, 'objectSizeMm' => 1000, 'framing' => 1.65, 'verticalBias' => 0.12]))"
+                            x-data="materialViewer(@js(['sets' => $sets, 'objectSizeMm' => 1000, 'framing' => 1.65, 'verticalBias' => 0.12, 'autoStart' => false]))"
                             x-effect="show(current?.id)"
-                            x-bind:class="status === 'ready' && 'is-ready'"
+                            x-bind:class="status === 'ready' ? 'is-ready' : 'is-idle'"
                             x-ref="stage"
                             data-test="quick-stage"
                         >
-                            <x-ui.material-map-inspector compact />
+                            <button class="ui-preview-start" type="button" x-show="status !== 'ready'" x-on:click.prevent.stop="start()" x-bind:disabled="status === 'loading'" data-test="start-3d">
+                                <span x-text="status === 'loading' ? 'Loading 3D…' : (status === 'error' ? 'Retry 3D preview' : 'Explore in 3D')"></span>
+                                <span aria-hidden="true">↗</span>
+                            </button>
+                            <template x-if="status === 'ready'"><x-ui.material-map-inspector compact /></template>
                         </div>
                     </x-slot:stage>
                 @endif

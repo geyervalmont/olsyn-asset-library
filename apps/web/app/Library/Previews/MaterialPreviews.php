@@ -264,7 +264,7 @@ class MaterialPreviews
                 'code' => (string) $chip->code,
                 'name' => (string) $chip->name,
                 'hex' => $chip->dominant_hex ?? self::fallbackHex($chip->code),
-                'image' => $file?->url(),
+                'image' => $file?->previewUrl(),
             ];
 
             if ($file !== null && $preview !== null && $file->is($preview) && $active === 0) {
@@ -273,7 +273,7 @@ class MaterialPreviews
         }
 
         if ($variants === []) {
-            $variants[] = ['id' => 0, 'code' => $material->code, 'name' => $material->name, 'hex' => self::fallbackHex($material->code), 'image' => $preview?->url()];
+            $variants[] = ['id' => 0, 'code' => $material->code, 'name' => $material->name, 'hex' => self::fallbackHex($material->code), 'image' => $preview?->previewUrl()];
         }
 
         return ['variants' => $variants, 'active' => $active];

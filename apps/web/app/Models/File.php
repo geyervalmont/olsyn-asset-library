@@ -78,6 +78,11 @@ class File extends Model
         return $this->kind === 'image';
     }
 
+    public function previewUrl(int $size = 512): string
+    {
+        return route('files.preview', ['file' => $this, 'size' => $size]);
+    }
+
     public function contents(): string
     {
         $contents = Storage::disk($this->disk)->get($this->object_key);

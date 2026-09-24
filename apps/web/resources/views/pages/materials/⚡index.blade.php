@@ -130,6 +130,7 @@ new #[Title('Library')] class extends ConsumerComponent {
         $material = $this->quickMaterial;
         $variants = $material
             ->variants()
+            ->whereIn('id', array_column($this->quickCard['variants'], 'id'))
             ->with(['representations.target', 'representations.quality', 'representations.representationFiles.role', 'representations.representationFiles.file'])
             ->get();
 
@@ -229,9 +230,16 @@ new #[Title('Library')] class extends ConsumerComponent {
         $this->resetPage();
     }
 
+    public function updatedSort(): void
+    {
+        $this->sort = in_array($this->sort, ['name', 'newest', 'variants'], true) ? $this->sort : 'name';
+        $this->resetPage();
+    }
+
     public function setView(string $view): void
     {
         $this->view = in_array($view, ['swatches', 'table'], true) ? $view : 'swatches';
+        $this->resetPage();
     }
 
     #[Computed]
@@ -263,7 +271,7 @@ new #[Title('Library')] class extends ConsumerComponent {
 
         return $query
             ->with(['category', 'supplier', 'currentVersion'])
-            ->paginate($this->view === 'table' ? 25 : 30);
+            ->paginate(24);
     }
 
     #[Computed]
@@ -367,12 +375,12 @@ new #[Title('Library')] class extends ConsumerComponent {
     }
 }; ?>
 
-<section>
-    <div class="ui-page-head">
+<section class="ui-library" x-data="{ filtersOpen: @js($supplier !== '' || $status !== '') }">
+    <div class="ui-page-head ui-library-head">
         <div>
-            <x-ui.eyebrow>{{ __('Library') }}</x-ui.eyebrow>
-            <h1>{{ __('Materials') }} <small>{{ number_format($this->materials->total()) }} {{ __('records') }}</small></h1>
-            <p class="ui-page-head__lede">{{ __('Find a known specification with keywords, discover related finishes by meaning, or start a traceable import or procedural recipe.') }}</p>
+            <x-ui.eyebrow>{{ __('Workspace library') }}</x-ui.eyebrow>
+            <h1>{{ __('Materials') }}<span class="ui-library-head__dot">.</span></h1>
+            <p class="ui-page-head__lede">{{ __('Find a finish. Explore the details. Make it yours.') }}</p>
         </div>
         <div class="ui-page-head__actions">
             @can('materials.contribute')
@@ -385,23 +393,23 @@ new #[Title('Library')] class extends ConsumerComponent {
         </div>
     </div>
 
-    <div class="ui-toolbar">
+    <div class="ui-library-searchbar">
         <label class="ui-search">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3 3" /></svg>
-            <input class="ui-input" type="search" wire:model.live.debounce.600ms="search" placeholder="{{ $mode === 'semantic' ? __('Describe colour, texture or use…') : __('Name, code, supplier or colour…') }}" aria-label="{{ __('Search materials') }}" data-test="search" />
+            <input class="ui-input" type="search" wire:model.live.debounce.350ms="search" placeholder="{{ $mode === 'semantic' ? __('Describe a colour, texture or feeling…') : __('Search materials, colours, suppliers…') }}" aria-label="{{ __('Search materials') }}" data-test="search" />
         </label>
-        @if (config('opal.embeddings.enabled'))
-            <div class="ui-segment" role="group" aria-label="{{ __('Search mode') }}">
-                <button type="button" wire:click="$set('mode', 'keyword')" @class(['is-active' => $mode === 'keyword' && $similar === '']) data-test="search-keyword">{{ __('Keywords') }}</button>
-                <button type="button" wire:click="$set('mode', 'semantic')" @class(['is-active' => $mode === 'semantic' && $similar === '']) data-test="search-semantic">{{ __('Meaning') }}</button>
-            </div>
-        @endif
         <select class="ui-select" wire:model.live="category" aria-label="{{ __('Category') }}">
             <option value="">{{ __('All categories') }}</option>
             @foreach ($this->categories as $category)
                 <option value="{{ $category->id }}">{{ $category->name }}</option>
             @endforeach
         </select>
+        <button type="button" class="ui-library-filter-button" x-on:click="filtersOpen = ! filtersOpen" x-bind:aria-expanded="filtersOpen" aria-controls="library-filters">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 6h14M3 14h14"/><circle cx="7" cy="6" r="2"/><circle cx="13" cy="14" r="2"/></svg>
+            {{ __('Filters') }}@if ($supplier !== '' || $status !== '')<span class="ui-filter-dot"></span>@endif
+        </button>
+    </div>
+    <div class="ui-library-filters" id="library-filters" x-show="filtersOpen" x-cloak>
         <select class="ui-select" wire:model.live="supplier" aria-label="{{ __('Supplier') }}">
             <option value="">{{ __('All suppliers') }}</option>
             @foreach ($this->suppliers as $supplier)
@@ -415,6 +423,21 @@ new #[Title('Library')] class extends ConsumerComponent {
             <option value="draft">{{ __('Draft') }}</option>
             <option value="archived">{{ __('Archived') }}</option>
         </select>
+        @if (config('opal.embeddings.enabled'))
+            <div class="ui-segment" role="group" aria-label="{{ __('Search mode') }}">
+                <button type="button" wire:click="$set('mode', 'keyword')" @class(['is-active' => $mode === 'keyword' && $similar === '']) data-test="search-keyword">{{ __('Keywords') }}</button>
+                <button type="button" wire:click="$set('mode', 'semantic')" @class(['is-active' => $mode === 'semantic' && $similar === '']) data-test="search-semantic">{{ __('Meaning') }}</button>
+            </div>
+        @endif
+    </div>
+    <div class="ui-library-results">
+        <div class="ui-library-results__count" aria-live="polite">
+            <strong>{{ number_format($this->materials->total()) }}</strong> {{ __('materials') }}
+            @if ($this->hasFilters())
+                <button type="button" wire:click="clearFilters" data-test="clear-filters">{{ __('Clear filters') }} <span aria-hidden="true">×</span></button>
+            @endif
+        </div>
+        <div class="ui-library-results__controls">
         @if ($similar === '' && ! ($mode === 'semantic' && trim($search) !== ''))
             <select class="ui-select" wire:model.live="sort" aria-label="{{ __('Sort materials') }}">
                 <option value="name">{{ __('Name A–Z') }}</option>
@@ -423,18 +446,20 @@ new #[Title('Library')] class extends ConsumerComponent {
             </select>
         @endif
         <div class="ui-segment" role="group" aria-label="{{ __('View') }}">
-            <button type="button" wire:click="setView('swatches')" @class(['is-active' => $view === 'swatches']) data-test="view-swatches">
+            <button type="button" wire:click="setView('swatches')" @class(['is-active' => $view === 'swatches']) aria-pressed="{{ $view === 'swatches' ? 'true' : 'false' }}" data-test="view-swatches">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1" /><rect x="11" y="3" width="6" height="6" rx="1" /><rect x="3" y="11" width="6" height="6" rx="1" /><rect x="11" y="11" width="6" height="6" rx="1" /></svg>
-                {{ __('Swatches') }}
+                {{ __('Grid') }}
             </button>
-            <button type="button" wire:click="setView('table')" @class(['is-active' => $view === 'table']) data-test="view-table">
+            <button type="button" wire:click="setView('table')" @class(['is-active' => $view === 'table']) aria-pressed="{{ $view === 'table' ? 'true' : 'false' }}" data-test="view-table">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" /></svg>
-                {{ __('Table') }}
+                {{ __('List') }}
             </button>
         </div>
-        @if ($this->hasFilters())
-            <x-ui.button wire:click="clearFilters" variant="ghost" size="sm" data-test="clear-filters">{{ __('Clear') }}</x-ui.button>
-        @endif
+        </div>
+    </div>
+    <div class="ui-library-progress" role="status" aria-live="polite">
+        <span wire:loading.delay wire:target="search,category,supplier,status,sort,mode,setView,clearFilters,clearSimilarity">{{ __('Updating materials…') }}</span>
+        <span wire:loading.delay wire:target="openQuick">{{ __('Opening material…') }}</span>
     </div>
 
     @if ($this->similarVariant || $this->similarMaterial)
@@ -487,7 +512,7 @@ new #[Title('Library')] class extends ConsumerComponent {
                                 <td>
                                     <a class="ui-table__material" href="{{ route('materials.show', $material) }}" x-data="quickLink" x-on:click="quickOpen($event, @js($material->code))" style="text-decoration: none">
                                         @if ($preview)
-                                            <img class="ui-table__swatch" src="{{ $preview->url() }}" alt="" loading="lazy" style="object-fit: cover" />
+                                            <img class="ui-table__swatch" src="{{ $preview->previewUrl(96) }}" alt="" loading="lazy" decoding="async" width="40" height="40" style="object-fit: cover" />
                                         @else
                                             <span class="ui-table__swatch" style="background: {{ $chips->first()?->dominant_hex ?? \App\Library\Previews\MaterialPreviews::fallbackHex($material->code) }}"></span>
                                         @endif
@@ -518,29 +543,25 @@ new #[Title('Library')] class extends ConsumerComponent {
             </div>
         </div>
     @else
-        <div class="ui-swatch-grid" data-test="swatch-grid">
+        <div class="ui-swatch-grid" data-test="swatch-grid" wire:loading.class.delay="is-updating" wire:target="search,category,supplier,status,sort,mode,setView,clearFilters,clearSimilarity">
             @foreach ($this->materials as $material)
                 @php
                     $card = $this->cardData($material);
                     $first = $card['variants'][$card['active']];
                     $targets = $this->targets[$material->id] ?? [];
                 @endphp
-                <a
+                <article
                     class="ui-swatch-card"
-                    href="{{ route('materials.show', $material) }}"
                     wire:key="card-{{ $material->id }}"
                     data-test="material-card"
                     x-data="swatchCard(@js($card))"
                     x-on:mouseenter="enter"
-                    x-on:mousemove="move"
                     x-on:mouseleave="leave"
-                    x-on:click="quickOpen($event, @js($material->code))"
                     x-bind:class="hovering && 'is-hovering'"
-                    x-bind:style="tilt && { transform: tilt }"
                 >
-                    <x-ui.swatch-preview :card="$card" :targets="$targets" :tag="$material->category->code" :variants-count="$material->variants_count" :name="$material->name" />
+                    <x-ui.swatch-preview :card="$card" :targets="$targets" :tag="$material->category->code" :variants-count="$material->variants_count" :name="$material->name" :eager="$loop->index < 4" />
                     <div class="ui-swatch-card__body">
-                        <strong>{{ $material->name }}</strong>
+                        <strong><a class="ui-library-card-link" href="{{ route('materials.show', $material) }}" x-on:click="quickOpen($event, @js($material->code))">{{ $material->name }}</a></strong>
                         <small>{{ $material->supplier?->name ?? __('In-house') }}@if ($material->collection) · {{ $material->collection }}@endif</small>
                         <div class="ui-swatch-card__meta">
                             <span>{{ trans_choice(':count variant|:count variants', $material->variants_count) }}</span>
@@ -553,7 +574,7 @@ new #[Title('Library')] class extends ConsumerComponent {
                             </span>
                         </div>
                     </div>
-                </a>
+                </article>
             @endforeach
         </div>
     @endif

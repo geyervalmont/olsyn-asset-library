@@ -5,6 +5,7 @@
     'variantsCount' => null,
     'name' => '',
     'open' => false,
+    'eager' => false,
 ])
 
 @php
@@ -21,7 +22,8 @@
     <img
         @if ($first['image'] !== null) src="{{ $first['image'] }}" @endif
         alt="{{ $name }}"
-        loading="lazy"
+        loading="{{ $eager ? 'eager' : 'lazy' }}"
+        decoding="async"
         @if ($first['image'] === null) hidden @endif
         x-bind:src="current?.image || null"
         x-bind:hidden="! current?.image"
@@ -44,15 +46,15 @@
             role="group"
             aria-label="{{ __('Colourways') }}"
             data-test="colourways"
-            x-on:mouseenter="holdTilt(true)"
-            x-on:mouseleave="holdTilt(false); clearPreview()"
+            x-on:mouseleave="clearPreview()"
         >
             @foreach ($card['variants'] as $index => $chip)
                 <button
                     type="button"
                     title="{{ $chip['name'] }}"
                     aria-pressed="{{ $index === $card['active'] ? 'true' : 'false' }}"
-                    style="--chip: {{ $chip['hex'] }};@if ($chip['image']) background-image: url('{{ $chip['image'] }}')@endif"
+                    style="--chip: {{ $chip['hex'] }}"
+                    aria-label="{{ $chip['name'] }}"
                     x-on:mouseenter="preview({{ $index }})"
                     x-on:click.prevent.stop="pick({{ $index }})"
                     x-bind:aria-pressed="selected === {{ $index }}"

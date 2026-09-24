@@ -27,8 +27,7 @@
         @include('partials.head')
         <meta name="color-scheme" content="light" />
     </head>
-    <body class="ui-page" data-ui x-data="{ navigationOpen: false }">
-        <div class="ui-grain" aria-hidden="true"></div>
+    <body class="ui-page ui-page--app" data-ui x-data="{ navigationOpen: false }">
         <a class="ui-skip" href="#app-content">{{ __('Skip to content') }}</a>
 
         <div class="ui-shell ui-shell--app">
@@ -69,7 +68,12 @@
                     <p>{{ __('OPAL') }}</p>
                     @foreach ($navigation as $item)
                         <a href="{{ route($item['route']) }}" @class(['is-active' => request()->routeIs(...explode('|', $item['match']))]) wire:navigate>
-                            <span>{{ $item['index'] }}</span>{{ $item['label'] }}
+                            <span aria-hidden="true"><svg viewBox="0 0 20 20">
+                                @if ($item['index'] === '01')<rect x="3" y="3" width="5" height="5" rx="1"/><rect x="12" y="3" width="5" height="5" rx="1"/><rect x="3" y="12" width="5" height="5" rx="1"/><rect x="12" y="12" width="5" height="5" rx="1"/>
+                                @elseif ($item['index'] === '02')<rect x="3" y="3" width="14" height="14" rx="3"/><path d="M6 10h8M10 6v8"/>
+                                @else<rect x="2" y="3" width="16" height="11" rx="2"/><path d="M7 18h6M10 14v4"/>
+                                @endif
+                            </svg></span>{{ $item['label'] }}
                         </a>
                     @endforeach
                 </nav>

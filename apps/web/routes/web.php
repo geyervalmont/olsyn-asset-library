@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\SessionsController;
 use App\Http\Controllers\Clients\RevitDownloadController;
 use App\Http\Controllers\Drives\DriveManifestController;
 use App\Http\Controllers\Files\FileController;
+use App\Http\Controllers\Files\PreviewController;
 use App\Http\Controllers\OlsynLoginController;
 use App\Http\Controllers\Prismfs\PrismfsAccessController;
 use App\Http\Controllers\Prismfs\PrismfsManifestController;
@@ -78,6 +79,7 @@ Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::livewire('drives', 'pages::drives.index')->name('drives.index');
     Route::livewire('jobs', 'pages::jobs.index')->name('jobs.index');
     Route::get('files/{file}/{name?}', FileController::class)->name('files.show');
+    Route::get('file-previews/{file}/{size}', PreviewController::class)->whereNumber('size')->name('files.preview');
     Route::get('drives/{drive:slug}/manifest.yaml', DriveManifestController::class)->name('drives.manifest');
 });
 
