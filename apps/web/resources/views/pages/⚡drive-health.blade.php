@@ -22,7 +22,8 @@ new #[Title('Drive health')] class extends Component {
         // Recheck on every Livewire request. Only super-admins can inspect other accounts.
         abort_unless(auth()->check(), 403);
         return $query->when(! auth()->user()->isSuperAdmin(), fn ($q) => $q->where('user_id', auth()->id()))
-            ->when($this->device !== '', fn ($q) => $q->where('device_id', $this->device));
+            ->when($this->device !== '', fn ($q) => \Illuminate\Support\Str::isUuid($this->device)
+                ? $q->where('device_id', strtolower($this->device)) : $q->whereRaw('1 = 0'));
     }
 
     #[Computed]
@@ -49,6 +50,9 @@ new #[Title('Drive health')] class extends Component {
         <p>{{ __('Reports contain device ID, app and Windows versions, the failed step, timing and error codes. They exclude credentials, file paths, material contents and exception messages.') }}</p>
         <label for="health-device">{{ __('Filter by device ID') }}</label>
         <input id="health-device" class="ui-input" wire:model.live.debounce.500ms="device" maxlength="36" placeholder="{{ __('All devices') }}">
+        @if ($device !== '' && ! \Illuminate\Support\Str::isUuid($device))
+            <p role="status">{{ __('Enter a complete device ID to filter reports.') }}</p>
+        @endif
         @foreach ($this->versions as $version)
             <p><x-ui.badge tone="warning">{{ $version->total }}</x-ui.badge> {{ __('Version') }} {{ $version->version }} · <code>{{ $version->code }}</code></p>
         @endforeach

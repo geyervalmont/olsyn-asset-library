@@ -71,6 +71,7 @@ test('drive health shows personal history and devices while super-admins can ins
     DriveConnection::create(['user_id' => $other->id, 'device_id' => $private->device_id, 'machine' => 'PRIVATE-DEVICE', 'state' => 'error', 'last_seen_at' => now()]);
     Livewire::actingAs($this->user)->test('pages::drive-health')->assertSee($this->payload['events'][0]['event_id'])
         ->assertDontSee($private->event_id)->assertDontSee('PRIVATE-DEVICE')
+        ->set('device', 'partial')->assertSee('Enter a complete device ID')->assertDontSee($this->payload['events'][0]['event_id'])
         ->set('device', $private->device_id)->assertDontSee($private->event_id)->assertDontSee('PRIVATE-DEVICE');
     $this->user->forceFill(['is_super_admin' => true])->save();
     Livewire::actingAs($this->user)->test('pages::drive-health')->assertSee($private->event_id)->assertSee('PRIVATE-DEVICE');
