@@ -79,6 +79,7 @@ jobs:
       - name: Generate test application key
         run: echo "APP_KEY=$(php artisan key:generate --show)" >> "$GITHUB_ENV"
       - run: bun install --frozen-lockfile
+      - run: bun test tests/js
       - run: bun run build
       - run: composer test
 

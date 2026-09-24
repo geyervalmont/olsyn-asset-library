@@ -135,14 +135,14 @@ test('a studio draft applies to revit without creating a library record', functi
 
     Livewire::actingAs($this->editor)
         ->test('pages::materials.studio')
-        ->assertSee('data-test="studio-apply-revit"', false)
+        ->assertSee('data-test="studio-apply-consumer"', false)
         ->assertSee('data-test="open-library-destination"', false)
         ->assertDontSee('data-test="studio-library-destination"', false)
         ->set('name', 'Lobby terrazzo study')
-        ->set('revitSessionId', $session->id)
-        ->call('applyInRevit')
+        ->set('consumerSessionId', $session->id)
+        ->call('applyToConsumer')
         ->assertHasNoErrors()
-        ->assertSet('revitCommandId', fn (?int $id): bool => $id !== null);
+        ->assertSet('consumerCommandId', fn (?int $id): bool => $id !== null);
 
     $command = ClientCommand::query()->sole();
     $studio = $command->payload['studio'];
@@ -171,11 +171,11 @@ test('a studio draft applies to revit without creating a library record', functi
 test('a disconnected studio apply remains responsive and explains the account requirement', function () {
     Livewire::actingAs($this->editor)
         ->test('pages::materials.studio')
-        ->assertSee('No live Revit session for this account')
+        ->assertSee('No compatible app connected')
         ->assertSeeHtml('aria-disabled="true"')
-        ->call('applyInRevit')
+        ->call('applyToConsumer')
         ->assertHasNoErrors()
-        ->assertSet('revitCommandId', null);
+        ->assertSet('consumerCommandId', null);
 
     expect(ClientCommand::count())->toBe(0);
 });

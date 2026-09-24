@@ -19,9 +19,9 @@ test('the shell says when no Revit is connected', function () {
     $this->actingAs($this->viewer)
         ->get(route('materials.index'))
         ->assertOk()
-        ->assertSee('data-test="revit-status"', false)
+        ->assertSee('data-test="consumer-status"', false)
         ->assertSee('data-state="off"', false)
-        ->assertSee('Connect Revit');
+        ->assertSee('Nothing connected');
 });
 
 test('the shell names the machine of a live Revit, and ignores a stale one', function () {
@@ -51,4 +51,14 @@ test('another person\'s Revit is not this person\'s business', function () {
         ->assertOk()
         ->assertSee('data-state="off"', false)
         ->assertDontSee('THEIR-VM');
+});
+
+test('presence shows every live consumer and the browser fallback is account scoped', function () {
+    foreach (['revit', 'omniverse'] as $platform) {
+        ClientSession::create(['user_id' => $this->viewer->id, 'platform' => $platform, 'machine' => strtoupper($platform), 'last_seen_at' => now()]);
+    }
+    $other = User::factory()->create();
+    ClientSession::create(['user_id' => $other->id, 'platform' => 'omniverse', 'machine' => 'PRIVATE-PC', 'last_seen_at' => now()]);
+    $this->actingAs($this->viewer)->get(route('materials.index'))->assertOk()->assertSee('Omniverse · Revit')->assertDontSee('PRIVATE-PC');
+    $this->getJson(route('connect.sessions'))->assertOk()->assertJsonCount(2, 'data')->assertJsonMissing(['machine' => 'PRIVATE-PC']);
 });

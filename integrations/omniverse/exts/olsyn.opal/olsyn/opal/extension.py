@@ -9,8 +9,12 @@ import webbrowser
 import omni.ext
 import omni.ui as ui
 import omni.usd
+from pxr import UsdShade
 
-from .client import APP_VERSION, Client, discover_drive
+from .client import APP_VERSION, ApiError, Client, discover_drive
+from .commands import CommandConsumer
+from .browser import preview_name
+from . import ui as browser_ui
 from . import credentials, materials
 
 class Extension(omni.ext.IExt):
@@ -31,41 +35,22 @@ class Extension(omni.ext.IExt):
         self.busy = False
         self.session_id = None
         self.account_email = ''
-        self.window = ui.Window('OPAL Materials', width=790, height=720)
-        with self.window.frame:
-            with ui.VStack(spacing=8):
-                with ui.HStack(height=30):
-                    ui.Button('Connect account', clicked_fn=lambda: self.run(self.connect()))
-                    ui.Button('Disconnect', clicked_fn=lambda: self.run(self.disconnect()))
-                    ui.Button('Setup & versions', clicked_fn=lambda: webbrowser.open(self.client.server + '/connect'))
-                self.status = ui.Label('Connected' if self.client.token else 'Connect your OPAL account to browse materials.', height=40, word_wrap=True)
-                with ui.HStack(height=30):
-                    self.query = ui.StringField()
-                    self.category_frame = ui.Frame(width=170)
-                    with self.category_frame:
-                        self.category = ui.ComboBox(0, 'All categories')
-                    ui.Button('Search', width=90, clicked_fn=self.search)
-                self.list_frame = ui.ScrollingFrame(height=230)
-                with ui.HStack(height=32):
-                    ui.Button('Previous', clicked_fn=lambda: self.turn_page(-1))
-                    self.page_label = ui.Label('')
-                    ui.Button('Next', clicked_fn=lambda: self.turn_page(1))
-                with ui.HStack(height=170):
-                    self.preview_frame = ui.Frame(width=170)
-                    self.details = ui.Label('Select a material to preview it.', word_wrap=True)
-                ui.Label('Material drive (optional). Selected files download over HTTPS if unavailable.', height=20)
-                self.mount = ui.StringField(height=26)
-                if os.name == 'nt':
-                    self.mount.model.set_value('M:\\')
-                with ui.HStack(height=34):
-                    ui.Button('Apply to selected prims', clicked_fn=lambda: self.run(self.apply()))
-                    ui.Button('Upgrade stage materials', clicked_fn=lambda: self.run(self.upgrade()))
-                ui.Label('Revit material map (optional): export it from Revit → OPAL → Export Material IDs.', height=20)
-                self.mapping = ui.StringField(height=26)
+        self.connecting = False
+        self.cards = {}
+        self.preview_slots = asyncio.Semaphore(4)
+        browser_ui.build(self)
+        if os.name == 'nt':
+            self.mount.model.set_value('M:\\')
         if self.client.token:
-            self.run(self.load_facets())
-            self.search()
-            self.run(self.heartbeat())
+            self.run(self.start_connected())
+
+    async def start_connected(self):
+        self.account_status.text = 'Connected · HTTPS'
+        self.connect_button.visible = False
+        self.disconnect_button.visible = True
+        self.run(self.heartbeat())
+        await self.load_facets()
+        self.search()
 
     def run(self, coroutine):
         task = asyncio.ensure_future(self.guard(coroutine))
@@ -78,7 +63,8 @@ class Extension(omni.ext.IExt):
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            self.status.text = str(exc)
+            if getattr(self, 'window', None):
+                self.status.text = str(exc)
 
     def on_shutdown(self):
         for task in self.tasks:
@@ -88,62 +74,115 @@ class Extension(omni.ext.IExt):
         self.window = None
 
     async def connect(self):
-        if self.client.token:
-            self.status.text = 'Already connected. Disconnect first to change accounts.'
+        if self.connecting:
             return
-        client = Client()
-        link = await asyncio.to_thread(client.request, '/api/v1/link', {'client': 'omniverse', 'machine': socket.gethostname(), 'app_version': APP_VERSION})
-        self.status.text = 'Approve code ' + link['code'] + ' in your browser.'
-        webbrowser.open(client.server + '/link?code=' + urllib.parse.quote(link['code']))
-        for _ in range(300):
-            await asyncio.sleep(max(2, int(link.get('poll_interval', 2))))
-            result = await asyncio.to_thread(client.request, '/api/v1/link/' + link['code'] + '?' + urllib.parse.urlencode({'secret': link['secret']}))
-            if result['status'] == 'claimed':
-                client.token = result['token']
-                self.client = client
-                credentials.save(self.root / 'account.bin', client.token)
-                self.status.text = 'Connected as ' + result['user']['name']
-                await self.load_facets()
-                self.search()
-                self.run(self.heartbeat())
-                return
-            if result['status'] == 'delivered':
-                raise RuntimeError('This connection was already consumed. Connect again.')
-        self.status.text = 'The connection code expired. Connect again.'
+        if self.client.token:
+            if self.session_id is None:
+                await self.start_connected()
+            return
+        self.connecting = True
+        self.connect_button.enabled = False
+        try:
+            client = Client()
+            link = await asyncio.to_thread(client.request, '/api/v1/link', {'client': 'omniverse', 'machine': socket.gethostname(), 'app_version': APP_VERSION})
+            self.status.text = 'Approve code ' + link['code'] + ' in your browser.'
+            webbrowser.open(client.server + '/link?code=' + urllib.parse.quote(link['code']))
+            for _ in range(300):
+                await asyncio.sleep(max(2, int(link.get('poll_interval', 2))))
+                result = await asyncio.to_thread(client.request, '/api/v1/link/' + link['code'] + '?' + urllib.parse.urlencode({'secret': link['secret']}))
+                if result['status'] == 'claimed':
+                    client.token = result['token']
+                    self.client = client
+                    credentials.save(self.root / 'account.bin', client.token)
+                    await self.start_connected()
+                    return
+                if result['status'] == 'delivered':
+                    raise RuntimeError('This connection was already consumed. Connect again.')
+            self.status.text = 'The connection code expired. Connect again.'
+        finally:
+            self.connecting = False
+            if getattr(self, 'window', None):
+                self.connect_button.enabled = True
 
     async def disconnect(self):
-        if self.client.token:
-            await asyncio.to_thread(self.client.request, '/api/v1/account/token', None, 4096, 'DELETE')
+        client, session_id = self.client, self.session_id
+        if client.token:
+            if session_id is not None:
+                await asyncio.to_thread(client.request, f'/api/v1/sessions/{session_id}', None, 4096, 'DELETE')
+            await asyncio.to_thread(client.request, '/api/v1/account/token', None, 4096, 'DELETE')
         for task in list(self.tasks):
-            if task is not asyncio.current_task(): task.cancel()
-        self.client.token = ''
+            if task is not asyncio.current_task():
+                task.cancel()
+        self.generation += 1
+        self.client = Client()
         self.session_id = None
+        self.account_email = ''
         credentials.save(self.root / 'account.bin', '')
         self.choice = None
+        self.cards.clear()
         self.list_frame.clear()
         self.preview_frame.clear()
-        self.details.text = ''
+        self.pager.clear()
+        self.details.text = 'Connect your account to explore materials.'
+        self.page_label.text = ''
+        self.account_status.text = 'Not connected'
+        self.connect_button.visible = True
+        self.disconnect_button.visible = False
+        self.apply_button.enabled = False
         self.status.text = 'Disconnected. This device’s token has been revoked.'
 
     async def heartbeat(self):
         if self.session_id is not None:
             return
-        result = await asyncio.to_thread(self.client.request, '/api/v1/sessions', {'platform': 'omniverse', 'machine': socket.gethostname(), 'app_version': 'OPAL Omniverse ' + APP_VERSION})
+        client = self.client
+        result = await asyncio.to_thread(client.request, '/api/v1/sessions', {
+            'platform': 'omniverse', 'machine': socket.gethostname(), 'app_version': APP_VERSION,
+            'capabilities': ['material.apply', 'draft.apply'],
+        })
         self.session_id = result['data']['id']
-        account = await asyncio.to_thread(self.client.request, '/api/v1/me')
+        session_id = self.session_id
+        self.run(self.listen_commands(client, session_id))
+        account = await asyncio.to_thread(client.request, '/api/v1/me')
         self.account_email = account['email']
-        while self.client.token:
+        self.account_status.text = self.account_email
+        while self.client is client and client.token and self.session_id == session_id:
             try:
                 stage = omni.usd.get_context().get_stage()
                 document = stage.GetRootLayer().GetDisplayName() if stage else None
-                discovered = await asyncio.to_thread(discover_drive, self.client.server, self.account_email)
+                discovered = await asyncio.to_thread(discover_drive, client.server, self.account_email)
                 if discovered:
                     self.mount.model.set_value(discovered)
                 mount = self.mount.model.as_string.strip()
-                await asyncio.to_thread(self.client.request, f'/api/v1/sessions/{self.session_id}/heartbeat', {'document': document, 'mount_path': mount, 'drive_status': 'available' if mount and Path(mount).is_dir() else 'missing'})
+                await asyncio.to_thread(client.request, f'/api/v1/sessions/{session_id}/heartbeat', {
+                    'document': document, 'mount_path': mount,
+                    'drive_status': 'available' if mount and Path(mount).is_dir() else 'missing',
+                    'capabilities': ['material.apply', 'draft.apply'],
+                })
+                self.account_status.text = self.account_email
+            except ApiError as exc:
+                if exc.status in (401, 403, 404, 409):
+                    self.session_id = None
+                    if exc.status in (401, 403):
+                        client.token = ''
+                        credentials.save(self.root / 'account.bin', '')
+                    self.connect_button.visible = True
+                    self.account_status.text = 'Not connected'
+                    self.status.text = 'This connection ended. Connect again to receive materials.'
+                    return
+                self.account_status.text = 'Reconnecting...'
             except Exception:
-                pass  # Browsing/apply surfaces auth and network failures independently.
+                self.account_status.text = 'Reconnecting...'
             await asyncio.sleep(30)
+
+    async def listen_commands(self, client, session_id):
+        consumer = CommandConsumer(client, session_id, self.apply_payload)
+        while self.client is client and self.session_id == session_id:
+            if not self.busy:
+                try:
+                    await consumer.poll_once()
+                except Exception:
+                    self.account_status.text = 'Connection interrupted · retrying'
+            await asyncio.sleep(3)
 
     async def load_facets(self):
         data = await asyncio.to_thread(self.client.request, '/api/v1/library/facets')
@@ -151,13 +190,23 @@ class Extension(omni.ext.IExt):
         self.category_frame.clear()
         with self.category_frame:
             self.category = ui.ComboBox(0, *[item['name'] for item in self.categories])
+        self.category.model.add_item_changed_fn(lambda *_: self.search())
+
+    def clear_search(self):
+        self.query.model.set_value('')
+        self.category.model.get_item_value_model().set_value(0)
+        self.search()
 
     def search(self):
-        self.page = 1
-        self.run(self.browse())
+        self.go_page(1)
 
     def turn_page(self, step):
-        page = self.page + step
+        self.go_page(self.page + step)
+
+    def go_page(self, page):
+        if not self.client.token:
+            self.status.text = 'Connect your OPAL account to search the library.'
+            return
         if 1 <= page <= self.last_page:
             self.page = page
             self.run(self.browse())
@@ -165,37 +214,72 @@ class Extension(omni.ext.IExt):
     async def browse(self):
         self.generation += 1
         generation = self.generation
-        self.status.text = 'Loading materials…'
+        page = self.page
+        self.status.text = 'Searching your library...'
         index = self.category.model.get_item_value_model().as_int
-        response = await asyncio.to_thread(self.client.browse, self.query.model.as_string, self.page, self.categories[index]['code'])
-        if generation != self.generation:
+        response = await asyncio.to_thread(self.client.browse, self.query.model.as_string, page, self.categories[index]['code'])
+        if generation != self.generation or self.window is None:
             return
         meta = response['meta']
+        self.page = meta['current_page']
         self.last_page = meta['last_page']
-        self.page_label.text = f'Page {meta["current_page"]} / {self.last_page} · {meta["total"]} variants'
-        self.list_frame.clear()
-        with self.list_frame:
-            with ui.VStack(spacing=4):
-                for item in response['data']:
-                    label = f'{item["material_name"]} — {item["name"]}  ·  {item["supplier"] or ""}'
-                    ui.Button(label, height=35, clicked_fn=lambda value=item: self.run(self.select(value)))
-        self.status.text = 'Select a material to preview or apply.'
+        total = meta['total']
+        first = (self.page - 1) * 24 + 1 if total else 0
+        last = first + len(response['data']) - 1 if total else 0
+        self.page_label.text = f'{first:,}-{last:,} of {total:,} materials · Page {self.page} / {self.last_page}'
+        self.choice = None
+        self.apply_button.enabled = False
+        self.preview_frame.clear()
+        self.details.text = 'Select a preview to inspect and apply it.'
+        self.list_frame.scroll_y = 0
+        browser_ui.render_cards(self, response['data'], generation)
+        browser_ui.render_pager(self)
+        self.status.text = 'Select a finish to see its details. Apply it here or send it from the OPAL website.'
         if response['data']:
             await self.select(response['data'][0])
 
+    def preview_path(self, item):
+        return self.root / 'previews' / preview_name(item)
+
+    async def load_preview(self, item, generation, frame):
+        async with self.preview_slots:
+            if generation != self.generation:
+                return
+            file = self.preview_path(item)
+            try:
+                if not file.is_file():
+                    await asyncio.to_thread(self.client.download, item['preview_url'], file, None, None, 8 * 1024 * 1024)
+                if generation != self.generation or self.window is None:
+                    return
+                frame.clear()
+                with frame:
+                    ui.Image(str(file), fill_policy=ui.FillPolicy.PRESERVE_ASPECT_CROP)
+                if self.choice is item:
+                    self.show_selected_preview(file)
+            except Exception:
+                if generation == self.generation and self.window:
+                    frame.clear()
+                    with frame:
+                        ui.Label('Preview unavailable', name='muted', alignment=ui.Alignment.CENTER)
+
+    def show_selected_preview(self, file):
+        self.preview_frame.clear()
+        with self.preview_frame:
+            ui.Image(str(file), fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT)
+
     async def select(self, item):
         self.choice = item
-        self.details.text = f'{item["material_name"]} — {item["name"]}\n{item["code"]}\nVersion {item["material_version"]}\n{item["description"] or ""}'
+        self.apply_button.enabled = not self.busy
+        self.details.text = f'{item["material_name"]}\n{item["name"]}\n{item.get("supplier") or "In-house"} · Version {item["material_version"]}\n\n{item.get("description") or item["code"]}'
         self.preview_frame.clear()
-        try:
-            file = self.root / 'previews' / (item['uuid'] + '.jpg')
-            await asyncio.to_thread(self.client.download, item['preview_url'], file, None, None, 8 * 1024 * 1024)
-            if self.choice is item:
-                with self.preview_frame:
-                    ui.Image(str(file))
-        except Exception:
-            if self.choice is item:
-                self.status.text = 'Preview unavailable; material details are still available.'
+        for uuid, (outline, _) in self.cards.items():
+            outline.style = {'background_color': 0xFF302B25, 'border_radius': 7, 'border_width': 2 if uuid == item['uuid'] else 0, 'border_color': 0xFFC1D8AD}
+        file = self.preview_path(item)
+        if file.is_file():
+            self.show_selected_preview(file)
+        else:
+            with self.preview_frame:
+                ui.Label('Loading preview...', name='muted', alignment=ui.Alignment.CENTER)
 
     async def prepare(self, uuid, version):
         resolved = await asyncio.to_thread(self.client.resolve, uuid, version)
@@ -207,22 +291,48 @@ class Extension(omni.ext.IExt):
             return
         if not self.choice:
             raise ValueError('Select an OPAL material first.')
+        await self.apply_payload({'variant_uuid': self.choice['uuid'], 'material_version': self.choice['material_version']})
+
+    async def apply_payload(self, payload):
+        if self.busy:
+            raise ValueError('A material operation is already running. Try again when it finishes.')
         context = omni.usd.get_context()
         stage = context.get_stage()
         selected = context.get_selection().get_selected_prim_paths()
+        selected = [path for path in selected if stage and stage.GetPrimAtPath(path) and not stage.GetPrimAtPath(path).IsA(UsdShade.Material)]
         if stage is None or not selected:
-            raise ValueError('Select geometry in an open USD stage first.')
+            raise ValueError('Select geometry in an open Omniverse stage, then apply again.')
         self.busy = True
+        self.apply_button.enabled = False
         try:
-            self.status.text = 'Fetching published high-resolution textures…'
-            resolved, textures = await self.prepare(self.choice['uuid'], self.choice['material_version'])
-            if context.get_stage() != stage:
-                raise ValueError('The stage changed during the download. Apply again.')
+            self.status.text = 'Downloading and verifying material textures...'
+            if 'studio' in payload:
+                draft = payload['studio']
+                textures = await asyncio.to_thread(self.client.prepare_draft, draft, self.root / 'materials-cache')
+                resolved = dict(draft, draft_id=draft['id'], name=draft['label'], material_name='Studio draft')
+                quality = 'draft'
+            else:
+                uuid = payload.get('variant_uuid')
+                if not uuid and payload.get('variant'):
+                    legacy = await asyncio.to_thread(self.client.browse, payload['variant'])
+                    match = next((item for item in legacy['data'] if item['code'] == payload['variant']), None)
+                    if match:
+                        uuid = match['uuid']
+                if not uuid:
+                    raise ValueError('The material command has no published variant identity.')
+                resolved, textures = await self.prepare(uuid, payload.get('material_version'))
+                quality = resolved['quality']
+            if context.get_stage() != stage or any(not stage.GetPrimAtPath(path) for path in selected):
+                raise ValueError('The stage or selected geometry changed during download. Apply again.')
             material = materials.author(stage, resolved, textures)
             materials.bind(stage, material, selected)
-            self.status.text = f'Applied {resolved["quality"]} material to {len(selected)} selected prims. Save the stage to keep it.'
+            message = f'Applied {quality} material to {len(selected)} selected prims. Save the stage to keep it.'
+            self.status.text = message
+            return {'message': message, 'material_path': str(material.GetPath()), 'count': len(selected)}
         finally:
             self.busy = False
+            if getattr(self, 'window', None):
+                self.apply_button.enabled = self.choice is not None
 
     async def upgrade(self):
         if self.busy:
@@ -243,7 +353,7 @@ class Extension(omni.ext.IExt):
             # Resolve and download every material first; failures leave the stage unchanged.
             prepared = []
             for index, (old_path, identity) in enumerate(candidates):
-                self.status.text = f'Preparing material {index + 1} / {len(candidates)}…'
+                self.status.text = f'Preparing material {index + 1} / {len(candidates)}...'
                 resolved, textures = await self.prepare(identity['variant_uuid'], identity['material_version'])
                 if resolved['material_uuid'] != identity['material_uuid'] or resolved['source_package_sha256'] != identity['source_package_sha256']:
                     raise ValueError('The exported identity does not match its published source package.')

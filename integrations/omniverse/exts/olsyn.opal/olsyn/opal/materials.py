@@ -1,6 +1,7 @@
 """USD work runs on Kit's main thread; network work runs outside this module."""
 import re
 import json
+import uuid as uuid_module
 from pxr import Gf, Sdf, Tf, UsdShade
 
 IDENTITY_KEYS = ('material_uuid', 'variant_uuid', 'material_version', 'source_package_sha256')
@@ -42,8 +43,9 @@ def author(stage, resolved, textures):
     metadata, constants = {}, {}
     if 'package' in textures:
         textures, metadata, constants = canonical_inputs(textures['package'])
-    uuid = resolved['variant_uuid']
-    path = '/Looks/OPAL/v_' + uuid.replace('-', '_') + '_v' + str(int(resolved['material_version']))
+    draft = resolved.get('draft_id')
+    uuid = str(uuid_module.UUID(draft or resolved['variant_uuid']))
+    path = '/Looks/OPAL/' + ('draft_' + uuid.replace('-', '_') if draft else 'v_' + uuid.replace('-', '_') + '_v' + str(int(resolved['material_version'])))
     material = UsdShade.Material.Define(stage, path)
     shader = UsdShade.Shader.Define(stage, path + '/Surface')
     shader.CreateIdAttr('UsdPreviewSurface')
@@ -89,7 +91,10 @@ def author(stage, resolved, textures):
             texture.CreateInput('scale', Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*values))
         texture.CreateOutput(channel, Sdf.ValueTypeNames.Float3 if channel == 'rgb' else Sdf.ValueTypeNames.Float)
         shader.CreateInput(name, kind).ConnectToSource(texture.ConnectableAPI(), channel)
-    material.GetPrim().SetCustomDataByKey('opal', {k: resolved[k] for k in IDENTITY_KEYS})
+    if draft:
+        material.GetPrim().SetCustomDataByKey('opal_draft', {'id': uuid, 'tile_width_mm': resolved.get('tile_width_mm', 1000.0), 'tile_height_mm': resolved.get('tile_height_mm', 1000.0)})
+    else:
+        material.GetPrim().SetCustomDataByKey('opal', {k: resolved[k] for k in IDENTITY_KEYS})
     material.GetPrim().SetDisplayName(resolved.get('material_name', '') + ' — ' + resolved.get('name', uuid))
     return material
 

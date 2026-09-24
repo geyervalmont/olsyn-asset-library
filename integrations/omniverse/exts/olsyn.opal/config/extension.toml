@@ -1,5 +1,5 @@
 [package]
-version = "0.1.0"
+version = "0.2.0"
 title = "OPAL Materials"
 description = "Browse OPAL, connect your account and upgrade Revit material identities to published PBR materials."
 category = "Materials"

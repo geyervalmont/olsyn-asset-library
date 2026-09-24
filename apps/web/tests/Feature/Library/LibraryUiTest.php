@@ -114,6 +114,6 @@ test('the material record carries the same interactive preview and target badges
         ->assertSee($file->url(), false)
         ->assertSee('data-badge="pbr" data-state="candidate"', false)
         ->assertSee('x-on:mouseenter="preview(0)"', false)
-        ->assertSee('applyInRevit(chosen.id)', false)
+        ->assertSee('applyToConsumer(chosen.id)', false)
         ->assertSee('is-highlighted', false);
 });

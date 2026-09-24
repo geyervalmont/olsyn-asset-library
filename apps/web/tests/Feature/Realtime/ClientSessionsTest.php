@@ -117,3 +117,19 @@ test('private channels are authorised for their owner over a session or a bearer
     $this->app['auth']->forgetGuards();
     $this->postJson('/broadcasting/auth', ['channel_name' => 'private-user.'.$this->user->id, 'socket_id' => '1234.5678'])->assertUnauthorized();
 });
+
+test('consumers announce bounded capabilities and ended sessions cannot resume commands', function () {
+    Sanctum::actingAs($this->user);
+    $id = $this->postJson('/api/v1/sessions', ['platform' => 'omniverse', 'machine' => 'KIT', 'capabilities' => ['material.apply', 'draft.apply']])
+        ->assertCreated()->json('data.id');
+    $this->getJson('/api/v1/sessions')->assertJsonPath('data.0.capabilities', ['material.apply', 'draft.apply'])->assertJsonPath('data.0.platform_label', 'Omniverse');
+    $this->postJson('/api/v1/sessions/'.$id.'/heartbeat', ['capabilities' => []])->assertOk();
+    $this->getJson('/api/v1/sessions')->assertJsonPath('data.0.capabilities', []);
+    $this->postJson('/api/v1/sessions/'.$id.'/heartbeat', ['capabilities' => ['material.apply']])->assertOk();
+    $this->getJson('/api/v1/sessions')->assertJsonPath('data.0.capabilities', ['material.apply']);
+    $this->postJson('/api/v1/sessions', ['platform' => 'omniverse', 'machine' => 'KIT', 'capabilities' => ['bad capability']])->assertUnprocessable();
+    $this->deleteJson('/api/v1/sessions/'.$id)->assertNoContent();
+    $this->postJson('/api/v1/sessions/'.$id.'/heartbeat')->assertConflict();
+    $this->getJson('/api/v1/sessions/'.$id.'/commands')->assertConflict();
+    expect(ClientSession::findOrFail($id)->isLive())->toBeFalse();
+});

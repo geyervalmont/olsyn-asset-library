@@ -21,6 +21,12 @@ class IssueClientCommand
      */
     public function handle(ClientSession $session, User $issuer, CommandType $type, array $payload): ClientCommand
     {
+        $session->refresh();
+        abort_unless($session->user_id === $issuer->getKey() && $session->isLive(), 409, 'This application is no longer connected.');
+        if ($type === CommandType::Apply) {
+            abort_unless($session->supports(isset($payload['studio']) ? 'draft.apply' : 'material.apply'), 422, 'This application needs an extension update to apply materials from the website.');
+        }
+
         $command = $session->commands()->create([
             'issued_by' => $issuer->getKey(),
             'type' => $type,

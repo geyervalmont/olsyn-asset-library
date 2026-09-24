@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
-/** Temporary, private material maps used for a direct Studio → Revit apply. */
+/** Temporary, private material maps for applying a draft in a consumer. */
 final class StudioPreviewStore
 {
     /**
@@ -78,6 +78,7 @@ final class StudioPreviewStore
             'id' => $id,
             'label' => $label,
             'tile_width_mm' => $bake->widthMm,
+            'tile_height_mm' => $bake->heightMm,
             'expires_at' => $expires->toIso8601String(),
             'maps' => $maps,
         ];

@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Clients\IssueClientCommand;
+use App\Livewire\ConsumerComponent;
 use App\Actions\Materials\AddVariant;
 use App\Actions\Representations\DeriveRepresentation;
 use App\Actions\Representations\ReviewRepresentation;
@@ -20,8 +21,6 @@ use App\Jobs\RenderPreview;
 use App\Library\Embeddings\VariantVisualEmbeddingDocuments;
 use App\Library\Previews\MaterialPreviews;
 use App\Library\QrCodes\MaterialQrCodes;
-use App\Models\ClientCommand;
-use App\Models\ClientSession;
 use App\Models\Drive;
 use App\Models\File;
 use App\Models\FileAccess;
@@ -35,11 +34,10 @@ use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
-use Livewire\Component;
 
-new class extends Component
+new class extends ConsumerComponent
 {
+
     public Material $material;
 
     public string $grantEmail = '';
@@ -50,16 +48,9 @@ new class extends Component
 
     public string $newColourwayCode = '';
 
-    public int $userId = 0;
-
-    public ?int $revitSessionId = null;
-
-    public ?int $revitCommandId = null;
-
     public function mount(Material $material): void
     {
-        $this->userId = (int) auth()->id();
-        $this->revitSessionId = $this->revitSessions->first()?->id;
+        $this->mountConsumers();
 
         abort_unless(auth()->user()?->can('materials.view') && $material->isVisibleTo(auth()->user()), 403);
 
@@ -190,67 +181,39 @@ new class extends Component
     }
 
     /**
-     * @return Collection<int, ClientSession>
-     */
-    #[Computed]
-    public function revitSessions(): Collection
-    {
-        return ClientSession::query()->where('user_id', $this->userId)->live()->orderByDesc('last_seen_at')->get();
-    }
-
-    #[Computed]
-    public function revitCommand(): ?ClientCommand
-    {
-        return $this->revitCommandId === null
-            ? null
-            : ClientCommand::query()->with('session')->whereKey($this->revitCommandId)->where('issued_by', $this->userId)->first();
-    }
-
-    /**
      * Why the record cannot be applied right now, or null when it can.
      */
     public function applyBlockedReason(): ?string
     {
-        if ($this->revitSessions->isEmpty()) {
-            return __('No live Revit session for this account. In Revit, open OPAL → Settings and connect the same account.');
+        if ($this->consumerBlockedReason() !== null) {
+            return $this->consumerBlockedReason();
         }
 
         return $this->material->current_version_id === null
-            ? __('Publish a version first; nothing is on the drive yet.')
+            ? __('Publish a version first to apply this material.')
             : null;
     }
 
-    public function applyInRevit(int $variantId, IssueClientCommand $issue): void
+    public function applyToConsumer(int $variantId, IssueClientCommand $issue): void
     {
         $variant = $this->material->variants()->whereKey($variantId)->firstOrFail();
-        $session = $this->revitSessions->firstWhere('id', $this->revitSessionId) ?? $this->revitSessions->first();
+        $session = $this->selectedConsumer();
 
         if ($session === null || $this->applyBlockedReason() !== null) {
-            Flux::toast(variant: 'warning', text: $this->applyBlockedReason() ?? __('No Revit session is connected.'));
+            Flux::toast(variant: 'warning', text: $this->applyBlockedReason() ?? __('No compatible application is connected.'));
 
             return;
         }
 
-        $this->revitSessionId = $session->id;
+        $this->consumerSessionId = $session->id;
         $command = $issue->handle($session, auth()->user(), CommandType::Apply, [
             'variant' => $variant->code,
+            'variant_uuid' => $variant->uuid,
+            'material_version' => $this->material->currentVersion->number,
             'material' => $this->material->code,
         ]);
-        $this->revitCommandId = $command->id;
-        unset($this->revitCommand);
-    }
-
-    #[On('echo-private:user.{userId},.command.acked')]
-    #[On('echo-private:user.{userId},.command.completed')]
-    public function revitCommandUpdated(): void
-    {
-        unset($this->revitCommand);
-    }
-
-    #[On('echo-private:user.{userId},.session.updated')]
-    public function revitSessionsUpdated(): void
-    {
-        unset($this->revitSessions);
+        $this->consumerCommandId = $command->id;
+        unset($this->consumerCommand);
     }
 
     public function addVariant(AddVariant $addVariant): void
@@ -452,29 +415,22 @@ new class extends Component
                 <x-ui.button type="button" x-on:click="openQr()" variant="quiet" size="sm" data-test="open-material-qr">{{ __('QR code') }}</x-ui.button>
                 <x-ui.button wire:click="publish" variant="secondary" size="sm" data-test="publish">{{ __('Publish new version') }}</x-ui.button>
             @endcan
-            <div class="ui-revit" data-test="apply-in-revit">
+            <div class="ui-consumer" data-test="apply-to-consumer" wire:poll.15s="consumerSessionsUpdated">
                 <button
                     type="button"
-                    class="ui-button ui-button--primary ui-button--sm ui-revit__apply"
-                    x-on:click="$wire.applyInRevit(chosen.id)"
+                    class="ui-button ui-button--primary ui-button--sm ui-consumer__apply"
+                    x-on:click="$wire.applyToConsumer(chosen.id)"
                     aria-disabled="{{ $this->applyBlockedReason() !== null ? 'true' : 'false' }}"
-                    title="{{ $this->applyBlockedReason() ?? __('Apply the selected colourway in Revit') }}"
-                    data-test="apply-in-revit-button"
+                    title="{{ $this->applyBlockedReason() ?? __('Apply the selected colourway in the connected application') }}"
+                    data-test="apply-to-consumer-button"
                 >
                     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>
-                    <span>{{ __('Apply in Revit') }}</span>
+                    <span>{{ $this->applyLabel() }}</span>
                     <em x-text="chosen?.name ?? ''">{{ $this->card['variants'][$this->card['active']]['name'] ?? '' }}</em>
                 </button>
+                <x-ui.consumer-target :sessions="$this->consumerSessions" :selected="$this->selectedConsumer()" />
                 @if ($this->applyBlockedReason())
-                    <span class="ui-revit__none">{{ $this->applyBlockedReason() }}</span>
-                @elseif ($this->revitSessions->count() > 1)
-                    <select class="ui-select ui-select--sm" wire:model.live="revitSessionId" aria-label="{{ __('Revit session') }}">
-                        @foreach ($this->revitSessions as $session)
-                            <option value="{{ $session->id }}">{{ $session->label() }}</option>
-                        @endforeach
-                    </select>
-                @else
-                    <span class="ui-revit__target">{{ $this->revitSessions->first()->label() }}</span>
+                    <span class="ui-consumer__none">{{ $this->applyBlockedReason() }}</span>
                 @endif
             </div>
         </div>
@@ -575,14 +531,14 @@ new class extends Component
         <x-ui.panel style="margin-bottom: 12px"><p style="margin: 0; color: var(--ui-muted); font-size: 13px; line-height: 1.7">{{ $material->description }}</p></x-ui.panel>
     @endif
 
-    @if ($this->revitCommand)
+    @if ($this->consumerCommand)
         <x-ui.panel style="margin-bottom: 12px" data-test="revit-command">
-            <p class="ui-revit__status" data-status="{{ $this->revitCommand->status->value }}">
-                <span class="ui-status-light ui-status-light--{{ $this->revitCommand->status->value }}" aria-hidden="true"></span>
-                <strong>{{ __('Apply :variant', ['variant' => $this->revitCommand->payload['variant'] ?? '']) }}</strong>
-                <span>→ {{ $this->revitCommand->session->label() }}</span>
-                <span>· {{ $this->revitCommand->status->label() }}</span>
-                @if ($this->revitCommand->message)<span>· {{ $this->revitCommand->message }}</span>@endif
+            <p class="ui-consumer__status" data-status="{{ $this->consumerCommand->status->value }}">
+                <span class="ui-status-light ui-status-light--{{ $this->consumerCommand->status->value }}" aria-hidden="true"></span>
+                <strong>{{ __('Apply :variant', ['variant' => $this->consumerCommand->payload['variant'] ?? '']) }}</strong>
+                <span>→ {{ $this->consumerCommand->session->label() }}</span>
+                <span>· {{ $this->consumerCommand->status->label() }}</span>
+                @if ($this->consumerCommand->message)<span>· {{ $this->consumerCommand->message }}</span>@endif
             </p>
         </x-ui.panel>
     @endif

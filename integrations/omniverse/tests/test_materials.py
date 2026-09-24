@@ -58,5 +58,13 @@ class MaterialsTest(unittest.TestCase):
         mapping['materials'].append({'revit_name': 'Oak_Wood', 'identity': {**self.resolved, 'variant_uuid': 'other'}})
         self.assertEqual(materials.find_upgrades(self.stage, mapping), [])
 
+    def test_private_draft_is_not_mistaken_for_a_published_material(self):
+        draft = {'draft_id': self.resolved['variant_uuid'], 'name': 'My experiment', 'tile_width_mm': 750.0, 'tile_height_mm': 500.0}
+        material = materials.author(self.stage, draft, {'base_color': '/cache/draft.png'})
+        self.assertIsNone(materials.identity(material.GetPrim()))
+        self.assertEqual(materials.find_upgrades(self.stage), [])
+        self.assertEqual(material.GetPrim().GetCustomDataByKey('opal_draft')['tile_height_mm'], 500)
+        self.assertTrue(material.ComputeSurfaceSource()[0])
+
 if __name__ == '__main__':
     unittest.main()

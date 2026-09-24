@@ -42,6 +42,8 @@ class SessionsController
             'machine' => ['required', 'string', 'max:120'],
             'app_version' => ['nullable', 'string', 'max:40'],
             'document' => ['nullable', 'string', 'max:255'],
+            'capabilities' => ['sometimes', 'array', 'max:20'],
+            'capabilities.*' => ['required', 'string', 'max:64', 'regex:/^[a-z][a-z0-9_.-]*$/', 'distinct'],
         ]);
 
         /** @var User $user */
@@ -55,6 +57,7 @@ class SessionsController
             'machine' => $validated['machine'],
             'app_version' => $validated['app_version'] ?? null,
             'document' => $validated['document'] ?? null,
+            'capabilities' => $validated['capabilities'] ?? null,
             'token_id' => $token?->getKey(),
         ]);
 
@@ -72,9 +75,13 @@ class SessionsController
             'document' => ['nullable', 'string', 'max:255'],
             'drive_status' => ['sometimes', 'in:available,missing,unknown'],
             'mount_path' => ['nullable', 'string', 'max:255'],
+            'capabilities' => ['sometimes', 'array', 'max:20'],
+            'capabilities.*' => ['required', 'string', 'max:64', 'regex:/^[a-z][a-z0-9_.-]*$/', 'distinct'],
         ]);
 
-        $touch->handle($this->mine($request, $session), $validated);
+        $client = $this->mine($request, $session);
+        abort_if($client->ended_at !== null, 409, 'This application session has ended. Reconnect from the extension.');
+        $touch->handle($client, $validated);
 
         return response()->json(['data' => ['ok' => true]]);
     }
@@ -97,7 +104,9 @@ class SessionsController
         $validated = $request->validate(['status' => ['nullable', 'string']]);
         $status = CommandStatus::tryFrom($validated['status'] ?? 'queued') ?? CommandStatus::Queued;
 
-        $commands = $this->mine($request, $session)->commands()
+        $client = $this->mine($request, $session);
+        abort_if($client->ended_at !== null, 409, 'This application session has ended.');
+        $commands = $client->commands()
             ->where('status', $status)
             ->orderBy('id')
             ->get()

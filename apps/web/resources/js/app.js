@@ -1,3 +1,4 @@
+import { consumerStatus } from './consumer-status';
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -988,71 +989,8 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
-    /**
-     * Whether this person's Revit is connected. Seeded from the server, kept
-     * current by session events, and aged out when heartbeats stop.
-     */
-    window.Alpine.data('revitStatus', (config) => ({
-        userId: config.userId,
-        sessions: (config.sessions ?? []).map((session) => ({ ...session, seenAt: Date.now() - (session.secondsAgo ?? 0) * 1000 })),
-        liveSeconds: config.liveSeconds ?? 90,
-        now: Date.now(),
-        timer: null,
+    window.Alpine.data('consumerStatus', consumerStatus);
 
-        init() {
-            this.timer = setInterval(() => {
-                this.now = Date.now();
-            }, 10000);
-
-            window.Echo?.private(`user.${this.userId}`).listen('.session.updated', (event) => this.merge(event));
-        },
-
-        destroy() {
-            clearInterval(this.timer);
-        },
-
-        merge(event) {
-            const rest = this.sessions.filter((session) => session.id !== event.id);
-            this.sessions = event.live === false ? rest : [...rest, { ...event, seenAt: Date.now() }];
-            this.now = Date.now();
-        },
-
-        get live() {
-            return this.sessions.filter((session) => this.now - session.seenAt < this.liveSeconds * 1000);
-        },
-
-        get state() {
-            if (this.live.length > 0) {
-                return 'live';
-            }
-
-            return this.sessions.length > 0 ? 'stale' : 'off';
-        },
-
-        get label() {
-            const [first] = this.live;
-
-            if (! first) {
-                return this.sessions.length > 0 ? 'Revit offline' : 'Connect Revit';
-            }
-
-            const extra = this.live.length > 1 ? ` +${this.live.length - 1}` : '';
-
-            return `${first.machine ?? 'Revit'}${extra}`;
-        },
-
-        get title() {
-            const [first] = this.live;
-
-            if (! first) {
-                return this.sessions.length > 0
-                    ? 'Revit stopped sending heartbeats'
-                    : 'Connect Revit through OPAL → Settings → Connect account.';
-            }
-
-            return this.live.map((session) => [session.machine, session.document].filter(Boolean).join(' · ')).join('\n');
-        },
-    }));
 });
 
 import './echo';

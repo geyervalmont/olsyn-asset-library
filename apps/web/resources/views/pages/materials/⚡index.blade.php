@@ -1,12 +1,11 @@
 <?php
 
 use App\Actions\Clients\IssueClientCommand;
+use App\Livewire\ConsumerComponent;
 use App\Enums\CommandType;
 use App\Library\Embeddings\MaterialSimilarity;
 use App\Library\Previews\MaterialPreviews;
 use App\Models\Category;
-use App\Models\ClientCommand;
-use App\Models\ClientSession;
 use App\Models\Material;
 use App\Models\Supplier;
 use App\Models\Variant;
@@ -14,13 +13,12 @@ use Flux\Flux;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
-use Livewire\Component;
 use Livewire\WithPagination;
 
-new #[Title('Library')] class extends Component {
+new #[Title('Library')] class extends ConsumerComponent {
+
     use WithPagination;
 
     #[Url(as: 'q')]
@@ -54,12 +52,6 @@ new #[Title('Library')] class extends Component {
     #[Url(as: 'material')]
     public string $quick = '';
 
-    public int $userId = 0;
-
-    public ?int $revitSessionId = null;
-
-    public ?int $revitCommandId = null;
-
     /** The colourway the card was showing when it was opened. */
     public ?int $quickVariantId = null;
 
@@ -71,24 +63,23 @@ new #[Title('Library')] class extends Component {
         $this->similarity = in_array($this->similarity, ['semantic', 'appearance'], true) ? $this->similarity : 'semantic';
         $this->view = in_array($this->view, ['swatches', 'table'], true) ? $this->view : 'swatches';
         $this->sort = in_array($this->sort, ['name', 'newest', 'variants'], true) ? $this->sort : 'name';
-        $this->userId = (int) auth()->id();
-        $this->revitSessionId = $this->revitSessions->first()?->id;
+        $this->mountConsumers();
     }
 
     public function openQuick(string $code, ?int $variantId = null): void
     {
         $this->quick = $code;
         $this->quickVariantId = $variantId;
-        $this->revitCommandId = null;
-        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->quickViewerSets, $this->revitCommand);
+        $this->consumerCommandId = null;
+        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->quickViewerSets, $this->consumerCommand);
     }
 
     public function closeQuick(): void
     {
         $this->quick = '';
         $this->quickVariantId = null;
-        $this->revitCommandId = null;
-        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->quickViewerSets, $this->revitCommand);
+        $this->consumerCommandId = null;
+        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->quickViewerSets, $this->consumerCommand);
     }
 
     /** The material behind the quick view, or null when it is closed or out of reach. */
@@ -161,37 +152,20 @@ new #[Title('Library')] class extends Component {
      */
     public function applyBlockedReason(): ?string
     {
-        if ($this->revitSessions->isEmpty()) {
-            return __('No live Revit session for this account. In Revit, open OPAL → Settings and connect the same account.');
+        if ($this->consumerBlockedReason() !== null) {
+            return $this->consumerBlockedReason();
         }
 
         return $this->quickMaterial?->current_version_id === null
-            ? __('Publish a version first; nothing is on the drive yet.')
+            ? __('Publish a version first to apply this material.')
             : null;
     }
 
-    /**
-     * @return Collection<int, ClientSession>
-     */
-    #[Computed]
-    public function revitSessions(): Collection
-    {
-        return ClientSession::query()->where('user_id', $this->userId)->live()->orderByDesc('last_seen_at')->get();
-    }
-
-    #[Computed]
-    public function revitCommand(): ?ClientCommand
-    {
-        return $this->revitCommandId === null
-            ? null
-            : ClientCommand::query()->with('session')->whereKey($this->revitCommandId)->where('issued_by', $this->userId)->first();
-    }
-
-    public function applyInRevit(int $variantId, IssueClientCommand $issue): void
+    public function applyToConsumer(int $variantId, IssueClientCommand $issue): void
     {
         $material = $this->quickMaterial;
         $variant = $material?->variants()->whereKey($variantId)->first();
-        $session = $this->revitSessions->firstWhere('id', $this->revitSessionId) ?? $this->revitSessions->first();
+        $session = $this->selectedConsumer();
 
         if ($material === null || $variant === null || $session === null || $this->applyBlockedReason() !== null) {
             Flux::toast(variant: 'warning', text: $this->applyBlockedReason() ?? __('That colourway is no longer available.'));
@@ -199,30 +173,15 @@ new #[Title('Library')] class extends Component {
             return;
         }
 
-        $this->revitSessionId = $session->id;
-        $this->revitCommandId = $issue->handle($session, auth()->user(), CommandType::Apply, [
+        $this->consumerSessionId = $session->id;
+        $this->consumerCommandId = $issue->handle($session, auth()->user(), CommandType::Apply, [
             'variant' => $variant->code,
+            'variant_uuid' => $variant->uuid,
+            'material_version' => $material->currentVersion->number,
             'material' => $material->code,
         ])->id;
 
-        unset($this->revitCommand);
-    }
-
-    #[On('echo-private:user.{userId},.command.acked')]
-    #[On('echo-private:user.{userId},.command.completed')]
-    public function revitCommandUpdated(): void
-    {
-        unset($this->revitCommand);
-    }
-
-    #[On('echo-private:user.{userId},.session.updated')]
-    public function revitSessionsUpdated(): void
-    {
-        unset($this->revitSessions);
-
-        if ($this->revitSessionId === null || ! $this->revitSessions->contains('id', $this->revitSessionId)) {
-            $this->revitSessionId = $this->revitSessions->first()?->id;
-        }
+        unset($this->consumerCommand);
     }
 
     public function updatedSearch(): void
@@ -607,8 +566,8 @@ new #[Title('Library')] class extends Component {
             :card="$this->quickCard"
             :targets="$this->quickTargets"
             :variants-count="$this->quickMaterial->variants_count"
-            :sessions="$this->revitSessions"
-            :command="$this->revitCommand"
+            :sessions="$this->consumerSessions"
+            :command="$this->consumerCommand"
             :blocked="$this->applyBlockedReason()"
             :sets="$this->quickViewerSets"
         />

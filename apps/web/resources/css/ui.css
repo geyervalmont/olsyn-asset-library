@@ -4591,7 +4591,7 @@ h1.ui-reveal.is-revealed em::after {
     color: var(--ui-ink);
 }
 
-.ui-revit {
+.ui-consumer {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -4600,13 +4600,13 @@ h1.ui-reveal.is-revealed em::after {
     flex-basis: 100%;
 }
 
-.ui-revit__none,
-.ui-revit__target {
+.ui-consumer__none,
+.ui-consumer__target {
     color: var(--ui-muted);
     font-size: 12px;
 }
 
-.ui-revit__none {
+.ui-consumer__none {
     max-width: 52ch;
     padding: 6px 9px;
     color: var(--ui-ink);
@@ -4631,7 +4631,7 @@ h1.ui-reveal.is-revealed em::after {
     min-height: 28px;
 }
 
-.ui-revit__status {
+.ui-consumer__status {
     display: flex;
     flex-wrap: wrap;
     gap: 6px 8px;
@@ -4665,7 +4665,7 @@ h1.ui-reveal.is-revealed em::after {
    Material quick view
 
    The record compacted into a dialog so the library stays put: preview,
-   colourways, the facts worth reading, and one Apply in Revit. On a phone the
+   colourways, the facts worth reading, and one material apply action. On a phone the
    panel becomes a bottom sheet whose action bar stays under the thumb.
    --------------------------------------------------------------------------- */
 
@@ -4972,11 +4972,11 @@ h1.ui-reveal.is-revealed em::after {
     }
 
     /* The record's apply is the primary action: full width, thumb height. */
-    .ui-revit {
+    .ui-consumer {
         justify-content: flex-start;
     }
 
-    .ui-revit__apply {
+    .ui-consumer__apply {
         flex: 1 1 100%;
         justify-content: center;
         min-height: 44px;
@@ -4996,7 +4996,7 @@ h1.ui-reveal.is-revealed em::after {
     }
 }
 
-.ui-revit__apply em {
+.ui-consumer__apply em {
     overflow: hidden;
     max-width: 12ch;
     color: rgba(245, 243, 239, 0.72);
@@ -5006,7 +5006,7 @@ h1.ui-reveal.is-revealed em::after {
     text-overflow: ellipsis;
 }
 
-.ui-revit__apply[aria-disabled='true'],
+.ui-consumer__apply[aria-disabled='true'],
 .ui-modal__apply[aria-disabled='true'] {
     cursor: help;
     filter: saturate(0.55);
@@ -5297,7 +5297,7 @@ h1.ui-reveal.is-revealed em::after {
     opacity: 1;
 }
 
-.ui-revit-pill {
+.ui-consumer-pill {
     display: inline-flex;
     gap: 7px;
     align-items: center;
@@ -5314,36 +5314,36 @@ h1.ui-reveal.is-revealed em::after {
     transition: color var(--ui-fast), border-color var(--ui-fast);
 }
 
-.ui-revit-pill:hover {
+.ui-consumer-pill:hover {
     color: var(--ui-ink);
     border-color: var(--ui-line-strong);
 }
 
-.ui-revit-pill[data-state='live'] {
+.ui-consumer-pill[data-state='live'] {
     color: var(--ui-ink);
 }
 
-.ui-revit-pill[data-state='live'] .ui-status-light {
+.ui-consumer-pill[data-state='live'] .ui-status-light {
     background: var(--ui-pass);
 }
 
-.ui-revit-pill[data-state='stale'] .ui-status-light {
+.ui-consumer-pill[data-state='stale'] .ui-status-light {
     background: var(--ui-amber);
     box-shadow: 0 0 0 1px rgba(240, 169, 82, 0.45);
 }
 
-.ui-revit-pill[data-state='off'] .ui-status-light {
+.ui-consumer-pill[data-state='off'] .ui-status-light {
     background: var(--ui-faint);
     box-shadow: none;
 }
 
 @media (max-width: 560px) {
     /* The dot alone: the machine name is not worth the width. */
-    .ui-revit-pill__label {
+    .ui-consumer-pill__label {
         display: none;
     }
 
-    .ui-revit-pill {
+    .ui-consumer-pill {
         padding: 6px;
     }
 }
@@ -5666,3 +5666,6 @@ h1.ui-reveal.is-revealed em::after {
 .ui-connect__versions { margin-bottom: 32px; }
 .ui-connect__versions > h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
 .ui-connect__versions > p { margin-bottom: 12px; color: var(--ui-text-muted); line-height: 1.6; }
+
+.ui-consumer-target { display: flex; align-items: center; gap: .5rem; font-size: .75rem; color: var(--color-zinc-500); }
+.ui-consumer-target select { max-width: 28rem; }

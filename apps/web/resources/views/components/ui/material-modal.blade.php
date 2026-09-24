@@ -102,9 +102,9 @@
             </dl>
         </div>
 
-        <footer class="ui-modal__foot">
+        <footer class="ui-modal__foot" wire:poll.15s="consumerSessionsUpdated">
             @if ($command)
-                <p class="ui-revit__status" data-status="{{ $command->status->value }}" data-test="quick-command">
+                <p class="ui-consumer__status" data-status="{{ $command->status->value }}" data-test="quick-command">
                     <span class="ui-status-light ui-status-light--{{ $command->status->value }}" aria-hidden="true"></span>
                     <strong>{{ $command->payload['variant'] ?? '' }}</strong>
                     <span>→ {{ $command->session->label() }}</span>
@@ -128,30 +128,20 @@
                 <button
                     type="button"
                     class="ui-button ui-button--primary ui-button--md ui-modal__apply"
-                    x-on:click="$wire.applyInRevit(chosen.id)"
+                    x-on:click="$wire.applyToConsumer(chosen.id)"
                     aria-disabled="{{ $blocked !== null ? 'true' : 'false' }}"
-                    title="{{ $blocked ?? __('Apply the selected colourway in Revit') }}"
+                    title="{{ $blocked ?? __('Apply the selected colourway in the connected application') }}"
                     data-test="quick-apply"
                 >
                     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>
-                    <span>{{ __('Apply in Revit') }}</span>
+                    <span>{{ $this->applyLabel() }}</span>
                     <em x-text="chosen?.name ?? ''">{{ $card['variants'][$card['active']]['name'] ?? '' }}</em>
                 </button>
             </div>
 
+            <x-ui.consumer-target :sessions="$sessions" :selected="$this->selectedConsumer()" />
             @if ($blocked)
                 <p class="ui-modal__note ui-modal__note--blocked" data-test="quick-blocked">{{ $blocked }}</p>
-            @elseif ($sessions->count() > 1)
-                <label class="ui-modal__note">
-                    {{ __('Send to') }}
-                    <select class="ui-select ui-select--sm" wire:model.live="revitSessionId" aria-label="{{ __('Revit session') }}">
-                        @foreach ($sessions as $session)
-                            <option value="{{ $session->id }}">{{ $session->label() }}</option>
-                        @endforeach
-                    </select>
-                </label>
-            @else
-                <p class="ui-modal__note">{{ __('Sends to :session', ['session' => $sessions->first()->label()]) }}</p>
             @endif
         </footer>
     </div>

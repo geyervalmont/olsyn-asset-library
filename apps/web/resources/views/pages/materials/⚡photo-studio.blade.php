@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Clients\IssueClientCommand;
+use App\Livewire\ConsumerComponent;
 use App\Actions\Materials\PromoteStudioRevision;
 use App\Enums\CommandType;
 use App\Library\Procedural\{ProceduralAsset, ProceduralBake, StudioPreviewStore};
@@ -10,10 +11,9 @@ use Flux\Flux;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\{Computed, Locked, Title, Url};
-use Livewire\Component;
 use Livewire\WithPagination;
 
-new #[Title('Photo Material Studio')] class extends Component
+new #[Title('Photo Material Studio')] class extends ConsumerComponent
 {
     use WithPagination;
 
@@ -45,6 +45,7 @@ new #[Title('Photo Material Studio')] class extends Component
 
     public function mount(): void
     {
+        $this->mountConsumers();
         $this->authorizeEditor();
         if ($this->draft !== '') {
             $this->open($this->draft);
@@ -297,17 +298,22 @@ new #[Title('Photo Material Studio')] class extends Component
         $this->redirect(route('materials.show', $rep->variant->material), navigate: true);
     }
 
+    protected function consumerCapability(): string
+    {
+        return 'draft.apply';
+    }
+
     public function apply(): void
     {
         $this->saveDraft();
         $this->validate(['width_mm' => 'required|numeric|gt:0', 'height_mm' => 'required|numeric|gt:0']);
-        if ((float) $this->width_mm !== (float) $this->height_mm) {
-            $this->addError('apply', 'Direct Revit apply currently supports square samples. Save a library candidate to preserve both dimensions.');
+        $session = $this->selectedConsumer();
+        if ($session === null) {
+            $this->addError('apply', $this->consumerBlockedReason() ?? 'Choose a connected application.');
             return;
         }
-        $session = ClientSession::query()->where('user_id', auth()->id())->where('platform', 'revit')->live()->latest('last_seen_at')->first();
-        if ($session === null) {
-            $this->addError('apply', 'Connect a live Revit session with this account first.');
+        if ($session->platform === 'revit' && (float) $this->width_mm !== (float) $this->height_mm) {
+            $this->addError('apply', 'Direct Revit apply currently supports square samples. Save a library candidate to preserve both dimensions.');
             return;
         }
         $revision = $this->revision;
@@ -321,8 +327,10 @@ new #[Title('Photo Material Studio')] class extends Component
         }
         $bake = new ProceduralBake('photo', '1', hash('sha256', json_encode($revision->document)), $revision->artifacts['base_color']['width'], $revision->artifacts['base_color']['height'], (float) $this->width_mm, (float) $this->height_mm, $assets);
         $studio = app(StudioPreviewStore::class)->put(auth()->user(), $bake, $this->name);
-        app(IssueClientCommand::class)->handle($session, auth()->user(), CommandType::Apply, ['studio' => $studio]);
-        Flux::toast(variant: 'success', text: 'Sent this draft to Revit.');
+        $this->consumerCommandId = app(IssueClientCommand::class)->handle($session, auth()->user(), CommandType::Apply, ['studio' => $studio])->id;
+        $this->consumerSessionId = $session->id;
+        unset($this->consumerCommand);
+        Flux::toast(variant: 'success', text: 'Sent this draft to '.$session->label().'.');
     }
 }; ?>
 
@@ -448,7 +456,12 @@ new #[Title('Photo Material Studio')] class extends Component
                     </div>
                     <div class="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700">
                         <h3 class="font-semibold">3. Use this material</h3>
-                        <flux:button wire:click="apply" :disabled="!$this->previewSet">Apply to Revit</flux:button>
+                        <flux:button wire:click="apply" :disabled="!$this->previewSet">{{ $this->applyLabel() }}</flux:button>
+                        <div wire:poll.15s="consumerSessionsUpdated">
+                            <x-ui.consumer-target :sessions="$this->consumerSessions" :selected="$this->selectedConsumer()" />
+                            @if ($this->consumerBlockedReason())<p class="text-sm text-zinc-500">{{ $this->consumerBlockedReason() }}</p>@endif
+                            @if ($this->consumerCommand)<p role="status" class="text-sm">{{ $this->consumerCommand->status->label() }} · {{ $this->consumerCommand->message }}</p>@endif
+                        </div>
                         <flux:select wire:model.live="destination" label="Library destination"><option value="new">New material</option><option value="colourway">New colourway</option><option value="improve">Improve existing variant</option></flux:select>
                         @if($destination === 'new')<flux:select wire:model="category_id" label="Category"><option value="">Choose category</option>@foreach(Category::query()->orderBy('name')->get() as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</flux:select>
                         @else<flux:select wire:model.live="material_id" label="Material"><option value="">Choose material</option>@foreach($this->materials as $material)<option value="{{ $material->id }}">{{ $material->code }} · {{ $material->name }}</option>@endforeach</flux:select>

@@ -18,6 +18,14 @@ An administrator opens Team, enters an email and role, and sends the invitation.
 
 Use Connect for extension downloads and installation instructions. Both extensions start `/api/v1/link`, open the browser approval page and receive the bearer token exactly once. Omniverse reports its session and drive state to Connect. Disconnect revokes that device's token. Windows Omniverse tokens use user-scoped DPAPI; Linux sessions do not persist tokens.
 
+## Consumer presence and website apply
+
+The website's status pill names all live applications on the signed-in account, or says **Nothing connected**. It combines realtime updates with a 15-second authenticated HTTP refresh and expires heartbeats after 90 seconds. Material pages, quick view and both studios use the same destination selector. One compatible session is selected automatically; multiple sessions require a choice. An ended or stale selected session is never silently replaced by another destination.
+
+Clients announce `capabilities` with `POST /api/v1/sessions`: `material.apply` accepts published variant UUID/version payloads; `draft.apply` accepts private Studio previews. An explicit empty list means presence only. Existing Revit clients that omit the field keep both capabilities. Older Omniverse versions that omit it stay visible but receive no unsupported commands. A future consumer can register a platform and announce these capabilities without adding platform-specific website controls. The historical `revit-session.*` broadcast channel name remains for compatibility with installed clients.
+
+Omniverse 0.2.0 polls its own command queue over HTTPS, acknowledges work, downloads and verifies textures outside Kit's main thread, and applies to the selected prims on the main thread. Selection is captured before downloading; a changed stage or missing prim rejects the apply. Private draft metadata stays separate from published UUID/version identities. The existing code fields remain in published command payloads for older Revit releases.
+
 ## Consumer API
 
 All library endpoints require authentication, central service access, a workspace and `materials.view`. Existing material visibility grants apply before returning previews, resolution results or files.

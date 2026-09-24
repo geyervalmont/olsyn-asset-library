@@ -8,9 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
- * A running client (a Revit with the OPAL extension) that can take commands.
+ * A running material consumer and the commands it supports.
  *
  * @property string|null $drive_status
  * @property string|null $mount_path
@@ -21,12 +22,13 @@ use Illuminate\Support\Carbon;
  * @property string $machine
  * @property string|null $app_version
  * @property string|null $document
+ * @property list<string>|null $capabilities
  * @property int|null $token_id
  * @property Carbon $last_seen_at
  * @property Carbon|null $ended_at
  * @property-read User $user
  */
-#[Fillable(['user_id', 'platform', 'machine', 'app_version', 'document', 'token_id', 'last_seen_at', 'ended_at', 'drive_status', 'mount_path', 'drive_error'])]
+#[Fillable(['user_id', 'platform', 'machine', 'app_version', 'document', 'capabilities', 'token_id', 'last_seen_at', 'ended_at', 'drive_status', 'mount_path', 'drive_error'])]
 class ClientSession extends Model
 {
     /**
@@ -34,7 +36,7 @@ class ClientSession extends Model
      */
     protected function casts(): array
     {
-        return ['last_seen_at' => 'datetime', 'ended_at' => 'datetime'];
+        return ['last_seen_at' => 'datetime', 'ended_at' => 'datetime', 'capabilities' => 'array'];
     }
 
     /**
@@ -79,12 +81,30 @@ class ClientSession extends Model
         return 'revit-session.'.$this->getKey();
     }
 
+    /** @return list<string> */
+    public function supportedCapabilities(): array
+    {
+        // Existing Revit releases already consume both command payloads.
+        // Older Omniverse releases only announce presence, so offer no actions.
+        return $this->capabilities ?? ($this->platform === 'revit' ? ['material.apply', 'draft.apply'] : []);
+    }
+
+    public function supports(string $capability): bool
+    {
+        return in_array($capability, $this->supportedCapabilities(), true);
+    }
+
+    public function platformLabel(): string
+    {
+        return Str::headline($this->platform);
+    }
+
     /**
      * "Revit 2027 · HARRISON-VM · Tower A.rvt"
      */
     public function label(): string
     {
-        $parts = [trim(ucfirst($this->platform).' '.($this->app_version ?? '')), $this->machine];
+        $parts = [trim($this->platformLabel().' '.($this->app_version ?? '')), $this->machine];
 
         if ($this->document) {
             $parts[] = $this->document;
@@ -101,6 +121,8 @@ class ClientSession extends Model
         return [
             'id' => $this->getKey(),
             'platform' => $this->platform,
+            'platform_label' => $this->platformLabel(),
+            'capabilities' => $this->supportedCapabilities(),
             'machine' => $this->machine,
             'app_version' => $this->app_version,
             'document' => $this->document,

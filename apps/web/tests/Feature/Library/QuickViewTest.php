@@ -84,27 +84,27 @@ test('the quick view applies the colourway it is given and reports the command',
     $page = Livewire::actingAs($this->viewer)
         ->test('pages::materials.index')
         ->call('openQuick', $this->material->code)
-        ->assertSet('revitSessionId', $session->id)
-        ->call('applyInRevit', $this->slate->id)
+        ->assertSet('consumerSessionId', $session->id)
+        ->call('applyToConsumer', $this->slate->id)
         ->assertSee('Queued');
 
     $command = ClientCommand::sole();
     expect($command->payload['variant'])->toBe($this->slate->code)
         ->and($command->payload['material'])->toBe($this->material->code)
         ->and($command->client_session_id)->toBe($session->id)
-        ->and($page->get('revitCommandId'))->toBe($command->id);
+        ->and($page->get('consumerCommandId'))->toBe($command->id);
 
     $command->forceFill(['status' => 'done', 'message' => 'Applied to Carpet'])->save();
-    $page->call('revitCommandUpdated')->assertSee('Applied to Carpet');
+    $page->call('consumerCommandUpdated')->assertSee('Applied to Carpet');
 });
 
 test('the quick view says why it cannot apply, and refuses to', function () {
-    // No live Revit session for this account.
+    // No compatible app connected.
     Livewire::actingAs($this->viewer)
         ->test('pages::materials.index')
         ->call('openQuick', $this->material->code)
-        ->assertSee('No live Revit session for this account')
-        ->call('applyInRevit', $this->ashen->id);
+        ->assertSee('No compatible app connected')
+        ->call('applyToConsumer', $this->ashen->id);
     expect(ClientCommand::count())->toBe(0);
 
     // Connected, but the material has nothing on a drive.
@@ -116,7 +116,7 @@ test('the quick view says why it cannot apply, and refuses to', function () {
         ->test('pages::materials.index')
         ->call('openQuick', $draft->code)
         ->assertSee('Publish a version first')
-        ->call('applyInRevit', $plain->id);
+        ->call('applyToConsumer', $plain->id);
     expect(ClientCommand::count())->toBe(0);
 });
 

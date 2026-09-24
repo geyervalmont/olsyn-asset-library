@@ -8,9 +8,15 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
-APP_VERSION = '0.1.0'
+APP_VERSION = '0.2.0'
 SERVER = 'https://opal.olsyn.com'
+
+class ApiError(RuntimeError):
+    def __init__(self, message, status):
+        super().__init__(message)
+        self.status = status
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -52,7 +58,7 @@ class Client:
                 message = json.loads(exc.read(4096)).get('message', str(exc.code))
             except (ValueError, AttributeError):
                 message = f'OPAL request failed ({exc.code}).'
-            raise RuntimeError(message) from None
+            raise ApiError(message, exc.code) from None
 
     def browse(self, query='', page=1, category=''):
         return self.request('/api/v1/library?' + urllib.parse.urlencode({'q': query, 'page': page, 'category': category, 'per_page': 24}))
@@ -109,6 +115,17 @@ class Client:
         if 'base_color' not in result and 'package' not in result:
             raise ValueError('The published material has no base colour texture.')
         return result
+
+    def prepare_draft(self, draft, cache):
+        draft_id = str(uuid.UUID(draft['id']))
+        files = []
+        for item in draft['maps']:
+            if item['role'] not in ('base_color', 'normal', 'roughness', 'metallic', 'opacity', 'height'):
+                continue
+            if not re.fullmatch(r'[a-f0-9]{64}', item['sha256']) or not re.fullmatch(r'png|jpg|jpeg|exr', item['extension']):
+                raise ValueError('Invalid draft texture identity.')
+            files.append(dict(item, path=f'drafts/{draft_id}/{item["sha256"]}.{item["extension"]}'))
+        return self.prepare({'files': files}, cache)
 
 def safe_path(root, relative):
     parts = relative.lstrip('/').split('/')

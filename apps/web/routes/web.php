@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\SessionsController;
 use App\Http\Controllers\Clients\RevitDownloadController;
 use App\Http\Controllers\Drives\DriveManifestController;
 use App\Http\Controllers\Files\FileController;
@@ -54,6 +55,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', WorkspaceHomeController::class)->name('dashboard');
     Route::livewire('link', 'pages::link')->name('link');
     Route::livewire('connect', 'pages::connect')->middleware('tenant')->name('connect');
+    Route::get('connect/sessions', [SessionsController::class, 'index'])->name('connect.sessions');
     Route::livewire('connect/health', 'pages::drive-health')->middleware('tenant')->name('connect.health');
     Route::view('connect/it', 'connect-it')->middleware('tenant')->name('connect.it');
     Route::post('tenants/{tenant}/switch', SwitchTenantController::class)->name('tenants.switch');

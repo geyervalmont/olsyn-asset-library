@@ -74,7 +74,7 @@ new #[Title('Connect')] class extends Component
     #[Computed]
     public function sessions(): \Illuminate\Support\Collection
     {
-        return ClientSession::query()->where('user_id', Auth::id())->whereIn('platform', ['revit', 'omniverse'])
+        return ClientSession::query()->where('user_id', Auth::id())
             ->whereNull('ended_at')->where('last_seen_at', '>=', now()->subDays(7))->latest('last_seen_at')->get();
     }
 
@@ -187,11 +187,14 @@ new #[Title('Connect')] class extends Component
             <span class="ui-connect__hint">{{ __('Updates automatically') }}</span>
         </div>
         @forelse ($this->sessions as $session)
-            <article class="ui-connect__device" wire:key="revit-{{ $session->id }}" data-test="connect-session">
-                <div class="ui-connect__device-icon" aria-hidden="true">{{ $session->platform === 'omniverse' ? 'O' : 'R' }}</div>
+            <article class="ui-connect__device" wire:key="consumer-{{ $session->id }}" data-test="connect-session">
+                <div class="ui-connect__device-icon" aria-hidden="true">{{ mb_substr($session->platformLabel(), 0, 1) }}</div>
                 <div class="ui-connect__device-copy">
                     <strong>{{ $session->machine }}</strong>
-                    <span>{{ $session->app_version ?: ucfirst($session->platform) }} · {{ $session->document ?: __('Open a project to apply a material') }}</span>
+                    <span>{{ $session->platformLabel() }} {{ $session->app_version }} · {{ $session->document ?: __('Open a project to apply a material') }}</span>
+                    @if ($session->isLive() && ! $session->supports('material.apply'))
+                        <small>{{ __('Update this extension to apply materials from the website.') }}</small>
+                    @endif
                     @if ($session->isLive())
                         @if ($session->drive_status === 'available')
                             <small>{{ __('Material folder available: :path', ['path' => $session->mount_path]) }}</small>
@@ -205,7 +208,7 @@ new #[Title('Connect')] class extends Component
                     @endif
                 </div>
                 <x-ui.badge :tone="$session->isLive() ? 'success' : 'neutral'" dot>{{ $session->isLive() ? __('Connected') : __('Offline') }}</x-ui.badge>
-                <x-ui.button variant="quiet" size="sm" wire:click="endSession({{ $session->id }})" wire:confirm="{{ __('End this Revit session? Revit can reconnect with its saved account.') }}">{{ __('End session') }}</x-ui.button>
+                <x-ui.button variant="quiet" size="sm" wire:click="endSession({{ $session->id }})" wire:confirm="{{ __('End this application session? Reconnect from its OPAL extension to use it again.') }}">{{ __('End session') }}</x-ui.button>
             </article>
         @empty
             <div class="ui-connect__empty" data-test="connect-waiting">

@@ -44,5 +44,20 @@ class ClientTest(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b'valid')
             self.assertEqual(list(Path(root).iterdir()), [path])
 
+    def test_private_drafts_verify_each_map_and_reuse_the_cache(self):
+        client = Client(token='secret')
+        draft = {'id': '0195bd23-9123-7000-8000-000000000001', 'maps': [
+            {'role': 'base_color', 'url': '/api/v1/studio-previews/test/base_color', 'extension': 'png', 'sha256': hashlib.sha256(b'valid').hexdigest(), 'bytes': 5},
+        ]}
+        with tempfile.TemporaryDirectory() as root:
+            with patch.object(client.opener, 'open', return_value=io.BytesIO(b'valid')) as request:
+                paths = client.prepare_draft(draft, root)
+                self.assertEqual(client.prepare_draft(draft, root), paths)
+                self.assertEqual(request.call_count, 1)
+            self.assertEqual(Path(paths['base_color']).read_bytes(), b'valid')
+            draft['maps'][0]['extension'] = '../png'
+            with self.assertRaises(ValueError):
+                client.prepare_draft(draft, root)
+
 if __name__ == '__main__':
     unittest.main()

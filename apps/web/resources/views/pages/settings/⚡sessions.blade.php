@@ -8,7 +8,7 @@ use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Revit sessions')] class extends Component {
+new #[Title('Connected applications')] class extends Component {
     public int $userId = 0;
 
     public function mount(): void
@@ -44,7 +44,7 @@ new #[Title('Revit sessions')] class extends Component {
 <section class="w-full">
     @include('partials.settings-heading')
 
-    <x-pages::settings.layout :heading="__('Revit sessions')" :subheading="__('Clients linked to your account that are running now. Commands from the library go to these.')">
+    <x-pages::settings.layout :heading="__('Connected applications')" :subheading="__('Clients linked to your account that are running now. Commands from the library go to these.')">
         <ul class="mt-2 divide-y divide-zinc-200" wire:poll.60s>
             @forelse ($this->sessions as $session)
                 <li class="flex items-center justify-between gap-3 py-3 text-sm" wire:key="session-{{ $session->id }}" data-test="session-row">
@@ -56,7 +56,7 @@ new #[Title('Revit sessions')] class extends Component {
                     <flux:button wire:click="end({{ $session->id }})" size="sm" variant="ghost" data-test="end-session">{{ __('End') }}</flux:button>
                 </li>
             @empty
-                <li class="py-3 text-sm text-zinc-500" data-test="no-sessions">{{ __('No client is connected. In Revit, choose OPAL → Settings → Connect account.') }}</li>
+                <li class="py-3 text-sm text-zinc-500" data-test="no-sessions">{{ __('Nothing connected. Open an OPAL extension and connect your account.') }}</li>
             @endforelse
         </ul>
     </x-pages::settings.layout>

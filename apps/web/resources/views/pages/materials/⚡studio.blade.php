@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Clients\IssueClientCommand;
+use App\Livewire\ConsumerComponent;
 use App\Actions\Materials\AddVariant;
 use App\Actions\Materials\CreateMaterial;
 use App\Enums\CommandType;
@@ -9,8 +10,6 @@ use App\Library\Procedural\ProceduralBaker;
 use App\Library\Procedural\ProceduralRecipes;
 use App\Library\Procedural\StudioPreviewStore;
 use App\Models\Category;
-use App\Models\ClientCommand;
-use App\Models\ClientSession;
 use App\Models\Definition;
 use App\Models\Material;
 use App\Models\Supplier;
@@ -22,13 +21,12 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
-use Livewire\Component;
 
-new #[Title('Material Studio')] class extends Component
+new #[Title('Material Studio')] class extends ConsumerComponent
 {
+
     #[Url]
     public string $mode = 'new';
 
@@ -84,16 +82,10 @@ new #[Title('Material Studio')] class extends Component
 
     public bool $libraryDestination = false;
 
-    public int $userId;
-
-    public ?int $revitSessionId = null;
-
-    public ?int $revitCommandId = null;
-
     public function mount(): void
     {
         abort_unless(auth()->user()?->can('materials.contribute'), 403);
-        $this->userId = (int) auth()->id();
+        $this->mountConsumers();
 
         if ($this->materialCode !== '') {
             $this->mode = 'existing';
@@ -268,34 +260,22 @@ new #[Title('Material Studio')] class extends Component
         $this->refreshPreview(app(ProceduralBaker::class));
     }
 
-    /** @return Collection<int, ClientSession> */
-    #[Computed]
-    public function revitSessions(): Collection
+    protected function consumerCapability(): string
     {
-        return ClientSession::query()->where('user_id', $this->userId)->live()->orderByDesc('last_seen_at')->get();
-    }
-
-    #[Computed]
-    public function revitCommand(): ?ClientCommand
-    {
-        return $this->revitCommandId === null
-            ? null
-            : ClientCommand::query()->with('session')->whereKey($this->revitCommandId)->where('issued_by', $this->userId)->first();
+        return 'draft.apply';
     }
 
     public function applyBlockedReason(): ?string
     {
-        return $this->revitSessions->isEmpty()
-            ? __('No live Revit session for this account. In Revit, open OPAL → Settings and connect the same account.')
-            : null;
+        return $this->consumerBlockedReason();
     }
 
-    public function applyInRevit(
+    public function applyToConsumer(
         ProceduralBaker $baker,
         StudioPreviewStore $previews,
         IssueClientCommand $issue,
     ): void {
-        if ($this->revitSessions->isEmpty()) {
+        if ($this->consumerBlockedReason() !== null) {
             Flux::toast(variant: 'warning', text: $this->applyBlockedReason());
 
             return;
@@ -307,7 +287,7 @@ new #[Title('Material Studio')] class extends Component
             return;
         }
 
-        $session = $this->revitSessions->firstWhere('id', $this->revitSessionId) ?? $this->revitSessions->first();
+        $session = $this->selectedConsumer();
 
         if ($session === null) {
             Flux::toast(variant: 'warning', text: $this->applyBlockedReason());
@@ -326,24 +306,11 @@ new #[Title('Material Studio')] class extends Component
         $label = trim($this->name) !== '' ? trim($this->name) : $this->generators()[$this->generator].' draft';
         $studio = $previews->put($user, $baker->bake($this->definitionPayload()), $label);
         $command = $issue->handle($session, $user, CommandType::Apply, ['studio' => $studio]);
-        $this->revitSessionId = $session->id;
-        $this->revitCommandId = $command->id;
-        unset($this->revitCommand);
+        $this->consumerSessionId = $session->id;
+        $this->consumerCommandId = $command->id;
+        unset($this->consumerCommand);
 
-        Flux::toast(variant: 'success', text: __('Sent this draft to :revit. It has not been added to the library.', ['revit' => $session->label()]));
-    }
-
-    #[On('echo-private:user.{userId},.command.acked')]
-    #[On('echo-private:user.{userId},.command.completed')]
-    public function revitCommandUpdated(): void
-    {
-        unset($this->revitCommand);
-    }
-
-    #[On('echo-private:user.{userId},.session.updated')]
-    public function revitSessionsUpdated(): void
-    {
-        unset($this->revitSessions);
+        Flux::toast(variant: 'success', text: __('Sent this draft to :app. It has not been added to the library.', ['app' => $session->label()]));
     }
 
     public function preview(ProceduralBaker $baker): void
@@ -653,7 +620,7 @@ new #[Title('Material Studio')] class extends Component
         <div>
             <x-ui.eyebrow>{{ __('Design workspace') }}</x-ui.eyebrow>
             <h1>{{ __('Material Studio') }}</h1>
-            <p>{{ __('Author a physically scaled finish, inspect every channel, then apply the draft directly to Revit or deliberately add it to the shared library.') }}</p>
+            <p>{{ __('Author a physically scaled finish, inspect every channel, then apply the draft in a connected application or deliberately add it to the shared library.') }}</p>
         </div>
         <div class="ui-material-studio__head-actions">
             <x-ui.button :href="route('materials.studio.photos')" variant="quiet" wire:navigate>{{ __('Photo Studio & drafts') }}</x-ui.button>
@@ -915,31 +882,28 @@ new #[Title('Material Studio')] class extends Component
                 </details>
                 @endif
 
-                <div class="ui-studio-publish">
+                <div class="ui-studio-publish" wire:poll.15s="consumerSessionsUpdated">
                     <div class="ui-studio-publish__state"><span></span><p><strong>{{ __('Unsaved working draft') }}</strong>{{ __('Apply it without creating a library record.') }}</p></div>
 
                     <x-ui.button
                         type="button"
-                        wire:click="applyInRevit"
+                        wire:click="applyToConsumer"
                         variant="primary"
-                        data-test="studio-apply-revit"
+                        data-test="studio-apply-consumer"
                         aria-disabled="{{ $this->applyBlockedReason() !== null ? 'true' : 'false' }}"
-                        title="{{ $this->applyBlockedReason() ?? __('Apply this working draft in Revit') }}"
-                    >{{ __('Apply draft to selected Revit material') }}</x-ui.button>
+                        title="{{ $this->applyBlockedReason() ?? __('Apply this working draft in the connected application') }}"
+                    >{{ $this->applyLabel() }}</x-ui.button>
 
+                    <x-ui.consumer-target :sessions="$this->consumerSessions" :selected="$this->selectedConsumer()" />
                     @if ($this->applyBlockedReason())
                         <p class="ui-studio-action-note ui-studio-action-note--blocked">{{ $this->applyBlockedReason() }}</p>
-                    @elseif ($this->revitSessions->count() > 1)
-                        <label class="ui-studio-select"><span>{{ __('Send to') }}</span><select wire:model.live="revitSessionId">@foreach ($this->revitSessions as $session)<option value="{{ $session->id }}">{{ $session->label() }}</option>@endforeach</select></label>
-                    @else
-                        <p class="ui-studio-action-note ui-studio-action-note--ready">{{ __('Ready: :session', ['session' => $this->revitSessions->first()->label()]) }}</p>
                     @endif
 
-                    @if ($this->revitCommand)
-                        <p class="ui-studio-command" data-status="{{ $this->revitCommand->status->value }}">
-                            <span class="ui-status-light ui-status-light--{{ $this->revitCommand->status->value }}"></span>
-                            <strong>{{ $this->revitCommand->status->label() }}</strong>
-                            <span>{{ $this->revitCommand->message }}</span>
+                    @if ($this->consumerCommand)
+                        <p class="ui-studio-command" data-status="{{ $this->consumerCommand->status->value }}">
+                            <span class="ui-status-light ui-status-light--{{ $this->consumerCommand->status->value }}"></span>
+                            <strong>{{ $this->consumerCommand->status->label() }}</strong>
+                            <span>{{ $this->consumerCommand->message }}</span>
                         </p>
                     @endif
 
