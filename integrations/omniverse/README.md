@@ -1,6 +1,6 @@
 # OPAL for Omniverse (proof of concept)
 
-Extract the release ZIP. In Kit, open Window → Extensions → Settings, add the extracted `exts` directory to Extension Search Paths, then enable **OPAL Materials**. Requires a Kit host with `omni.ui`, `omni.usd` and Python 3.10+.
+Extract the release ZIP. In Kit, open Window → Extensions → Settings, add the extracted `exts` directory to Extension Search Paths, then enable **OPAL Materials**. Requires a Kit host with `omni.ui`, `omni.usd`, `omni.kit.menu.utils` and Python 3.10+.
 
 Choose **Connect account**, approve the browser code using your Olsyn account, then search published materials. Select scene geometry and choose **Apply to selection**. Downloads run off the Kit main thread; USD edits run on it. Windows credentials are encrypted with user-scoped DPAPI. Linux credentials are session-only. Standard OS HTTPS/proxy/certificate settings apply; no VPN is needed for texture downloads.
 
@@ -28,3 +28,18 @@ For a Linux Kit host, add `--ext-folder /path/to/extracted/exts --enable olsyn.o
 `python integrations/omniverse/build.py`
 
 Push `omniverse/vMAJOR.MINOR.PATCH` to publish independently. Main/PR changes build artifacts without publishing a production version.
+
+## Browser (0.2.1)
+
+The panel uses Kit's native controls and can be docked or reopened with **Window → OPAL Materials**. Search updates as you type; category filtering stays visible and **Reset filters** returns to the whole library. Click either a thumbnail or its label to select a material. **Refresh** keeps the current page and selected material when it remains in the results. Failed searches show a retry state instead of leaving stale materials active.
+
+Run the mouse/keyboard regression in a **disposable, signed-out Kit host** (it closes the host after testing):
+
+```sh
+OPAL_UI_TEST_OUTPUT=/tmp/opal-ui-tests "$KIT_ROOT/kit" "$KIT_ROOT/apps/omni.app.mini.kit" \
+  --ext-folder "$PWD/integrations/omniverse/exts" --enable olsyn.opal \
+  --/app/settings/persistent=false \
+  --exec "$PWD/integrations/omniverse/tests/kit/browser_interactions.py"
+```
+
+This uses local coloured fixtures, exercises selection, typed search, filters, pagination, refresh, request races, empty/error states and window reopening, and writes a screenshot and `result.json`. It needs a graphics-capable Kit host; the portable client/USD tests continue to run in GitHub Actions.

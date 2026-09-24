@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.request
 import uuid
 
-APP_VERSION = '0.2.0'
+APP_VERSION = '0.2.1'
 SERVER = 'https://opal.olsyn.com'
 
 class ApiError(RuntimeError):

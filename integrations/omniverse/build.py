@@ -11,7 +11,7 @@ root = Path(__file__).resolve().parent
 ref = os.environ.get('GITHUB_REF_NAME', '')
 if os.environ.get('GITHUB_REF_TYPE') == 'tag' and not re.fullmatch(r'omniverse/v\d+\.\d+\.\d+', ref):
     raise SystemExit('Use omniverse/vMAJOR.MINOR.PATCH')
-version = ref.split('/v')[1] if ref.startswith('omniverse/v') else '0.2.0'
+version = ref.split('/v')[1] if ref.startswith('omniverse/v') else '0.2.1'
 out = root.parent.parent / 'artifacts' / 'omniverse'
 out.mkdir(parents=True, exist_ok=True)
 package = out / 'OPAL-Omniverse.zip'

@@ -1,5 +1,5 @@
 [package]
-version = "0.2.0"
+version = "0.2.1"
 title = "OPAL Materials"
 description = "Browse OPAL, connect your account and upgrade Revit material identities to published PBR materials."
 category = "Materials"
@@ -9,6 +9,7 @@ authors = ["Olsyn"]
 "omni.ui" = {}
 "omni.usd" = {}
 "omni.kit.commands" = {}
+"omni.kit.menu.utils" = {}
 
 [[python.module]]
 name = "olsyn.opal"

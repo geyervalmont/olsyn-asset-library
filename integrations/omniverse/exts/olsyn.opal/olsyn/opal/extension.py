@@ -6,6 +6,7 @@ import socket
 import urllib.parse
 import webbrowser
 
+from omni.kit.menu.utils import MenuHelperExtension
 import omni.ext
 import omni.ui as ui
 import omni.usd
@@ -17,7 +18,7 @@ from .browser import preview_name
 from . import ui as browser_ui
 from . import credentials, materials
 
-class Extension(omni.ext.IExt):
+class Extension(omni.ext.IExt, MenuHelperExtension):
     def on_startup(self, ext_id):
         self.root = Path(os.environ.get('LOCALAPPDATA', Path.home() / '.cache')) / 'OPAL' / 'omniverse'
         self.root.mkdir(parents=True, exist_ok=True)
@@ -38,7 +39,14 @@ class Extension(omni.ext.IExt):
         self.connecting = False
         self.cards = {}
         self.preview_slots = asyncio.Semaphore(4)
+        self.items = []
+        self.loading = False
+        self._browse_task = None
+        self._requested_key = None
+        self._filters_muted = False
         browser_ui.build(self)
+        self.menu_startup('OPAL Materials', 'OPAL Materials', 'Window')
+        self.window.set_visibility_changed_fn(lambda _: self.menu_refresh())
         if os.name == 'nt':
             self.mount.model.set_value('M:\\')
         if self.client.token:
@@ -56,6 +64,7 @@ class Extension(omni.ext.IExt):
         task = asyncio.ensure_future(self.guard(coroutine))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
+        return task
 
     async def guard(self, coroutine):
         try:
@@ -70,6 +79,8 @@ class Extension(omni.ext.IExt):
         for task in self.tasks:
             task.cancel()
         self.tasks.clear()
+        self.menu_shutdown()
+        ui.Workspace.set_show_window_fn('OPAL Materials', None)
         self.window.destroy()
         self.window = None
 
@@ -119,6 +130,11 @@ class Extension(omni.ext.IExt):
         self.account_email = ''
         credentials.save(self.root / 'account.bin', '')
         self.choice = None
+        self.items = []
+        self._requested_key = None
+        self.loading = False
+        self.list_frame.enabled = True
+        self.pager.enabled = True
         self.cards.clear()
         self.list_frame.clear()
         self.preview_frame.clear()
@@ -193,50 +209,105 @@ class Extension(omni.ext.IExt):
         self.category.model.add_item_changed_fn(lambda *_: self.search())
 
     def clear_search(self):
-        self.query.model.set_value('')
-        self.category.model.get_item_value_model().set_value(0)
-        self.search()
+        self._filters_muted = True
+        try:
+            self.query.model.set_value('')
+            self.category.model.get_item_value_model().set_value(0)
+        finally:
+            self._filters_muted = False
+        self.search(force=True)
 
-    def search(self):
-        self.go_page(1)
+    def search(self, delay=0, force=False):
+        if self._filters_muted:
+            return
+        self.go_page(1, delay=delay, force=force)
+
+    def refresh(self):
+        self.go_page(self._requested_key[1] if self._requested_key else 1, force=True)
 
     def turn_page(self, step):
         self.go_page(self.page + step)
 
-    def go_page(self, page):
+    def go_page(self, page, delay=0, force=False):
         if not self.client.token:
             self.status.text = 'Connect your OPAL account to search the library.'
             return
-        if 1 <= page <= self.last_page:
-            self.page = page
-            self.run(self.browse())
-
-    async def browse(self):
+        if not 1 <= page <= self.last_page:
+            return
+        index = self.category.model.get_item_value_model().as_int
+        key = (self.query.model.as_string.strip(), page, self.categories[index]['code'])
+        if key == self._requested_key and not force:
+            return
+        self._requested_key = key
+        # Invalidate old requests immediately, including during the typing delay.
         self.generation += 1
         generation = self.generation
-        page = self.page
+        if self._browse_task:
+            self._browse_task.cancel()
+        self.loading = True
+        self.list_frame.enabled = False
+        self.pager.enabled = False
+        self.apply_button.enabled = False
+        self.page_label.text = 'Searching...'
         self.status.text = 'Searching your library...'
-        index = self.category.model.get_item_value_model().as_int
-        response = await asyncio.to_thread(self.client.browse, self.query.model.as_string, page, self.categories[index]['code'])
-        if generation != self.generation or self.window is None:
+        self._browse_task = self.run(self.browse(generation, key, delay))
+
+    async def browse(self, generation=None, key=None, delay=0):
+        if generation is None:
+            self.search(force=True)
+            if self._browse_task:
+                await self._browse_task
             return
-        meta = response['meta']
-        self.page = meta['current_page']
-        self.last_page = meta['last_page']
-        total = meta['total']
-        first = (self.page - 1) * 24 + 1 if total else 0
-        last = first + len(response['data']) - 1 if total else 0
-        self.page_label.text = f'{first:,}-{last:,} of {total:,} materials · Page {self.page} / {self.last_page}'
+        try:
+            if delay:
+                await asyncio.sleep(delay)
+            response = await asyncio.to_thread(self.client.browse, *key)
+            if generation != self.generation or not getattr(self, 'window', None):
+                return
+            meta = response['meta']
+            self.page = meta['current_page']
+            self.last_page = meta['last_page']
+            total = meta['total']
+            first = (self.page - 1) * meta.get('per_page', 24) + 1 if total else 0
+            last = first + len(response['data']) - 1 if total else 0
+            filters = ' · '.join(value for value in (f'"{key[0]}"' if key[0] else '', self.categories[self.category.model.get_item_value_model().as_int]['name']) if value)
+            self.page_label.text = f'{first:,}-{last:,} of {total:,} · {filters} · Page {self.page}/{self.last_page}'
+            selected_uuid = self.choice['uuid'] if self.choice else None
+            self.items = response['data']
+            self.clear_selection()
+            self.list_frame.scroll_y = 0
+            browser_ui.render_cards(self, self.items, generation)
+            browser_ui.render_pager(self)
+            self.loading = False
+            for item in self.items:
+                if item['uuid'] == selected_uuid:
+                    self.select(item)
+                    break
+            self.status.text = 'Select a material preview to inspect it, then apply to selected geometry.' if total else 'No matching materials. Reset filters to browse the whole library.'
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if generation == self.generation and getattr(self, 'window', None):
+                self.items = []
+                self.clear_selection()
+                browser_ui.render_cards(self, [], generation, 'Could not load materials. Check your connection and retry.')
+                self.pager.clear()
+                self.page_label.text = 'Search failed'
+                self.status.text = str(exc)
+                self._requested_key = None
+        finally:
+            if generation == self.generation and getattr(self, 'window', None):
+                self.loading = False
+                self.list_frame.enabled = True
+                self.pager.enabled = True
+                self.apply_button.enabled = self.choice is not None and not self.busy
+
+    def clear_selection(self):
         self.choice = None
         self.apply_button.enabled = False
         self.preview_frame.clear()
-        self.details.text = 'Select a preview to inspect and apply it.'
-        self.list_frame.scroll_y = 0
-        browser_ui.render_cards(self, response['data'], generation)
-        browser_ui.render_pager(self)
-        self.status.text = 'Select a finish to see its details. Apply it here or send it from the OPAL website.'
-        if response['data']:
-            await self.select(response['data'][0])
+        self.details.text = 'Select a material to inspect it.'
+        self.details.tooltip = ''
 
     def preview_path(self, item):
         return self.root / 'previews' / preview_name(item)
@@ -260,20 +331,27 @@ class Extension(omni.ext.IExt):
                 if generation == self.generation and self.window:
                     frame.clear()
                     with frame:
-                        ui.Label('Preview unavailable', name='muted', alignment=ui.Alignment.CENTER)
+                        ui.Label('Preview unavailable', alignment=ui.Alignment.CENTER)
+                    if self.choice is item:
+                        self.preview_frame.clear()
+                        with self.preview_frame:
+                            ui.Label('Preview unavailable', alignment=ui.Alignment.CENTER)
 
     def show_selected_preview(self, file):
         self.preview_frame.clear()
         with self.preview_frame:
             ui.Image(str(file), fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT)
 
-    async def select(self, item):
+    def select(self, item):
+        if self.loading or not any(value is item for value in self.items):
+            return
         self.choice = item
         self.apply_button.enabled = not self.busy
-        self.details.text = f'{item["material_name"]}\n{item["name"]}\n{item.get("supplier") or "In-house"} · Version {item["material_version"]}\n\n{item.get("description") or item["code"]}'
+        self.details.text = f'{item["material_name"]}\n{item["name"]}\n{item.get("supplier") or "In-house"} · Version {item["material_version"]}\n\n{item["code"]}'
+        self.details.tooltip = item.get('description') or ''
         self.preview_frame.clear()
         for uuid, (outline, _) in self.cards.items():
-            outline.style = {'background_color': 0xFF302B25, 'border_radius': 7, 'border_width': 2 if uuid == item['uuid'] else 0, 'border_color': 0xFFC1D8AD}
+            outline.selected = uuid == item['uuid']
         file = self.preview_path(item)
         if file.is_file():
             self.show_selected_preview(file)
@@ -332,7 +410,7 @@ class Extension(omni.ext.IExt):
         finally:
             self.busy = False
             if getattr(self, 'window', None):
-                self.apply_button.enabled = self.choice is not None
+                self.apply_button.enabled = self.choice is not None and not self.loading
 
     async def upgrade(self):
         if self.busy:
