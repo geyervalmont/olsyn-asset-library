@@ -66,6 +66,8 @@ test('consumer pages stay bounded and do not load texture payloads or issue one 
 
 test('Revit and Omniverse resolve different quality from exactly the same published identity', function () {
     [$material, $variant, $package] = publishedConsumerMaterial();
+    app(AddVariant::class)->handle($material, ['colourway' => 'Not published']);
+    $this->getJson('/api/v1/library')->assertJsonCount(1, 'data');
     $url = '/api/v1/library/variants/'.$variant->uuid;
     $revit = $this->getJson($url.'/resolve?target=revit')->assertOk()->assertJsonPath('data.quality', 'preview')->json('data');
     $omni = $this->getJson($url.'/resolve?target=omniverse&version=1')->assertOk()->assertJsonPath('data.quality', '4k')->json('data');

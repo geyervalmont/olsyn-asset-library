@@ -74,6 +74,8 @@ jobs:
         with:
           bun-version: "1.4.0"
       - run: composer install --no-interaction --prefer-dist
+      - name: Prepare test environment
+        run: cp .env.example .env
       - name: Generate test application key
         run: echo "APP_KEY=$(php artisan key:generate --show)" >> "$GITHUB_ENV"
       - run: bun install --frozen-lockfile

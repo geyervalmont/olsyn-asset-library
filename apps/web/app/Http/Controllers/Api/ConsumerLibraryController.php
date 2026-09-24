@@ -27,6 +27,7 @@ class ConsumerLibraryController
             ->search((string) ($input['q'] ?? ''))
             ->when(! empty($input['category']), fn ($query) => $query->whereRelation('category', 'code', strtoupper($input['category'])));
         $page = Variant::query()->whereIn('material_id', $materials->select('id'))
+            ->whereHas('packages.versions', fn ($query) => $query->whereHas('material', fn ($material) => $material->whereColumn('materials.current_version_id', 'material_versions.id')))
             ->with(['material.category', 'material.supplier', 'material.currentVersion'])
             ->orderBy('code')->paginate((int) ($input['per_page'] ?? 24));
 

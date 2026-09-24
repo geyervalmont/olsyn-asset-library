@@ -131,7 +131,7 @@ test('single workspace mode rejects switching to another workspace and never gue
     expect(app(JoinSharedWorkspace::class)->handle($this->admin))->toBeNull();
 });
 
-test('the Team page prepares access without sending mail and applies role changes', function () {
+test('the Team page sends an invitation and applies role changes', function () {
     Mail::fake();
     Livewire::actingAs($this->admin)->test('pages::team')->set('email', 'DESIGN@EXAMPLE.TEST')->set('role', 'editor')->call('invite')->assertHasNoErrors()->assertSee('design@example.test')->assertSee('Invitation queued');
     expect(WorkspaceAccess::sole()->role)->toBe('editor');

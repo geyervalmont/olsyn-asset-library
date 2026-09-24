@@ -48,7 +48,8 @@ test('non-image files get a kind from their mime type and an extension from the 
 
     $archive = $store->store('PK not really a zip', 'maps.zip', 'application/zip');
     $note = $store->store("supplier notes\n", 'notes.txt');
-    $mystery = $store->store(random_bytes(64));
+    // Random bytes can accidentally match a real executable file signature.
+    $mystery = $store->store(str_repeat("\0", 64));
 
     expect($archive->kind)->toBe('archive')
         ->and($archive->extension)->toBe('zip')
