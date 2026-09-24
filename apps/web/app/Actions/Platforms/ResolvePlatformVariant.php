@@ -5,6 +5,7 @@ namespace App\Actions\Platforms;
 use App\Models\Platform;
 use App\Models\PlatformIdentity;
 use App\Models\Variant;
+use Illuminate\Support\Str;
 
 /**
  * Find the library variant behind a platform reference: an external id, an
@@ -20,6 +21,10 @@ class ResolvePlatformVariant
 
         if ($reference === '') {
             return null;
+        }
+
+        if (Str::isUuid($reference) && $variant = Variant::where('uuid', $reference)->first()) {
+            return $variant;
         }
 
         $identity = PlatformIdentity::query()

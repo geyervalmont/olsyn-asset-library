@@ -6,6 +6,8 @@ use App\Actions\Tenants\RemoveTenantMember;
 use App\Actions\Workspace\JoinSharedWorkspace;
 use App\Actions\Workspace\ManageTeam;
 use App\Enums\Role;
+use App\Jobs\Workspace\SendInvitation;
+use App\Mail\WorkspaceWelcome;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\WorkspaceAccess;
@@ -13,6 +15,7 @@ use App\Services\OlsynAccess;
 use App\Support\SharedWorkspace;
 use Database\Seeders\LibrarySeeder;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Sanctum;
 use Livewire\Livewire;
@@ -130,9 +133,9 @@ test('single workspace mode rejects switching to another workspace and never gue
 
 test('the Team page prepares access without sending mail and applies role changes', function () {
     Mail::fake();
-    Livewire::actingAs($this->admin)->test('pages::team')->set('email', 'DESIGN@EXAMPLE.TEST')->set('role', 'editor')->call('invite')->assertHasNoErrors()->assertSee('design@example.test')->assertSee('no email has been sent');
+    Livewire::actingAs($this->admin)->test('pages::team')->set('email', 'DESIGN@EXAMPLE.TEST')->set('role', 'editor')->call('invite')->assertHasNoErrors()->assertSee('design@example.test')->assertSee('Invitation queued');
     expect(WorkspaceAccess::sole()->role)->toBe('editor');
-    Mail::assertNothingSent();
+    Mail::assertSent(WorkspaceWelcome::class, fn ($mail) => $mail->hasTo('design@example.test'));
     Livewire::actingAs($this->admin)->test('pages::team')->call('changeRole', $this->viewer->id, 'editor')->assertHasNoErrors();
     expect($this->viewer->roleIn($this->workspace))->toBe(Role::Editor);
     Livewire::actingAs($this->admin)->test('pages::team')->set('email', $this->viewer->email)->call('invite')->assertHasErrors('email');
@@ -172,4 +175,27 @@ test('personal-drive onboarding uses the shared workspace and rejects a removed 
     expect($new->roleIn($this->workspace))->toBe(Role::Viewer);
     app(RemoveTenantMember::class)->handle($this->workspace, $new);
     $this->getJson('/api/v1/drive/bootstrap')->assertForbidden();
+});
+
+test('invitation delivery is observable and cancelled or superseded jobs cannot send', function () {
+    Mail::fake();
+    Queue::fake();
+    $team = app(ManageTeam::class);
+    $team->invite($this->admin, $this->workspace, 'delivery@example.test', Role::Editor);
+    $entry = WorkspaceAccess::sole();
+    $job = new SendInvitation($entry->id, $entry->email_queued_at->toDateTimeString());
+    $job->handle();
+    Mail::assertSent(WorkspaceWelcome::class, fn ($mail) => $mail->hasTo('delivery@example.test'));
+    expect($entry->fresh()->email_sent_at)->not->toBeNull();
+    $job->handle();
+    Mail::assertSentCount(1);
+    expect(fn () => $team->invite($this->admin, $this->workspace, $entry->email, Role::Editor))->toThrow(ValidationException::class);
+    $this->travel(2)->minutes();
+    $team->invite($this->admin, $this->workspace, $entry->email, Role::Editor);
+    $job->handle();
+    Mail::assertSentCount(1);
+    $entry->refresh();
+    $team->cancel($this->admin, $this->workspace, $entry->id);
+    (new SendInvitation($entry->id, $entry->email_queued_at->toDateTimeString()))->handle();
+    Mail::assertSentCount(1);
 });

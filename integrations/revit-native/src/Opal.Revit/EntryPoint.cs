@@ -21,6 +21,8 @@ public static class EntryPoint
             ?? application.CreateRibbonPanel("OPAL", "Materials");
         var assembly = typeof(EntryPoint).Assembly.Location;
 
+        AddButton(panel, "OpalBrowse", "Browse\nLibrary", typeof(BrowseCommand), assembly, "Search, preview and import published OPAL materials", RibbonIcon.Apply);
+        AddButton(panel, "OpalExportMap", "Export\nMaterial IDs", typeof(ExportMaterialMapCommand), assembly, "Save material identities beside your USD export for Omniverse", RibbonIcon.Audit);
         AddButton(panel, "OpalApply", "Apply\nMaterial", typeof(ApplySelectedCommand), assembly, "Choose an OPAL material and apply it to the selected Revit material", RibbonIcon.Apply);
         AddButton(panel, "OpalSync", "Audit\nMaterials", typeof(SyncCommand), assembly, "Audit this document against the OPAL material library", RibbonIcon.Audit);
         AddButton(panel, "OpalSettings", "Settings", typeof(SettingsCommand), assembly, "Account, connection, material drive and update settings", RibbonIcon.Settings);

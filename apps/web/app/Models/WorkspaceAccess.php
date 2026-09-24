@@ -16,15 +16,18 @@ use Illuminate\Support\Carbon;
  * @property string $role
  * @property string $status
  * @property int|null $user_id
+ * @property Carbon|null $email_queued_at
+ * @property Carbon|null $email_sent_at
+ * @property string|null $email_error
  * @property Carbon|null $expires_at
  */
-#[Fillable(['tenant_id', 'email', 'role', 'status', 'user_id', 'changed_by', 'expires_at'])]
+#[Fillable(['tenant_id', 'email', 'role', 'status', 'user_id', 'changed_by', 'expires_at', 'email_queued_at', 'email_sent_at', 'email_error'])]
 class WorkspaceAccess extends Model
 {
     protected $table = 'workspace_access';
 
     protected function casts(): array
     {
-        return ['expires_at' => 'datetime'];
+        return ['expires_at' => 'datetime', 'email_queued_at' => 'datetime', 'email_sent_at' => 'datetime'];
     }
 }

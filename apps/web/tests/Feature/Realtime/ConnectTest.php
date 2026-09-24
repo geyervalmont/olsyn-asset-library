@@ -28,7 +28,7 @@ test('connect guides setup and shows only the signed-in persons devices', functi
     $mine = ClientSession::create(['user_id' => $this->editor->id, 'platform' => 'revit', 'machine' => 'MY-WORKSTATION', 'last_seen_at' => now(), 'drive_status' => 'missing']);
     $other = ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'revit', 'machine' => 'PRIVATE-WORKSTATION', 'last_seen_at' => now()]);
     $this->actingAs($this->editor)->get('/connect')->assertOk()->assertSee('Download for Windows')->assertSee('MY-WORKSTATION')
-        ->assertSee('Your material folder is unavailable')->assertDontSee('PRIVATE-WORKSTATION')->assertSee('not included in the Revit installer yet');
+        ->assertSee('Using HTTPS downloads')->assertDontSee('PRIVATE-WORKSTATION')->assertSee('not included in the Revit installer yet');
     expect(fn () => Livewire::actingAs($this->editor)->test('pages::connect')->call('endSession', $other->id))->toThrow(ModelNotFoundException::class);
     expect($other->fresh()->ended_at)->toBeNull();
     Livewire::actingAs($this->editor)->test('pages::connect')->call('endSession', $mine->id)->assertHasNoErrors();

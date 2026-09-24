@@ -122,13 +122,14 @@ class DriveNamespace
      *
      * @return list<array{path: string, object: array{bucket: string, key: string, size: int, version: string|null}, file_id: int, variant: string, target: string, quality: string, role: string, sha256: string, mime_type: string, source_package_sha256: string, converter: string, converter_version: string, current?: bool, latest_cache?: bool, material_uuid?: string, variant_uuid?: string, material_version?: int, derivative_uuid?: string}>
      */
-    private function stableEntries(Drive $drive, ?User $user = null): array
+    private function stableEntries(Drive $drive, ?User $user = null, ?Variant $variant = null, ?int $versionNumber = null): array
     {
         $entries = [];
         $materials = Material::query()
             ->when($user !== null, fn ($query) => $query->visibleTo($user), fn ($query) => $query->visibleToDrive($drive))
+            ->when($variant !== null, fn ($query) => $query->whereKey($variant->material_id))
             ->with([
-                'versions' => fn ($query) => $query->whereNotNull('published_at'),
+                'versions' => fn ($query) => $query->whereNotNull('published_at')->when($versionNumber !== null, fn ($query) => $query->where('number', $versionNumber)),
                 'versions.packages.variant', 'versions.packages.derivatives.target',
                 'versions.packages.derivatives.quality', 'versions.packages.derivatives.derivativeFiles.file',
                 'versions.packages.derivatives.derivativeFiles.role',
@@ -177,6 +178,19 @@ class DriveNamespace
     public function entriesForUser(User $user): array
     {
         return $this->stableEntries(new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user);
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function entriesForUserVariant(User $user, Variant $variant, ?int $version = null): array
+    {
+        $version ??= $variant->material->currentVersion?->number;
+        if ($version === null) {
+            return [];
+        }
+
+        return array_values(array_filter($this->stableEntries(
+            new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user, $variant, $version,
+        ), fn (array $entry): bool => ($entry['variant_uuid'] ?? null) === $variant->uuid && ($entry['latest_cache'] ?? false)));
     }
 
     public function toYaml(Drive $drive): string

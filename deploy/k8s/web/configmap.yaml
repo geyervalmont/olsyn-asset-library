@@ -67,7 +67,8 @@ data:
   QUEUE_CONNECTION: redis
   BROADCAST_CONNECTION: reverb
 
-  MAIL_MAILER: smtp
+  # Send through the node IAM role; no long-lived SMTP credentials.
+  MAIL_MAILER: ses
   MAIL_HOST: email-smtp.ap-southeast-2.amazonaws.com
   MAIL_PORT: "587"
   MAIL_SCHEME: tls

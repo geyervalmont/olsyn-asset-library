@@ -87,6 +87,7 @@ Check("release models deserialize OPAL manifest names", () =>
 });
 
 DriveTransportTests.Run(Check);
+MaterialAssetsTests.Run(Check);
 
 if (failures.Count > 0)
 {
@@ -94,7 +95,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("12 native client tests passed");
+Console.WriteLine("14 native client tests passed");
 return 0;
 
 void Check(string name, Action test)

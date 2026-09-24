@@ -43,6 +43,12 @@ new #[Title('Connect')] class extends Component
     }
 
     #[Computed]
+    public function versions(): array
+    {
+        try { return app(\App\Support\ExtensionReleases::class)->all(); } catch (\Throwable) { return []; }
+    }
+
+    #[Computed]
     public function release(): ?array
     {
         try {
@@ -55,7 +61,7 @@ new #[Title('Connect')] class extends Component
     #[Computed]
     public function sessions(): \Illuminate\Support\Collection
     {
-        return ClientSession::query()->where('user_id', Auth::id())->where('platform', 'revit')
+        return ClientSession::query()->where('user_id', Auth::id())->whereIn('platform', ['revit', 'omniverse'])
             ->whereNull('ended_at')->where('last_seen_at', '>=', now()->subDays(7))->latest('last_seen_at')->get();
     }
 
@@ -86,7 +92,7 @@ new #[Title('Connect')] class extends Component
     <div class="ui-connect__hero">
         <div>
             <x-ui.eyebrow>{{ __('Your workspace, connected') }}</x-ui.eyebrow>
-            <h1>{{ __('Take your materials into Revit.') }}</h1>
+            <h1>{{ __('Take your materials into Revit and Omniverse.') }}</h1>
             <p>{{ __('One installation. Sign in with your OPAL account. Manage your connections here.') }}</p>
         </div>
         <div class="ui-connect__account">
@@ -118,11 +124,30 @@ new #[Title('Connect')] class extends Component
         <li>
             <span class="ui-connect__number" aria-hidden="true">03</span>
             <h2>{{ __('Choose a material') }}</h2>
-            <p>{{ __('Open a Revit project, browse the library, then use Apply in Revit. Your connection appears below.') }}</p>
+            <p>{{ __('In a Revit project, open OPAL → Browse Library to preview and import a material. Your connection appears below.') }}</p>
             <x-ui.button href="{{ route('materials.index') }}" variant="secondary" wire:navigate>{{ __('Browse materials') }} <span aria-hidden="true">→</span></x-ui.button>
-            <small>{{ __('Published materials also need an available material drive.') }}</small>
+            <small>{{ __('Textures use your material drive or download automatically over HTTPS.') }}</small>
         </li>
     </ol>
+
+    <x-ui.panel class="ui-connect__versions">
+        <h2>{{ __('Extension versions') }}</h2>
+        <p>{{ __('Install Revit with the Windows installer. For Omniverse, extract the ZIP and add its exts folder in Kit → Window → Extensions → Settings → Extension Search Paths, then enable OPAL Materials.') }}</p>
+        <p>{{ __('In either extension, choose Connect account and approve it in your browser. Use Browse Library to search and apply materials.') }}</p>
+        @forelse ($this->versions as $version)
+            <div class="ui-team__row" wire:key="release-{{ $version['tag'] }}">
+                <div class="ui-team__person"><strong>{{ ucfirst($version['client']) }} {{ $version['version'] }}</strong><small>{{ \Illuminate\Support\Carbon::parse($version['published_at'])->format('j M Y') }}</small></div>
+                @foreach ($version['downloads'] as $download)
+                    @if (str_ends_with($download['name'], '.exe') || ($version['client'] === 'omniverse' && str_ends_with($download['name'], '.zip')))
+                        <x-ui.button variant="secondary" size="sm" href="{{ $download['url'] }}">{{ __('Download') }}</x-ui.button>
+                    @endif
+                @endforeach
+                <a href="{{ $version['url'] }}" target="_blank" rel="noopener">{{ __('Release details & checksums') }}</a>
+            </div>
+        @empty
+            <p>{{ __('Tagged extension versions will appear here automatically after their builds finish.') }}</p>
+        @endforelse
+    </x-ui.panel>
 
     <div class="ui-connect__devices" wire:poll.15s>
         <div class="ui-section-head">
@@ -131,20 +156,20 @@ new #[Title('Connect')] class extends Component
         </div>
         @forelse ($this->sessions as $session)
             <article class="ui-connect__device" wire:key="revit-{{ $session->id }}" data-test="connect-session">
-                <div class="ui-connect__device-icon" aria-hidden="true">R</div>
+                <div class="ui-connect__device-icon" aria-hidden="true">{{ $session->platform === 'omniverse' ? 'O' : 'R' }}</div>
                 <div class="ui-connect__device-copy">
                     <strong>{{ $session->machine }}</strong>
-                    <span>{{ $session->app_version ?: __('Revit') }} · {{ $session->document ?: __('Open a project to apply a material') }}</span>
+                    <span>{{ $session->app_version ?: ucfirst($session->platform) }} · {{ $session->document ?: __('Open a project to apply a material') }}</span>
                     @if ($session->isLive())
                         @if ($session->drive_status === 'available')
                             <small>{{ __('Material folder available: :path', ['path' => $session->mount_path]) }}</small>
                         @elseif ($session->drive_status === 'missing')
-                            <small class="ui-connect__warning">{{ __('Your material folder is unavailable. Check its connection in OPAL Settings in Revit.') }}</small>
+                            <small class="ui-connect__warning">{{ __('Using HTTPS downloads. Connect a material drive in the extension to use shared paths.') }}</small>
                         @else
                             <small>{{ __('Material folder status has not been reported by this connector.') }}</small>
                         @endif
                     @else
-                        <small>{{ __('Last seen :when. Open Revit to reconnect.', ['when' => $session->last_seen_at->diffForHumans()]) }}</small>
+                        <small>{{ __('Last seen :when. Open the extension to reconnect.', ['when' => $session->last_seen_at->diffForHumans()]) }}</small>
                     @endif
                 </div>
                 <x-ui.badge :tone="$session->isLive() ? 'success' : 'neutral'" dot>{{ $session->isLive() ? __('Connected') : __('Offline') }}</x-ui.badge>
@@ -153,7 +178,7 @@ new #[Title('Connect')] class extends Component
         @empty
             <div class="ui-connect__empty" data-test="connect-waiting">
                 <span class="ui-connect__device-icon" aria-hidden="true">↔</span>
-                <div><strong>{{ __('Waiting for your first connection') }}</strong><p>{{ __('After connecting your account in Revit, this page will show your computer and open project. You can browse the library while you set up.') }}</p></div>
+                <div><strong>{{ __('Waiting for your first connection') }}</strong><p>{{ __('After connecting your extension, this page will show your computer and open project. You can browse the library while you set up.') }}</p></div>
             </div>
         @endforelse
         @foreach ($this->drives as $connection)

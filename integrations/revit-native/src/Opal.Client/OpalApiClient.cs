@@ -73,6 +73,23 @@ public sealed class OpalApiClient : IDisposable
     public Task<JsonElement> SearchAsync(string query, CancellationToken cancellationToken = default) =>
         SendElementAsync(HttpMethod.Get, $"api/v1/materials?q={Uri.EscapeDataString(query)}&per_page=50", null, dataEnvelope: true, cancellationToken);
 
+    public Task<JsonElement> BrowseAsync(string query, int page = 1, string category = "", CancellationToken cancellationToken = default) =>
+        SendElementAsync(HttpMethod.Get, $"api/v1/library?q={Uri.EscapeDataString(query)}&page={page}&category={Uri.EscapeDataString(category)}&per_page=24", null, dataEnvelope: false, cancellationToken);
+
+    public Task<JsonElement> FacetsAsync(CancellationToken cancellationToken = default) =>
+        SendElementAsync(HttpMethod.Get, "api/v1/library/facets", null, dataEnvelope: true, cancellationToken);
+
+    public Task<JsonElement> ResolveMaterialAsync(string uuid, int? version = null, CancellationToken cancellationToken = default) =>
+        SendElementAsync(HttpMethod.Get, $"api/v1/library/variants/{Uri.EscapeDataString(uuid)}/resolve?target=revit" + (version.HasValue ? $"&version={version.Value}" : ""), null, dataEnvelope: true, cancellationToken);
+
+    public Task<Stream> DownloadMaterialAsync(string url, CancellationToken cancellationToken = default)
+    {
+        var address = new Uri(baseAddress, url);
+        if (address.Scheme != baseAddress.Scheme || address.Host != baseAddress.Host || address.Port != baseAddress.Port || !address.AbsolutePath.StartsWith("/api/v1/", StringComparison.Ordinal))
+            throw new InvalidDataException("Material URLs must belong to the connected OPAL server.");
+        return DownloadAsync(address.AbsoluteUri, cancellationToken);
+    }
+
     public Task<JsonElement> VariantAsync(string code, CancellationToken cancellationToken = default) =>
         SendElementAsync(HttpMethod.Get, $"api/v1/variants/{Uri.EscapeDataString(code)}", null, dataEnvelope: true, cancellationToken);
 

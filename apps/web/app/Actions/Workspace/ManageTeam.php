@@ -5,6 +5,7 @@ namespace App\Actions\Workspace;
 use App\Actions\Tenants\AddTenantMember;
 use App\Actions\Tenants\RemoveTenantMember;
 use App\Enums\Role;
+use App\Jobs\Workspace\SendInvitation;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\WorkspaceAccess;
@@ -32,10 +33,17 @@ final class ManageTeam
             if ($existing !== null && $existing->isMemberOf($tenant)) {
                 throw ValidationException::withMessages(['email' => 'This person is already on the team. Change their role below.']);
             }
-            WorkspaceAccess::updateOrCreate(['tenant_id' => $tenant->id, 'email' => $email], [
+            $prior = WorkspaceAccess::where('tenant_id', $tenant->id)->where('email', $email)->first();
+            if ($prior?->email_queued_at?->gt(now()->subMinute())) {
+                throw ValidationException::withMessages(['email' => 'Please wait a minute before sending another invitation.']);
+            }
+            $queued = now()->startOfSecond();
+            $entry = WorkspaceAccess::updateOrCreate(['tenant_id' => $tenant->id, 'email' => $email], [
                 'role' => $role->value, 'status' => 'pending', 'user_id' => null,
                 'changed_by' => $actor->id, 'expires_at' => now()->addDays(7),
+                'email_queued_at' => $queued, 'email_sent_at' => null, 'email_error' => null,
             ]);
+            SendInvitation::dispatch($entry->id, $queued->toDateTimeString())->afterCommit();
         });
     }
 

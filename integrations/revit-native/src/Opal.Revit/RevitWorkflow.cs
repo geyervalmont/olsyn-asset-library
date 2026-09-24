@@ -36,23 +36,23 @@ public static class RevitWorkflow
         var host = new RevitMaterialHost(application);
         using var api = new OpalApiClient(settings);
         var variant = api.VariantAsync(variantCode).GetAwaiter().GetResult();
-        var paths = api.VariantPathsAsync(variantCode, settings.DriveSlug).GetAwaiter().GetResult();
-        if (!paths.GetProperty("published").GetBoolean())
-        {
-            throw new InvalidOperationException($"{variantCode} has not been published to the OPAL drive yet.");
-        }
-        if (!System.IO.Directory.Exists(settings.MountPath))
-        {
-            throw new System.IO.DirectoryNotFoundException($"The OPAL drive is not mounted at {settings.MountPath}.");
-        }
-
-        var representation = ChooseRepresentation(paths.GetProperty("files"), requestedQuality)
-            ?? throw new InvalidOperationException($"{variantCode} has no Revit or PBR representation on {settings.DriveSlug}.");
-        var textures = BuildTextures(settings.MountPath, representation.Entries);
-        if (textures.Count == 0)
-        {
-            throw new InvalidOperationException($"{variantCode} has no texture maps Revit can use.");
-        }
+        var uuid = variant.GetProperty("uuid").GetString()!;
+        var resolved = api.ResolveMaterialAsync(uuid).GetAwaiter().GetResult();
+        var byRole = MaterialAssets.PrepareAsync(api, resolved, settings.MountPath,
+            System.IO.Path.Combine(ClientPaths.SharedRoot, "materials-cache")).GetAwaiter().GetResult();
+        var textures = new Dictionary<string, string>();
+        AddFirst(textures, "base_color", byRole, "base_color");
+        AddFirst(textures, "bump", byRole, "bump", "height");
+        AddFirst(textures, "glossiness", byRole, "glossiness");
+        if (textures.Count == 0) throw new InvalidOperationException("This material has no compatible Revit textures.");
+        var target = resolved.GetProperty("target").GetString()!;
+        var quality = resolved.GetProperty("quality").GetString()!;
+        var identity = JsonSerializer.SerializeToElement(new {
+            material_uuid = resolved.GetProperty("material_uuid").GetString(),
+            variant_uuid = uuid, material_version = resolved.GetProperty("material_version").GetInt32(),
+            source_package_sha256 = resolved.GetProperty("source_package_sha256").GetString(),
+            code = variantCode,
+        });
 
         var scale = variant.TryGetProperty("tile_width_mm", out var width) && width.ValueKind == JsonValueKind.Number
             ? width.GetDouble()
@@ -64,10 +64,11 @@ public static class RevitWorkflow
             ["Description"] = $"{variantName} [{variantCode}]",
             ["Model"] = variantCode,
             ["Manufacturer"] = materialCode,
-            ["Keywords"] = $"opal, {variantCode}",
+            ["Keywords"] = $"opal, {variantCode}, opal:variant_uuid={uuid}",
         };
 
-        host.Apply(material, textures, scale, parameters);
+        var scaleHeight = variant.TryGetProperty("tile_height_mm", out var height) && height.ValueKind == JsonValueKind.Number ? height.GetDouble() : scale;
+        host.Apply(material, textures, scale, parameters, identity, scaleHeight);
         api.RegisterIdentityAsync(variantCode, new
         {
             platform = "revit",
@@ -77,13 +78,14 @@ public static class RevitWorkflow
             {
                 document = host.Document.Title,
                 drive = settings.DriveSlug,
-                target = representation.Target,
-                quality = representation.Quality,
+                target,
+                quality,
+                identity,
                 textures,
             },
         }).GetAwaiter().GetResult();
 
-        return new ApplyResult(variantCode, material.Name, representation.Target, representation.Quality, textures.Count);
+        return new ApplyResult(variantCode, material.Name, target, quality, textures.Count);
     }
 
     public static SyncReport Sync(UIApplication application, AppSettings settings)
@@ -428,7 +430,7 @@ public sealed class RevitMaterialHost
             : null;
     }
 
-    public void Apply(RevitMaterial material, IReadOnlyDictionary<string, string> textures, double? scaleMm, IReadOnlyDictionary<string, string> parameters)
+    public void Apply(RevitMaterial material, IReadOnlyDictionary<string, string> textures, double? scaleMm, IReadOnlyDictionary<string, string> parameters, JsonElement? identity = null, double? scaleHeightMm = null)
     {
         var element = Document.GetElement(material.UniqueId) as Material
             ?? throw new InvalidOperationException($"Revit material {material.Name} no longer exists.");
@@ -476,7 +478,7 @@ public sealed class RevitMaterialHost
                     if (scaleMm is not null)
                     {
                         SetScale(bitmap, BitmapScaleX, scaleMm.Value);
-                        SetScale(bitmap, BitmapScaleY, scaleMm.Value);
+                        SetScale(bitmap, BitmapScaleY, scaleHeightMm ?? scaleMm.Value);
                     }
                     SetBoolean(bitmap, BitmapRepeatU, true);
                     SetBoolean(bitmap, BitmapRepeatV, true);
@@ -505,6 +507,7 @@ public sealed class RevitMaterialHost
         using (var transaction = new Transaction(Document, $"OPAL identity on {material.Name}"))
         {
             transaction.Start();
+            if (identity.HasValue) MaterialIdentity.Write(element, identity.Value);
             foreach (var parameterValue in parameters)
             {
                 var parameter = Parameter(element, parameterValue.Key);
@@ -520,6 +523,8 @@ public sealed class RevitMaterialHost
     private RevitMaterial Wrap(Material material)
     {
         var references = new List<string> { material.UniqueId };
+        var identity = MaterialIdentity.Read(material);
+        if (identity.HasValue) references.Insert(0, identity.Value.GetProperty("variant_uuid").GetString()!);
         foreach (var name in ParameterIds.Keys)
         {
             var value = Parameter(material, name)?.AsString();

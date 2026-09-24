@@ -21,12 +21,10 @@ remain available in an expandable section. The single-workspace change does not
 link unrelated external identities to existing accounts by matching email;
 OIDC's existing identity-linking safeguard is unchanged.
 
-**Invitations do not send email or grant access in the Olsyn identity service.**
-The administrator copies the common sign-in link into their usual communication
-channel. The UI states that no email was sent. A prepared invitation applies only
-to a matching verified email and expires after seven days; it is consumed when
-that person next accesses OPAL. No account is created by preparing an invitation.
-With central access enabled, a local invitation cannot bypass central denial.
+Invitations queue an onboarding email and show queued/sent/failed status on Team.
+They do not grant access in the Olsyn identity service. A pending invitation applies
+only to its verified email, expires after seven days, and is consumed on sign-in.
+The shared sign-in link also remains available for manual sharing.
 
 ## Membership and roles
 
@@ -80,3 +78,7 @@ and removal taking effect in an already-open browser session. Automated tests
 cover central approval/denial, verified email matching, expiry, cancellation,
 re-enrollment blocks, role boundaries, last-admin protection, workspace isolation,
 and shared-workspace onboarding for the personal-drive API.
+
+## Email delivery
+
+Invitations now queue an onboarding email and show delivery state in Team. Administrators can resend after one minute. See [consumer extension setup](consumer-extension-poc.md) for the current email, release and client workflow.

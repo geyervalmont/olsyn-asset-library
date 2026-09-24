@@ -56,7 +56,7 @@ class MaterialsController
         }
 
         $materials = $query
-            ->with(['category', 'supplier', 'currentVersion', 'variants.attributes.type'])
+            ->with(['category', 'supplier', 'currentVersion', 'variants.material', 'variants.attributes.type'])
             ->paginate((int) ($validated['per_page'] ?? 25));
 
         return MaterialResource::collection($materials);
@@ -73,7 +73,7 @@ class MaterialsController
 
         abort_if($material === null || ! $material->isVisibleTo($request->user()), 404);
 
-        $material->load(['category', 'supplier', 'currentVersion', 'variants.attributes.type', 'variants.representations.target', 'variants.representations.quality', 'variants.representations.representationFiles.role', 'variants.representations.representationFiles.file']);
+        $material->load(['category', 'supplier', 'currentVersion', 'variants.material', 'variants.attributes.type', 'variants.representations.target', 'variants.representations.quality', 'variants.representations.representationFiles.role', 'variants.representations.representationFiles.file']);
 
         return new MaterialResource($material);
     }

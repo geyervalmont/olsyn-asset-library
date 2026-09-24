@@ -59,7 +59,7 @@ new #[Title('Team')] class extends Component
         $this->email = strtolower(trim($this->email));
         $this->validate(['email' => ['required', 'email', 'max:255'], 'role' => ['required', Rule::enum(Role::class)]]);
         $team->invite(Auth::user(), $this->workspace(), $this->email, Role::from($this->role));
-        $this->notice = __('Access prepared for :email. Share the sign-in link below; no email has been sent.', ['email' => $this->email]);
+        $this->notice = __('Invitation queued for :email. Delivery status appears below.', ['email' => $this->email]);
         $this->email = '';
         unset($this->invitations);
     }
@@ -91,6 +91,14 @@ new #[Title('Team')] class extends Component
         unset($this->members);
     }
 
+    public function resendInvitation(int $id, ManageTeam $team): void
+    {
+        $entry = WorkspaceAccess::where('tenant_id', $this->workspace()->id)->where('status', 'pending')->findOrFail($id);
+        $team->invite(Auth::user(), $this->workspace(), $entry->email, Role::from($entry->role));
+        $this->notice = __('Invitation queued again.');
+        unset($this->invitations);
+    }
+
     public function cancelInvitation(int $id, ManageTeam $team): void
     {
         $team->cancel(Auth::user(), $this->workspace(), $id);
@@ -99,7 +107,7 @@ new #[Title('Team')] class extends Component
     }
 }; ?>
 
-<section class="ui-team" data-test="team-page">
+<section wire:poll.15s class="ui-team" data-test="team-page">
     <div class="ui-page-head"><div><x-ui.eyebrow>{{ __('People & access') }}</x-ui.eyebrow><h1>{{ __('Your team') }}</h1>
         <p class="ui-page-head__lede">{{ __('One shared library. Add a teammate, share the sign-in link, and they’re ready to get started.') }}</p></div></div>
 
@@ -114,7 +122,7 @@ new #[Title('Team')] class extends Component
             <form wire:submit="invite" class="ui-team__invite">
                 <div><label for="team-email">{{ __('Email address') }}</label><input class="ui-input" id="team-email" type="email" wire:model="email" required maxlength="255" placeholder="name@company.com" autocomplete="off">@error('email')<p class="ui-team__error" role="alert">{{ $message }}</p>@enderror</div>
                 <div><label for="team-role">{{ __('Role') }}</label><select class="ui-select" id="team-role" wire:model="role"><option value="viewer">{{ __('Viewer') }}</option><option value="editor">{{ __('Designer') }}</option><option value="admin">{{ __('Administrator') }}</option></select></div>
-                <x-ui.button type="submit" wire:loading.attr="disabled" wire:target="invite">{{ __('Prepare invitation') }}</x-ui.button>
+                <x-ui.button type="submit" wire:loading.attr="disabled" wire:target="invite">{{ __('Send invitation') }}</x-ui.button>
             </form>
             <p class="ui-team__hint">{{ __('Viewer: browse and use materials. Designer: also create and review. Administrator: manage people and publish.') }}</p>
             @if (config('olsyn_access.enabled'))<p class="ui-team__hint">{{ __('The person also needs OPAL access in Olsyn. Their Olsyn permissions may limit what this role allows.') }}</p>@endif
@@ -141,7 +149,9 @@ new #[Title('Team')] class extends Component
                 <article class="ui-team__row" wire:key="invitation-{{ $invitation->id }}">
                     <div class="ui-team__person"><strong>{{ $invitation->email }}</strong><small>{{ match($invitation->role) { 'editor' => __('Designer'), 'admin' => __('Administrator'), default => __('Viewer') } }} · {{ $invitation->expires_at->isPast() ? __('Expired — prepare a new invitation') : __('Expires :when', ['when' => $invitation->expires_at->diffForHumans()]) }}</small></div>
                     <x-ui.badge :tone="$invitation->expires_at->isPast() ? 'neutral' : 'warning'">{{ $invitation->expires_at->isPast() ? __('Expired') : __('Pending') }}</x-ui.badge>
-                    <x-ui.button variant="quiet" size="sm" wire:click="cancelInvitation({{ $invitation->id }})" wire:confirm="{{ __('Cancel this invitation?') }}">{{ __('Cancel') }}</x-ui.button>
+                    <span class="ui-team__hint">{{ $invitation->email_error ? __('Delivery failed') : ($invitation->email_sent_at ? __('Sent') : __('Queued')) }}</span>
+                <x-ui.button variant="quiet" size="sm" wire:click="resendInvitation({{ $invitation->id }})">{{ __('Resend') }}</x-ui.button>
+                <x-ui.button variant="quiet" size="sm" wire:click="cancelInvitation({{ $invitation->id }})" wire:confirm="{{ __('Cancel this invitation?') }}">{{ __('Cancel') }}</x-ui.button>
                 </article>
             @endforeach
         </div>

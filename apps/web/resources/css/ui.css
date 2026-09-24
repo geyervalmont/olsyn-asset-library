@@ -5662,3 +5662,7 @@ h1.ui-reveal.is-revealed em::after {
 @media (max-width: 600px) { .ui-team__invite { grid-template-columns: 1fr; } .ui-team__row { flex-wrap: wrap; gap: 12px; padding: 16px; } .ui-team__person { flex-basis: calc(100% - 60px); } }
 .ui-shared-library { color: rgb(255 255 255 / 85%); }
 .ui-team > .ui-section-head h2 { font-size: 28px; }
+
+.ui-connect__versions { margin-bottom: 32px; }
+.ui-connect__versions > h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+.ui-connect__versions > p { margin-bottom: 12px; color: var(--ui-text-muted); line-height: 1.6; }

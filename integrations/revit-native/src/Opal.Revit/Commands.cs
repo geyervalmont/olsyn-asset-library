@@ -94,3 +94,48 @@ public sealed class SyncCommand : IExternalCommand
         }
     }
 }
+
+[Transaction(TransactionMode.Manual)]
+public sealed class BrowseCommand : IExternalCommand
+{
+    public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+    {
+        try
+        {
+            if (!Runtime.Current.Settings.IsLinked) new SettingsWindow(Runtime.Current).ShowDialog();
+            if (!Runtime.Current.Settings.IsLinked) return Result.Cancelled;
+            var picker = new MaterialPickerWindow(Runtime.Current.Settings, "Browse the OPAL library");
+            if (picker.ShowDialog() != true || picker.VariantCode == null) return Result.Cancelled;
+            var document = commandData.Application.ActiveUIDocument?.Document;
+            if (document == null) { TaskDialog.Show("OPAL", "Open a Revit project to import this material."); return Result.Cancelled; }
+            using var group = new TransactionGroup(document, "Import OPAL material"); group.Start();
+            Material material;
+            using (var transaction = new Autodesk.Revit.DB.Transaction(document, "Create OPAL material"))
+            {
+                transaction.Start();
+                material = new FilteredElementCollector(document).OfClass(typeof(Material)).Cast<Material>().FirstOrDefault(item => item.Name == picker.VariantCode)
+                    ?? (Material)document.GetElement(Material.Create(document, picker.VariantCode));
+                transaction.Commit();
+            }
+            RevitWorkflow.Apply(commandData.Application, Runtime.Current.Settings, new RevitMaterial(material.UniqueId, material.Name, new[] { material.Name }), picker.VariantCode, "preview");
+            group.Assimilate();
+            TaskDialog.Show("OPAL", "Material imported. Assign it from Revit’s Materials browser.");
+            return Result.Succeeded;
+        }
+        catch (Exception ex) { message = ex.Message; TaskDialog.Show("OPAL", ex.Message); return Result.Failed; }
+    }
+}
+
+[Transaction(TransactionMode.ReadOnly)]
+public sealed class ExportMaterialMapCommand : IExternalCommand
+{
+    public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+    {
+        var document = commandData.Application.ActiveUIDocument?.Document;
+        if (document == null) return Result.Cancelled;
+        var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "OPAL material map|*.opal-materials.json", FileName = document.Title + ".opal-materials.json" };
+        if (dialog.ShowDialog() != true) return Result.Cancelled;
+        try { MaterialIdentity.Export(document, dialog.FileName); return Result.Succeeded; }
+        catch (Exception ex) { message = ex.Message; return Result.Failed; }
+    }
+}

@@ -14,6 +14,7 @@ Route::prefix('synthesis-runs/{run:uuid}')->middleware('throttle:120,1')->group(
 use App\Http\Controllers\Api\BenderMaterialsController;
 use App\Http\Controllers\Api\ClientReleasesController;
 use App\Http\Controllers\Api\CommandsController;
+use App\Http\Controllers\Api\ConsumerLibraryController;
 use App\Http\Controllers\Api\Drive\DriveHeartbeatController;
 use App\Http\Controllers\Api\Drive\IntakeController;
 use App\Http\Controllers\Api\Drive\PersonalDriveController;
@@ -29,8 +30,10 @@ use App\Http\Middleware\AuthorizePersonalDrive;
 use App\Http\Middleware\EnsureOlsynAccess;
 use App\Http\Middleware\RestrictBenderToken;
 use App\Http\Middleware\UseCurrentTenant;
+use App\Support\ExtensionReleases;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /*
 |--------------------------------------------------------------------------
@@ -43,6 +46,7 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('v1')->group(function () {
+    Route::get('client-releases', fn (ExtensionReleases $releases) => response()->json(['data' => $releases->all()]))->middleware('throttle:120,1');
     Route::post('link', [LinkController::class, 'store'])->middleware('throttle:device-link-start')->name('api.link.store');
     Route::get('link/{code}', [LinkController::class, 'show'])->middleware('throttle:device-link-poll')->name('api.link.show');
     Route::get('client-releases/revit', [ClientReleasesController::class, 'show'])
@@ -86,6 +90,22 @@ Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class, Restr
         Route::put('intake/{session}/files/{file}', [$intake, 'upload'])->whereUuid('session')->whereUuid('file')->name('api.drive.intake.upload');
         Route::post('intake/{session}/submit', [$intake, 'submit'])->whereUuid('session')->name('api.drive.intake.submit');
         Route::delete('intake/{session}', [$intake, 'destroy'])->whereUuid('session')->name('api.drive.intake.destroy');
+    });
+    Route::prefix('library')->middleware([UseCurrentTenant::class, 'can:materials.view', 'throttle:300,1'])->group(function () {
+        $controller = ConsumerLibraryController::class;
+        Route::get('/', [$controller, 'index']);
+        Route::get('facets', [$controller, 'facets']);
+        Route::get('packages/{package}', [$controller, 'package'])->whereNumber('package')->name('api.library.package');
+        Route::get('variants/{uuid}/resolve', [$controller, 'resolve'])->whereUuid('uuid');
+        Route::get('variants/{uuid}/preview', [$controller, 'preview'])->whereUuid('uuid')->name('api.library.preview');
+    });
+    Route::delete('account/token', function (Request $request) {
+        $token = PersonalAccessToken::findToken($request->bearerToken() ?? '');
+        abort_unless($token !== null && $token->tokenable_id === $request->user()->id
+            && $token->tokenable_type === $request->user()->getMorphClass(), 403);
+        $token->delete();
+
+        return response()->noContent();
     });
     Route::get('me', fn (Request $request) => [
         'name' => $request->user()->name,
