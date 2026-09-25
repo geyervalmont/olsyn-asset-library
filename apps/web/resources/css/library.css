@@ -137,3 +137,4 @@
 .ui-material-preview-status details { margin-top: 4px; color: #71501d; }
 .ui-material-preview-status summary { cursor: pointer; }
 .ui-material-preview-status p { max-width: 48ch; margin: 6px 0; }
+.ui-modal__preview .ui-material-preview-status { top: 60px; }

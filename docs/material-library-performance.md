@@ -25,6 +25,12 @@ renderer/lighting initialization. Colourway hover remains a lightweight swatch
 preview; selecting a colourway changes the 3D material. Connected-app polling
 updates only the dialog and preserves the renderer and grid.
 
+Large source maps (up to 64 megapixels, within the existing 20 MiB input limit)
+use ImageMagick's bounded memory/disk cache for resizing; small images retain
+the GD path. This lets an 8192×4096 normal map supply a small browser preview
+without downloading the original or failing the old 16-megapixel limit.
+Temporary image resource limits are restored after conversion.
+
 Close and Escape dismiss immediately, restore focus and cancel an active graph
 download. A request number prevents late replies from reopening a closed dialog
 or replacing a newer selection. Deep links (`?material=CODE`), modified clicks
