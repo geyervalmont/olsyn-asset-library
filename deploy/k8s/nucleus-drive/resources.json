@@ -165,6 +165,13 @@
                   "claimName": "nucleus-drive-state"
                 }
               }
+            ],
+            "tolerations": [
+              {
+                "key": "nvidia.com/gpu",
+                "operator": "Exists",
+                "effect": "NoSchedule"
+              }
             ]
           }
         }

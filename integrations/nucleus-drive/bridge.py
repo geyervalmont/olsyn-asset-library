@@ -29,6 +29,10 @@ class Conflict(Exception):
     pass
 
 
+class IntakeProblem(ValueError):
+    pass
+
+
 def portable(path: str, limit: int = 512) -> str:
     if not path or len(path) > limit or path.startswith('/') or '\\' in path:
         raise ValueError('Invalid intake path')
@@ -93,6 +97,8 @@ class Api:
                 raise AccessLost() from None
             if exc.code == 409:
                 raise Conflict() from None
+            if exc.code == 422:
+                raise IntakeProblem('OPAL intake limits or path validation failed') from None
             # Never log response bodies, tokens, usernames or filenames.
             raise RuntimeError('OPAL HTTP ' + str(exc.code)) from None
 
@@ -236,15 +242,18 @@ class Bridge:
         self.native.mkdir(folder)
         self.native.acl(folder, self.username, 3)
         self.native.acl(self.username, self.username, 1)
-        snapshot = self.native.list(folder, recursive=True)
+        try:
+            snapshot = self.native.list(folder, recursive=True)
+        except ValueError as exc:
+            raise IntakeProblem('Unsupported native inbox entry') from exc
         files = {name: item for name, item in snapshot.items() if not item['directory']}
         if len(files) > BATCH_LIMIT:
-            raise ValueError('Nucleus inbox exceeds file limit')
+            raise IntakeProblem('Nucleus inbox exceeds file limit')
         confirmed = {portable(item['path']).casefold(): item for item in inbox['files'] if item['uploaded']}
         for name, item in files.items():
             portable(name)
             if item['bytes'] < 1 or item['bytes'] > FILE_LIMIT:
-                raise ValueError('Nucleus file exceeds intake limits')
+                raise IntakeProblem('Nucleus file exceeds intake limits')
         # Existing confirmed native versions are verified once and persisted.
         receipt_file = self.state / (batch + '.json')
         receipts = json.loads(receipt_file.read_text()) if receipt_file.exists() else {}
@@ -311,6 +320,15 @@ def main():
     administrator = os.environ['OLSYN_OMNI_USER']
     auth = oc.register_authentication_callback(lambda url: (administrator, os.environ['OLSYN_OMNI_PASS']))
     native = Native(oc, config['host'], administrator)
+    result, usernames = oc.get_users('omniverse://' + config['host'])
+    native.checked(result)
+    result, groups = oc.get_groups('omniverse://' + config['host'])
+    native.checked(result)
+    seen = set()
+    for link in config['links']:
+        if link['username'] not in usernames or link['username'] in groups or link['username'] in seen:
+            raise ValueError('Enrollment must name a distinct existing Nucleus user')
+        seen.add(link['username'])
     bridges = [Bridge(Api(config['origin'], link['token']), native, link, state / link['device_id']) for link in config['links']]
     # Own only /OPAL/upload. Remove stale enrollment grants as well as active
     # grants on startup; parent ACLs cannot override explicit batch ACLs.
@@ -336,7 +354,12 @@ def main():
                     result = bridge.cycle()
                     authorized.append(bridge.username)
                 except Exception as exc:
-                    bridge.lockdown()
+                    if isinstance(exc, IntakeProblem):
+                        # Keep this authorized user's folder writable so invalid
+                        # pending files can be renamed or removed locally.
+                        authorized.append(bridge.username)
+                    else:
+                        bridge.lockdown()
                     result = {'state': 'sign_in' if isinstance(exc, AccessLost) else 'error', 'error_type': type(exc).__name__}
                     try:
                         bridge.api.heartbeat(bridge.link['device_id'], 'error', native.url(bridge.username), 'sign_in' if isinstance(exc, AccessLost) else 'unknown')
