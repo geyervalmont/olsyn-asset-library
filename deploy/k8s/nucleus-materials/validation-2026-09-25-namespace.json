@@ -190,7 +190,12 @@
     "authenticated_bridge_canary": "passed",
     "bridge_restarts": 0,
     "observed_bridge_memory_mib": 735,
-    "read_or_refresh_error_counters_observed": false
+    "refresh_errors_total": 1,
+    "refresh_successes_total": 114,
+    "last_refresh_error_utc": "2026-09-25T03:36:45.450150Z",
+    "last_success_epoch": 1790307648.5545962,
+    "read_error_counters_observed": false,
+    "refresh_note": "One refresh request failed while the final web rollout was in progress; the client logged no more specific cause. Subsequent polls recovered, the counter remained at one, and the current namespace and canary reads were healthy."
   },
   "canonical_source_objects_mutated": false,
   "production_drive_token_rotated": false
