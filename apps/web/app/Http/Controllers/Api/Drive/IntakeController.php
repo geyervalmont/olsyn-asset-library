@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Drive;
 
 use App\Actions\Drives\ManageIntake;
+use App\Library\Drives\DriveLayout;
 use App\Library\Drives\HttpFileResponse;
 use App\Models\DriveIntakeFile;
 use App\Models\DriveIntakeSession;
@@ -102,7 +103,7 @@ final class IntakeController
     {
         return ['id' => $session->uuid, 'name' => $session->name,
             'status' => $session->status === 'open' && ! $session->acceptsUploads() ? 'expired' : $session->status,
-            'path' => $session->drivePath(), 'writable' => $session->acceptsUploads() && request()->user()->tokenCan('drive:write'),
+            'path' => DriveLayout::intakePath($session, DriveLayout::revision(request())), 'writable' => $session->acceptsUploads() && request()->user()->tokenCan('drive:write'),
             'expires_at' => $session->expires_at?->toIso8601String(), 'processing_enabled' => false,
             'files' => $session->files->map(fn ($file) => $this->filePayload($session, $file))];
     }

@@ -4,10 +4,10 @@ using System.Text.Json;
 
 namespace Opal.Drive;
 
-public sealed record StagedFile(Guid Session, string RelativePath, string State = "pending", string? Error = null, string? UploadRoot = null)
+public sealed record StagedFile(Guid Session, string RelativePath, string State = "pending", string? Error = null, string? UploadRoot = null, string? StorageKey = null)
 {
     public string Path => (UploadRoot ?? "\\Incoming\\" + Session) + "\\" + RelativePath.Replace('/', '\\');
-    public string Key => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes((UploadRoot is null ? Path : Session + ":" + Path).ToLowerInvariant())));
+    public string Key => StorageKey ?? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes((UploadRoot is null ? Path : Session + ":" + Path).ToLowerInvariant())));
 }
 
 /// <summary>Durable local upload queue. Explorer completion means staged locally; only server acknowledgement marks Uploaded.</summary>
@@ -39,7 +39,9 @@ public sealed class IntakeStaging
         foreach (var path in Directory.EnumerateFiles(root, "*.json"))
         {
             var entry = JsonSerializer.Deserialize<StagedFile>(System.IO.File.ReadAllText(path));
-            if (entry is null || !System.IO.File.Exists(Data(entry))) continue;
+            if (entry is null) continue;
+            if (!System.Text.RegularExpressions.Regex.IsMatch(entry.Key, "^[a-f0-9]{64}$")) throw new InvalidDataException("Invalid upload storage key.");
+            if (!System.IO.File.Exists(Data(entry))) continue;
             DrivePath.Normalize(entry.Path);
             if (entry.State == "uploading") entry = entry with { State = "pending" };
             files.Add(entry.Key, entry);
@@ -51,6 +53,26 @@ public sealed class IntakeStaging
         get { lock (gate) return (files.Values.Count(f => f.State is "pending" or "uploading"), files.Values.Count(f => f.State == "uploaded"), files.Values.Count(f => f.State == "failed")); }
     }
     private string Data(StagedFile file) => System.IO.Path.Combine(root, file.Key + ".data");
+    // A layout upgrade changes presentation, never the batch identity or the
+    // durable payload key. Interrupted uploads can resume without copying bytes.
+    private void ReconcilePaths()
+    {
+        var incoming = session.Tree.Incoming;
+        lock (gate)
+        {
+            foreach (var file in files.Values.ToArray())
+            {
+                if (file.UploadRoot is null || writers.Contains(file.Key)) continue;
+                var folder = incoming.SingleOrDefault(i => i.Id == file.Session);
+                if (folder is null) continue;
+                var path = DrivePath.Normalize(folder.Path);
+                if (path.Equals(file.UploadRoot, StringComparison.OrdinalIgnoreCase)) continue;
+                Save(file with { UploadRoot = path, StorageKey = file.Key });
+                directories.Remove(file.Session);
+                foreach (var current in files.Values.Where(f => f.Session == file.Session)) AddParents(current.Path, current.Session);
+            }
+        }
+    }
     private void Save(StagedFile file)
     {
         var destination = System.IO.Path.Combine(root, file.Key + ".json");
@@ -67,6 +89,7 @@ public sealed class IntakeStaging
     {
         path = DrivePath.Normalize(path);
         session.RequireOnline();
+        ReconcilePaths();
         lock (gate)
         {
             var folder = session.Tree.UploadFolder(path);
@@ -79,6 +102,7 @@ public sealed class IntakeStaging
     public DriveNode? Find(string path)
     {
         path = DrivePath.Normalize(path);
+        ReconcilePaths();
         var folder = session.Tree.UploadFolder(path);
         if (folder is null) return null;
         lock (gate)
@@ -101,6 +125,7 @@ public sealed class IntakeStaging
     public StageHandle Open(string path, FileMode mode, bool write)
     {
         path = DrivePath.Normalize(path);
+        ReconcilePaths();
         var folder = session.Tree.UploadFolder(path) ?? throw new UnauthorizedAccessException("This upload folder is closed.");
         if (session.Tree.Find(path)?.File is not null) throw new UnauthorizedAccessException("Confirmed uploads cannot be replaced. Use a new file name or batch.");
         var prefix = DrivePath.Normalize(folder.Path) + "\\";
@@ -118,7 +143,7 @@ public sealed class IntakeStaging
             if (!exists)
             {
                 if (files.Values.Count(f => f.Session == folder.Id) >= 500) throw new IOException("This upload batch is full.");
-                entry = new(folder.Id, path[prefix.Length..].Replace('\\', '/'), UploadRoot: folder.Path == "/upload" ? "\\upload" : null);
+                entry = new(folder.Id, path[prefix.Length..].Replace('\\', '/'), UploadRoot: folder.Path.StartsWith("/Incoming/", StringComparison.OrdinalIgnoreCase) ? null : DrivePath.Normalize(folder.Path));
                 if (entry.RelativePath.Length > 512) throw new IOException("The upload path is too long.");
             }
             var stream = new FileStream(Data(entry!), mode, write ? FileAccess.ReadWrite : FileAccess.Read, FileShare.Read, 1, FileOptions.RandomAccess);
@@ -155,6 +180,7 @@ public sealed class IntakeStaging
         if (!await uploadGate.WaitAsync(0, cancel).ConfigureAwait(false)) return;
         try
         {
+            ReconcilePaths();
             StagedFile[] pending;
             lock (gate) pending = files.Values.Where(f => f.State is "pending" or "failed").ToArray();
             foreach (var candidate in pending)

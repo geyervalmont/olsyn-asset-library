@@ -65,3 +65,9 @@ Managed deployment: `OPAL-Drive-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTA
 A GitHub Windows smoke test is not certification of every enterprise image, endpoint-security policy or design host. Validate the designer's actual Revit and Kit applications against the mounted paths before a wider rollout.
 
 The complete server contract and scope are documented in [drive-upload-queue.md](../../docs/drive-upload-queue.md). The shared Nucleus/SMB library mount remains read-only.
+
+Drive 0.1.6 requests layout 2: `O:\ingestion\upload` receives source files and
+`O:\ingestion\workspace` is reserved for the upcoming preparation pipeline.
+The published `O:\materials` tree is unchanged. Existing staged uploads retain
+their payload keys and batch IDs when moving from `O:\upload`; older clients
+continue to receive the layout 1 alias from the same server inbox.

@@ -21,7 +21,7 @@ final class PersonalDriveController
 
         return response()->json(['data' => [
             'contract' => 'opal-drive/1', 'account' => ['id' => (string) $user->id, 'name' => $user->name, 'email' => $user->email],
-            'label' => DriveLayout::LABEL, 'layout' => DriveLayout::describe(), 'suggested_mount' => 'O:\\',
+            'label' => DriveLayout::LABEL, 'layout' => DriveLayout::describe(DriveLayout::revision($request)), 'suggested_mount' => 'O:\\',
             'manifest_url' => route('api.drive.manifest', absolute: false),
             'intake_url' => route('api.drive.intake.index', absolute: false),
             'heartbeat_url' => route('api.drive.heartbeat', absolute: false),
@@ -49,13 +49,15 @@ final class PersonalDriveController
 
             return $file;
         }, $namespace->projectionEntriesForUser($request->user()));
+        $revision = DriveLayout::revision($request);
         $sessions = $intake->sessions($request->user());
-        $incoming = $sessions->where('is_inbox', false)->map(fn ($session) => $intake->folder($session))->values()->all();
+        $incoming = $sessions->where('is_inbox', false)->map(fn ($session) => $intake->folder($session, $revision))->values()->all();
         $inbox = $sessions->firstWhere('is_inbox', true);
         $uploadEnabled = $request->user()->can('materials.contribute') && $request->user()->tokenCan('drive:write');
-        $data = ['upload_enabled' => $uploadEnabled, 'upload' => $inbox === null ? null : $intake->folder($inbox),
-            'contract' => 'opal-drive/1', 'layout' => DriveLayout::describe(), 'files' => $files, 'incoming' => $incoming,
-            'intake_files' => $sessions->flatMap(fn ($session) => $session->files->map(fn ($file) => $intake->file($session, $file)))->values()->all(),
+        $data = ['upload_enabled' => $uploadEnabled, 'upload' => $inbox === null ? null : $intake->folder($inbox, $revision),
+            'contract' => 'opal-drive/1', 'layout' => DriveLayout::describe($revision), 'files' => $files, 'incoming' => $incoming,
+            'directories' => $revision === 2 && $uploadEnabled ? [DriveLayout::INGESTION, DriveLayout::WORKSPACE] : [],
+            'intake_files' => $sessions->flatMap(fn ($session) => $session->files->map(fn ($file) => $intake->file($session, $file, $revision)))->values()->all(),
             'library_writable' => false];
         $etag = '"'.hash('sha256', $request->user()->id.json_encode($data, JSON_THROW_ON_ERROR)).'"';
         $headers = ['ETag' => $etag, 'Cache-Control' => 'private, no-store'];

@@ -25,17 +25,17 @@ final class IntakeNamespace
     }
 
     /** @return array<string, mixed> */
-    public function folder(DriveIntakeSession $session): array
+    public function folder(DriveIntakeSession $session, int $revision = 2): array
     {
-        return ['id' => $session->uuid, 'path' => $session->drivePath(), 'label' => $session->name,
+        return ['id' => $session->uuid, 'path' => DriveLayout::intakePath($session, $revision), 'label' => $session->name,
             'writable' => true, 'expires_at' => $session->expires_at?->toIso8601String(),
             'session_url' => route('api.drive.intake.show', ['session' => $session->uuid], false)];
     }
 
     /** @return array<string, mixed> */
-    public function file(DriveIntakeSession $session, DriveIntakeFile $file): array
+    public function file(DriveIntakeSession $session, DriveIntakeFile $file, int $revision = 2): array
     {
-        return ['path' => $session->drivePath().'/'.$file->path, 'bytes' => $file->bytes, 'sha256' => $file->sha256,
+        return ['path' => DriveLayout::intakePath($session, $revision).'/'.$file->path, 'bytes' => $file->bytes, 'sha256' => $file->sha256,
             'session_id' => $session->uuid, 'file_id' => $file->uuid,
             'content_url' => route('api.drive.intake.content', ['session' => $session->uuid, 'file' => $file->uuid], false)];
     }

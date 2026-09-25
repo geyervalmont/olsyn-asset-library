@@ -48,7 +48,11 @@ using (var instance = new DokanInstanceBuilder(dokan).ConfigureOptions(o => Driv
     try { File.WriteAllText(Path.Combine(letter, "forbidden.txt"), "write"); } catch (UnauthorizedAccessException) { denied = true; } catch (IOException) { denied = true; }
     if (!denied) throw new Exception("Drive root was writable");
     Console.WriteLine("PASS published files and drive root reject writes");
-    var incoming = Path.Combine(letter, "upload", "textures");
+    if (!Directory.Exists(Path.Combine(letter, "ingestion", "workspace"))) throw new Exception("Workspace folder is missing");
+    denied = false;
+    try { File.WriteAllText(Path.Combine(letter, "ingestion", "workspace", "reserved.txt"), "write"); } catch (UnauthorizedAccessException) { denied = true; } catch (IOException) { denied = true; }
+    if (!denied) throw new Exception("Reserved workspace was writable");
+    var incoming = Path.Combine(letter, "ingestion", "upload", "textures");
     Directory.CreateDirectory(incoming);
     var source = Path.Combine(root, "source.png"); await File.WriteAllBytesAsync(source, server.Bytes[..2048]);
     File.Copy(source, Path.Combine(incoming, "albedo.png"));
@@ -56,7 +60,7 @@ using (var instance = new DokanInstanceBuilder(dokan).ConfigureOptions(o => Driv
     await staging.UploadPendingAsync();
     if (server.Uploads != 1 || staging.Counts.Uploaded != 1) throw new Exception("Upload not acknowledged");
     Console.WriteLine("PASS Explorer-style directory creation, file copy, readback and upload acknowledgement");
-    var remoteUpload = Path.Combine(letter, "upload", "other-device", "stone.mdl");
+    var remoteUpload = Path.Combine(letter, "ingestion", "upload", "other-device", "stone.mdl");
     if (!File.ReadAllBytes(remoteUpload).SequenceEqual(server.Bytes)) throw new Exception("Cross-device upload read failed");
     denied = false;
     try { File.WriteAllText(remoteUpload, "overwrite"); } catch (UnauthorizedAccessException) { denied = true; } catch (IOException) { denied = true; }
@@ -179,9 +183,9 @@ sealed class Fixture : IAsyncDisposable
             var manifest = new { contract = "opal-drive/1", library_writable = false,
                 files = new[] { "/materials/by-id/texture.bin", "/materials/by-name/Stone/Limestone/Warm grey/revit/512/base_color.bin" }
                     .Select(path => new { path, bytes = Bytes.Length, sha256 = Hash, content_url = "/api/v1/drive/files/01951234-1234-7000-8000-000000000001/1" }).ToArray(),
-                intake_files = new[] { new { path = "/upload/other-device/stone.mdl", bytes = Bytes.Length, sha256 = Hash,
+                intake_files = new[] { new { path = "/ingestion/upload/other-device/stone.mdl", bytes = Bytes.Length, sha256 = Hash,
                     content_url = $"/api/v1/drive/intake/{Batch}/files/01951234-1234-7000-8000-000000000003/content" } },
-                upload_enabled = true, upload = new { id = Batch, path = "/upload", label = "Mount test", writable = true }, incoming = Array.Empty<object>() };
+                directories = new[] { "/ingestion", "/ingestion/workspace" }, upload_enabled = true, upload = new { id = Batch, path = "/ingestion/upload", label = "Mount test", writable = true }, incoming = Array.Empty<object>() };
             await Json(r, manifest); return;
         }
         if (c.Request.HttpMethod == "POST") { await Json(r, new { data = new { id = "01951234-1234-7000-8000-000000000002" } }); return; }

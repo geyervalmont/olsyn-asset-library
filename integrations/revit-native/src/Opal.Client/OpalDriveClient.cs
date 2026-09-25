@@ -31,6 +31,7 @@ public sealed class OpalDriveClient : IDisposable
         };
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"OPAL-Drive/{BuildInfo.Version}");
+        http.DefaultRequestHeaders.Add("X-Opal-Drive-Layout", "2");
         if (settings.IsLinked)
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
     }

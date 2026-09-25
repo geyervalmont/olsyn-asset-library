@@ -135,8 +135,9 @@ new #[Title('Ingestion')] class extends Component {
     <div class="ui-ingestion__intro">
         <div class="ui-ingestion__folder"><x-ui.nav-icon name="import" /></div>
         <div>
-            <h2>{{ __('Drop files into') }} <code>OPAL / upload</code></h2>
-            <p>{{ __('Copy textures, material files, or whole folders using Windows OPAL Drive 0.1.4 or later. Original names and nested folders are preserved. Received files appear here automatically.') }}</p>
+            <h2>{{ __('Drop files into') }} <code>OPAL / ingestion / upload</code></h2>
+            <p>{{ __('Copy textures, material files, or whole folders using Windows OPAL Drive 0.1.6 or later. Original names and nested folders are preserved. Received files appear here automatically. Older drive versions still use OPAL / upload for the same batch.') }}</p>
+            <p class="ui-ingestion__note">{{ __('OPAL / ingestion / workspace is reserved for prepared materials. Workspace generation is not enabled yet. On Nucleus, uploads must go into your linked user and batch folder; files dropped directly into the shared upload root are not collected automatically.') }}</p>
             <p class="ui-ingestion__note">{{ __('Uploads stay private until you queue the batch for your workspace reviewers. Parsing, AI fixes, and publishing will come next.') }}</p>
             <p class="ui-ingestion__note">{{ __('Up to 500 files and 2 GiB per batch · 256 MiB per file') }}</p>
         </div>

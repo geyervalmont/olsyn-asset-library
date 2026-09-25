@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import uuid
 
-from bridge import AccessLost, Api, Bridge, Conflict, digest, portable
+from bridge import AccessLost, Api, Bridge, Conflict, Native, digest, lockdown_roots, portable
 
 
 class FakeApi:
@@ -15,13 +15,16 @@ class FakeApi:
         self.uploads = 0
         self.beats = []
         self.allowed = True
+        self.revision = 2
 
     def bootstrap(self):
         return {'account': {'id': '7'}, 'capabilities': {'intake': self.allowed},
-                'layout': {'label': 'OPAL', 'revision': 1, 'materials': '/materials', 'upload': '/upload'}}
+                'layout': {'label': 'OPAL', 'revision': self.revision, 'materials': '/materials',
+                           'upload': '/ingestion/upload' if self.revision == 2 else '/upload',
+                           'ingestion': '/ingestion', 'workspace': '/ingestion/workspace'}}
 
     def inbox(self):
-        return {'id': self.batch, 'writable': True, 'path': '/upload', 'files': [self.item(name, data) for name, data in self.files.items()]}
+        return {'id': self.batch, 'writable': True, 'path': self.bootstrap()['layout']['upload'], 'files': [self.item(name, data) for name, data in self.files.items()]}
 
     def item(self, name, data):
         return {'id': str(uuid.uuid4()), 'path': name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'uploaded': True}
@@ -66,13 +69,14 @@ class FakeNative:
         self.acls[path] = access
 
     def url(self, path):
-        return 'omniverse://nucleus.test/OPAL/upload/' + path
+        return 'omniverse://nucleus.test/OPAL/ingestion/upload/' + path
 
     def list(self, path, recursive=False):
         result = {}
         for entry in self.folders | self.files.keys():
-            if entry.startswith(path + '/'):
-                name = entry[len(path) + 1:]
+            prefix = path + '/' if path else ''
+            if entry.startswith(prefix):
+                name = entry[len(prefix):]
                 if recursive or '/' not in name:
                     result[name] = self.stat(entry)
         return result
@@ -104,6 +108,36 @@ class BridgeTest(unittest.TestCase):
     def cycle(self):
         self.now += 10
         return self.bridge.cycle()
+
+    def test_old_api_is_supported_during_layout_rollout(self):
+        self.api.revision = 1
+        self.assertEqual(self.cycle()['state'], 'ready')
+        self.assertIn('/OPAL/ingestion/upload/', self.api.beats[-1][2])
+        self.api.revision = 99
+        with self.assertRaises(ValueError):
+            self.cycle()
+
+    def test_loose_root_content_does_not_block_stale_grant_revocation(self):
+        self.native.put('unassigned.png', b'original')
+        self.native.put('supplier/nested/source.png', b'original')
+        self.native.put('designer/' + self.api.batch + '/old.png', b'private')
+        self.assertEqual(lockdown_roots(self.native, ['admin', 'designer'], ['users', 'gm']), 2)
+        self.assertEqual(self.native.acls['designer'], 0)
+        self.assertEqual(self.native.acls['designer/' + self.api.batch], 0)
+        self.assertNotIn('supplier', self.native.acls)
+        self.assertEqual(self.native.files['unassigned.png'], b'original')
+
+    def test_generated_thumbnails_are_not_enumerated_or_ingested(self):
+        from types import SimpleNamespace
+        class SDK:
+            Result = SimpleNamespace(OK=0)
+            ItemFlags = SimpleNamespace(CAN_HAVE_CHILDREN=1, IS_MOUNT=2, IS_INSIDE_MOUNT=4)
+            @staticmethod
+            def list(url):
+                return 0, [SimpleNamespace(relative_path='.thumbs', flags=1),
+                           SimpleNamespace(relative_path='source.png', flags=0, size=4, version='1', modified_time='today')]
+        native = Native(SDK, 'nucleus.test', 'admin')
+        self.assertEqual(list(native.list('designer', recursive=True)), ['source.png'])
 
     def test_native_upload_retries_and_receipts_survive_restart(self):
         path = 'designer/' + self.api.batch + '/nested/stone.mdl'

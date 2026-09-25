@@ -295,3 +295,30 @@ test('a read-only drive token cannot enumerate or retrieve private uploaded file
     $this->getJson('/api/v1/drive/manifest')->assertJsonCount(0, 'intake_files')->assertJsonPath('upload_enabled', false);
     $this->get('/api/v1/drive/intake/'.$session->uuid.'/files/'.$file->uuid.'/content')->assertForbidden();
 });
+
+test('layout two nests intake without duplicating batches or changing content authorization', function () {
+    $batch = app(ManageIntake::class)->inbox($this->user);
+    $file = app(ManageIntake::class)->reserve($batch, 'supplier/stone.png', 4, hash('sha256', 'data'));
+    $input = fopen('php://temp', 'w+');
+    fwrite($input, 'data');
+    rewind($input);
+    app(ManageIntake::class)->upload($batch, $file, $input);
+    fclose($input);
+    expect($batch->drivePath())->toBe('/ingestion/upload');
+    $legacy = $this->getJson('/api/v1/drive/manifest')->assertJsonPath('layout.revision', 1)
+        ->assertJsonPath('upload.path', '/upload')->assertJsonPath('intake_files.0.path', '/upload/supplier/stone.png');
+    $this->withHeader('X-Opal-Drive-Layout', '2');
+    $this->getJson('/api/v1/drive/bootstrap')->assertJsonPath('data.layout.revision', 2)
+        ->assertJsonPath('data.layout.ingestion', '/ingestion')->assertJsonPath('data.layout.workspace', '/ingestion/workspace');
+    $this->postJson('/api/v1/drive/intake/inbox')->assertJsonPath('data.id', $batch->uuid)->assertJsonPath('data.path', '/ingestion/upload');
+    $modern = $this->getJson('/api/v1/drive/manifest', ['If-None-Match' => $legacy->headers->get('ETag')])->assertOk()
+        ->assertJsonPath('upload.id', $batch->uuid)->assertJsonPath('upload.path', '/ingestion/upload')
+        ->assertJsonPath('directories', ['/ingestion', '/ingestion/workspace'])
+        ->assertJsonPath('intake_files.0.path', '/ingestion/upload/supplier/stone.png');
+    expect($modern->json('intake_files.0.content_url'))->toBe($legacy->json('intake_files.0.content_url'));
+    expect($modern->json('intake_files.0.sha256'))->toBe($legacy->json('intake_files.0.sha256'));
+    Sanctum::actingAs($this->other, ['*']);
+    $this->get($modern->json('intake_files.0.content_url'))->assertNotFound();
+    Sanctum::actingAs($this->user, ['drive:read']);
+    $this->getJson('/api/v1/drive/manifest')->assertJsonPath('directories', [])->assertJsonPath('upload', null)->assertJsonCount(0, 'intake_files');
+});

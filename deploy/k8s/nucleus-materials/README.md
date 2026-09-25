@@ -56,7 +56,7 @@ The completed [namespace validation receipt](validation-2026-09-25-namespace.jso
 `omniverse://nucleus.olsyn.com/OPAL/materials/` is now the preferred shared mount.
 `/Libraries/Materials/` remains an alias backed by the **same** S3 facade, shared
 manifest and source objects. No package is copied or rewritten. `opal-root.py`
-adds the new native parent, mount and restricted native `/OPAL/upload` directory;
+adds the new native parent, mount and restricted native `/OPAL/ingestion/upload` and `/OPAL/ingestion/workspace` directories;
 it leaves existing paths and ACLs unchanged when run again.
 
 Personal uploads use the [Nucleus drive adapter](../nucleus-drive/README.md),

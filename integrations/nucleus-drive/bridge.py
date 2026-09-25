@@ -1,6 +1,6 @@
 """Personal Nucleus inbox adapter for the OPAL drive API (stdlib + omni.client).
 
-Nucleus is global, so each linked user gets /OPAL/upload/<username>/<batch UUID>.
+Nucleus is global, so each linked user gets /OPAL/ingestion/upload/<username>/<batch UUID>.
 The batch UUID is the server's inbox ID, shared with Windows and the website.
 Files are append-only: collisions are reported, never overwritten or deleted.
 """
@@ -16,7 +16,8 @@ import time
 from urllib import error, parse, request
 import uuid
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
+INGESTION_ROOT = '/OPAL/ingestion'
 FILE_LIMIT = 256 * 1024 * 1024
 BATCH_LIMIT = 500
 
@@ -80,7 +81,7 @@ class Api:
     def send(self, method, path, payload=None, stream=None, size=None):
         if not re.fullmatch(r'/api/v1/[a-zA-Z0-9/_?=&%.-]+', path) or '..' in path or path.startswith('//'):
             raise ValueError('Invalid API path')
-        headers = {'Accept': 'application/json', 'User-Agent': 'OPAL-Nucleus-Drive/' + VERSION}
+        headers = {'Accept': 'application/json', 'User-Agent': 'OPAL-Nucleus-Drive/' + VERSION, 'X-Opal-Drive-Layout': '2'}
         if self.token:
             headers['Authorization'] = 'Bearer ' + self.token
         if stream is not None:
@@ -143,7 +144,8 @@ class Native:
     def __init__(self, client, host, administrator):
         if not re.fullmatch(r'[a-zA-Z0-9.-]+', host):
             raise ValueError('A plain Nucleus hostname is required')
-        self.oc, self.root, self.administrator = client, 'omniverse://' + host + '/OPAL/upload', administrator
+        self.oc, self.ingestion, self.administrator = client, 'omniverse://' + host + INGESTION_ROOT, administrator
+        self.root = self.ingestion + '/upload'
 
     def checked(self, result):
         if result != self.oc.Result.OK:
@@ -162,8 +164,10 @@ class Native:
                      self.oc.AclEntry(self.administrator, 7), self.oc.AclEntry(username, access)]))
 
     def parent_acl(self, users):
-        self.checked(self.oc.set_acls(self.root, [self.oc.AclEntry('users', 0), self.oc.AclEntry('gm', 7),
-                     self.oc.AclEntry(self.administrator, 7)] + [self.oc.AclEntry(name, 1) for name in users]))
+        acl = [self.oc.AclEntry('users', 0), self.oc.AclEntry('gm', 7),
+               self.oc.AclEntry(self.administrator, 7)] + [self.oc.AclEntry(name, 1) for name in users]
+        for path in (self.ingestion, self.root, self.ingestion + '/workspace'):
+            self.checked(self.oc.set_acls(path, acl))
 
     def list(self, path, recursive=False):
         result, entries = self.oc.list(self.url(path))
@@ -171,6 +175,8 @@ class Native:
         found = {}
         for entry in entries:
             name = parse.unquote(entry.relative_path)
+            if name == '.thumbs':
+                continue  # Nucleus preview cache is not user intake content.
             if '/' in name or '\\' in name:
                 raise ValueError('Invalid Nucleus child')
             portable(name)
@@ -223,7 +229,9 @@ class Bridge:
         account = self.api.bootstrap()
         if str(account['account']['id']) != str(self.link['account_id']) or not account['capabilities']['intake']:
             raise AccessLost()
-        if account.get('layout') != {'label': 'OPAL', 'revision': 1, 'materials': '/materials', 'upload': '/upload'}:
+        layout = account.get('layout', {})
+        expected_upload = {1: '/upload', 2: '/ingestion/upload'}.get(layout.get('revision'))
+        if expected_upload is None or layout.get('label') != 'OPAL' or layout.get('materials') != '/materials' or layout.get('upload') != expected_upload:
             raise ValueError('Unsupported OPAL drive layout')
         inbox = self.api.inbox()
         batch = identifier(inbox['id'])
@@ -312,6 +320,22 @@ class Bridge:
         return {'state': 'conflict' if issues else 'ready', 'transfers': changes, 'conflicts': issues}
 
 
+def lockdown_roots(native, usernames, groups):
+    """Revoke enrollment grants without treating unassigned files as identities."""
+    unassigned = 0
+    for username, item in native.list('').items():
+        if not item['directory'] or username not in usernames or username in groups or username == native.administrator:
+            unassigned += 1
+            continue
+        native.acl(username, username, 0)
+        for batch, child in native.list(username).items():
+            if child['directory']:
+                # Lock down stale user folders even when an unexpected name is
+                # present. Validation must not prevent access revocation.
+                native.acl(username + '/' + batch, username, 0)
+    return unassigned
+
+
 def main():
     import omni.client as oc
     config = json.loads(Path(os.environ['OPAL_NUCLEUS_LINKS']).read_text())
@@ -330,16 +354,9 @@ def main():
             raise ValueError('Enrollment must name a distinct existing Nucleus user')
         seen.add(link['username'])
     bridges = [Bridge(Api(config['origin'], link['token']), native, link, state / link['device_id']) for link in config['links']]
-    # Own only /OPAL/upload. Remove stale enrollment grants as well as active
+    # Own only /OPAL/ingestion. Remove stale enrollment grants as well as active
     # grants on startup; parent ACLs cannot override explicit batch ACLs.
-    for username, item in native.list('').items():
-        if not item['directory'] or username in ('users', 'gm', administrator):
-            raise ValueError('Unexpected upload root entry')
-        native.acl(username, username, 0)
-        for batch, child in native.list(username).items():
-            if child['directory']:
-                identifier(batch)
-                native.acl(username + '/' + batch, username, 0)
+    lockdown_roots(native, usernames, groups)
     native.parent_acl([])
     import signal
     def stop(signum, frame):
@@ -369,7 +386,9 @@ def main():
                 print(json.dumps(result), flush=True)
             native.parent_acl(authorized)
             state.mkdir(parents=True, exist_ok=True)
-            (state / 'health.json').write_text(json.dumps({'time': time.time(), 'links': results}))
+            unassigned = sum(1 for name in native.list('') if name not in seen)
+            (state / 'health.json').write_text(json.dumps({'time': time.time(), 'links': results,
+                'state': 'linked' if bridges else 'awaiting_enrollment', 'unassigned_root_entries': unassigned}))
             time.sleep(10)
     finally:
         for bridge in bridges:

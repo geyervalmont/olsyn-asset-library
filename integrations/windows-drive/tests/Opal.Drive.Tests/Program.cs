@@ -283,6 +283,39 @@ try
         await Throws(() => Task.FromResult(new DriveTree([], [folder], [file, file])));
         await Throws(() => Task.FromResult(new DriveTree([], [folder with { ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) }], [file])));
     });
+    await Test("layout upgrade resumes durable uploads without changing payload keys or replaying a closed batch", async () =>
+    {
+        var remote = new Fake { UploadRoot = true, FailUpload = true };
+        using var client = remote.Client();
+        var state = new DriveSession(client, new ContentCache(Path.Combine(temp, "layout-cache")));
+        await state.RefreshAsync();
+        var root = Path.Combine(temp, "layout-staging");
+        var queue = new IntakeStaging(root, state);
+        using (var write = queue.Open(@"\upload\supplier\stone.png", FileMode.CreateNew, true)) write.Write([9, 8, 7], 0);
+        await queue.UploadPendingAsync(); Check(queue.Counts.Failed == 1);
+        var payload = Directory.GetFiles(root, "*.data").Single();
+        remote.NestedUpload = true; remote.FailUpload = false; await state.RefreshAsync();
+        queue = new IntakeStaging(root, state);
+        const string path = @"\ingestion\upload\supplier\stone.png";
+        Check(state.Tree.Find("/upload") is null && state.Tree.Find("/ingestion/workspace")?.IsDirectory == true);
+        Check(state.Tree.List("/ingestion").Count == 2 && queue.Find(path)?.File?.Bytes == 3);
+        Check(queue.List(@"\ingestion\upload").Single().Name == "supplier");
+        Check(state.Tree.UploadFolder("/ingestion/workspace") is null);
+        await Throws(() => Task.FromResult(queue.Open(@"\ingestion\workspace\unsafe.png", FileMode.CreateNew, true)));
+        await queue.UploadPendingAsync(); Check(remote.Uploads == 1 && queue.Counts.Uploaded == 1);
+        Check(Directory.GetFiles(root, "*.data").Single() == payload);
+        queue = new IntakeStaging(root, state); Check(queue.Find(path)?.File?.Bytes == 3);
+        remote.Batch = Guid.NewGuid(); await state.RefreshAsync();
+        await queue.UploadPendingAsync(); Check(remote.Uploads == 1 && queue.Find(path) is null);
+    });
+    await Test("reserved directories and nested inboxes cannot grant arbitrary drive writes", async () =>
+    {
+        var folder = new IncomingFolder(Guid.NewGuid(), "/ingestion/upload", "Upload", null);
+        Check(new DriveTree([], [folder], directories: ["/ingestion/workspace"]).List("/ingestion").Count == 2);
+        await Throws(() => Task.FromResult(new DriveTree([], [folder, folder with { Path = "/upload" }])));
+        await Throws(() => Task.FromResult(new DriveTree([], [folder with { Path = "/ingestion/workspace" }])));
+        await Throws(() => Task.FromResult(new DriveTree([], [], directories: ["/arbitrary"])));
+    });
     Console.WriteLine($"{count} drive core tests passed");
 }
 finally { Directory.Delete(temp,true); }
@@ -290,7 +323,8 @@ finally { Directory.Delete(temp,true); }
 sealed class Fake : HttpMessageHandler
 {
     public byte[] Bytes = Enumerable.Range(0, 300000).Select(i=>(byte)(i%251)).ToArray();
-    public bool Denied, Offline, Corrupt, Incoming, FailUpload, SlowRead, UploadRoot, NeedsInbox, RemoteIntake;
+    public bool Denied, Offline, Corrupt, Incoming, FailUpload, SlowRead, UploadRoot, NeedsInbox, RemoteIntake, NestedUpload;
+    public string UploadPath => NestedUpload ? "/ingestion/upload" : "/upload";
     public TaskCompletionSource ReadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public int Reads, Heads, Uploads, InboxCalls;
     public Guid Batch = Guid.NewGuid();
@@ -299,10 +333,11 @@ sealed class Fake : HttpMessageHandler
     public void ReplaceContent() => Bytes = Bytes.Select(b=>(byte)(b^255)).ToArray();
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken cancellationToken)
     {
+        if (!request.Headers.TryGetValues("X-Opal-Drive-Layout", out var layouts) || layouts.Single() != "2") throw new Exception("Missing layout negotiation");
         if(Offline) throw new HttpRequestException("Offline");
         if(Denied) return new(HttpStatusCode.Forbidden);
         if(request.RequestUri!.AbsolutePath.EndsWith("manifest"))
-            return Json(new { contract="opal-drive/1", library_writable=false, intake_files=RemoteIntake ? new[]{new{path="/upload/nested/stone.mdl",bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=$"/api/v1/drive/intake/{Batch}/files/01951234-1234-7000-8000-000000000003/content"}} : [], upload_enabled=UploadRoot, upload=UploadRoot && !NeedsInbox ? new { id=Batch, path="/upload", label="Drive upload", writable=true } : null, files=new[]{new{path=Entry.Path,bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=Entry.ContentUrl}},incoming=Incoming?new[]{new{id=Batch,path="/Incoming/"+Batch,label="Textures",expires_at=DateTimeOffset.UtcNow.AddHours(1)}}:[] });
+            return Json(new { contract="opal-drive/1", library_writable=false, directories=NestedUpload && UploadRoot ? new[]{"/ingestion", "/ingestion/workspace"} : [], intake_files=RemoteIntake ? new[]{new{path=UploadPath+"/nested/stone.mdl",bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=$"/api/v1/drive/intake/{Batch}/files/01951234-1234-7000-8000-000000000003/content"}} : [], upload_enabled=UploadRoot, upload=UploadRoot && !NeedsInbox ? new { id=Batch, path=UploadPath, label="Drive upload", writable=true } : null, files=new[]{new{path=Entry.Path,bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=Entry.ContentUrl}},incoming=Incoming?new[]{new{id=Batch,path="/Incoming/"+Batch,label="Textures",expires_at=DateTimeOffset.UtcNow.AddHours(1)}}:[] });
         if(request.RequestUri.AbsolutePath.EndsWith("intake/inbox")) { InboxCalls++; NeedsInbox=false; return Json(new { data = new { id=Batch } }); }
         if(request.Method==HttpMethod.Head)
         { Heads++;var result=new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent([])};result.Content.Headers.ContentLength=Bytes.Length;result.Headers.ETag=new EntityTagHeaderValue('"'+Entry.Sha256+'"');return result; }

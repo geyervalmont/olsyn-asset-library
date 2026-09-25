@@ -36,7 +36,8 @@ def folder(path, acl):
 
 folder('/OPAL', {'gm': ['read', 'write', 'admin'], 'users': ['read']})
 # This is a native, private directory. Never put intake files in the shared S3 mount.
-folder('/OPAL/upload', {'gm': ['read', 'write', 'admin'], 'users': []})
+for path in ('/OPAL/ingestion', '/OPAL/ingestion/upload', '/OPAL/ingestion/workspace'):
+    folder(path, {'gm': ['read', 'write', 'admin'], 'users': []})
 if not exists('/OPAL/materials'):
     options = {'service': 's3', 'host': 'nucleus-materials.opal.svc.cluster.local:8080',
                'bucket': 'materials', 'region': 'ap-southeast-2', 'secure': False,

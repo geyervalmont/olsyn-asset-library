@@ -36,7 +36,7 @@ public sealed class DriveTree
     public int FileCount { get; }
     public static DriveTree Empty { get; } = new([], []);
 
-    public DriveTree(IEnumerable<RemoteFile> files, IEnumerable<IncomingFolder> incoming, IEnumerable<RemoteFile>? intakeFiles = null)
+    public DriveTree(IEnumerable<RemoteFile> files, IEnumerable<IncomingFolder> incoming, IEnumerable<RemoteFile>? intakeFiles = null, IEnumerable<string>? directories = null)
     {
         var entries = new Dictionary<string, DriveNode>(StringComparer.OrdinalIgnoreCase) { ["\\"] = new("\\") };
         void Directory(string path)
@@ -50,6 +50,11 @@ public sealed class DriveTree
             entries.Add(path, new(path));
         }
         Directory("\\materials");
+        foreach (var directory in directories ?? [])
+        {
+            if (directory is not ("/ingestion" or "/ingestion/workspace")) throw new InvalidDataException("Invalid reserved directory.");
+            Directory(DrivePath.Normalize(directory));
+        }
         foreach (var file in files)
         {
             var path = DrivePath.Normalize(file.Path);
@@ -62,10 +67,10 @@ public sealed class DriveTree
             FileCount++;
         }
         Incoming = incoming.Where(i => i.ExpiresAt is null || i.ExpiresAt > DateTimeOffset.UtcNow).ToArray();
-        if (Incoming.Count(i => i.Path.Equals("/upload", StringComparison.OrdinalIgnoreCase)) > 1) throw new InvalidDataException("Duplicate upload root.");
+        if (Incoming.Count(i => IsInbox(i.Path)) > 1) throw new InvalidDataException("Duplicate upload root.");
         foreach (var folder in Incoming)
         {
-            var expected = folder.Path.Equals("/upload", StringComparison.OrdinalIgnoreCase) ? "\\upload" : "\\Incoming\\" + folder.Id.ToString("D");
+            var expected = IsInbox(folder.Path) ? DrivePath.Normalize(folder.Path) : "\\Incoming\\" + folder.Id.ToString("D");
             if (!DrivePath.Normalize(folder.Path).Equals(expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Invalid upload folder.");
             Directory(expected);
         }
@@ -85,6 +90,7 @@ public sealed class DriveTree
             .ToFrozenDictionary(g => g.Key, g => g.OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase).ToArray(), StringComparer.OrdinalIgnoreCase);
     }
     public DriveNode? Find(string path) => nodes.GetValueOrDefault(DrivePath.Normalize(path));
+    private static bool IsInbox(string path) => path.Equals("/upload", StringComparison.OrdinalIgnoreCase) || path.Equals("/ingestion/upload", StringComparison.OrdinalIgnoreCase);
     public IReadOnlyList<DriveNode> List(string path) => children.GetValueOrDefault(DrivePath.Normalize(path)) ?? [];
     public bool Contains(RemoteFile file) => Find(file.Path)?.File == file;
     public IncomingFolder? UploadFolder(string path)
@@ -102,13 +108,15 @@ public sealed class DriveTree
             i.GetProperty("id").GetGuid(), i.GetProperty("path").GetString()!, i.GetProperty("label").GetString()!, i.GetProperty("expires_at").GetDateTimeOffset())).ToList();
         if (json.TryGetProperty("upload", out var upload) && upload.ValueKind != JsonValueKind.Null)
         {
-            if (upload.GetProperty("path").GetString() != "/upload" || !upload.GetProperty("writable").GetBoolean())
+            var uploadPath = upload.GetProperty("path").GetString()!;
+            if (!IsInbox(uploadPath) || !upload.GetProperty("writable").GetBoolean())
                 throw new InvalidDataException("Invalid root upload folder.");
-            incoming.Add(new(upload.GetProperty("id").GetGuid(), "/upload", upload.GetProperty("label").GetString()!, null));
+            incoming.Add(new(upload.GetProperty("id").GetGuid(), uploadPath, upload.GetProperty("label").GetString()!, null));
         }
         return new(json.GetProperty("files").EnumerateArray().Select(f => new RemoteFile(
             f.GetProperty("path").GetString()!, f.GetProperty("bytes").GetInt64(), f.GetProperty("sha256").GetString()!, f.GetProperty("content_url").GetString()!)),
             incoming, json.TryGetProperty("intake_files", out var intakeFiles) ? intakeFiles.EnumerateArray().Select(f => new RemoteFile(
-                f.GetProperty("path").GetString()!, f.GetProperty("bytes").GetInt64(), f.GetProperty("sha256").GetString()!, f.GetProperty("content_url").GetString()!)) : []);
+                f.GetProperty("path").GetString()!, f.GetProperty("bytes").GetInt64(), f.GetProperty("sha256").GetString()!, f.GetProperty("content_url").GetString()!)) : [],
+            json.TryGetProperty("directories", out var dirs) ? dirs.EnumerateArray().Select(d => d.GetString()!) : []);
     }
 }
