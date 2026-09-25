@@ -1,23 +1,20 @@
 <?php
 
-use App\Actions\Clients\IssueClientCommand;
-use App\Livewire\ConsumerComponent;
-use App\Enums\CommandType;
 use App\Library\Embeddings\MaterialSimilarity;
 use App\Library\Previews\MaterialPreviews;
 use App\Models\Category;
 use App\Models\Material;
 use App\Models\Supplier;
 use App\Models\Variant;
-use Flux\Flux;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\WithPagination;
+use Livewire\Component;
 
-new #[Title('Library')] class extends ConsumerComponent {
+new #[Title('Library')] class extends Component {
 
     use WithPagination;
 
@@ -48,13 +45,6 @@ new #[Title('Library')] class extends ConsumerComponent {
     #[Url]
     public string $sort = 'name';
 
-    /** Material code shown in the quick view; empty when the modal is closed. */
-    #[Url(as: 'material')]
-    public string $quick = '';
-
-    /** The colourway the card was showing when it was opened. */
-    public ?int $quickVariantId = null;
-
     public function mount(): void
     {
         abort_unless(auth()->user()?->can('materials.view'), 403);
@@ -63,126 +53,6 @@ new #[Title('Library')] class extends ConsumerComponent {
         $this->similarity = in_array($this->similarity, ['semantic', 'appearance'], true) ? $this->similarity : 'semantic';
         $this->view = in_array($this->view, ['swatches', 'table'], true) ? $this->view : 'swatches';
         $this->sort = in_array($this->sort, ['name', 'newest', 'variants'], true) ? $this->sort : 'name';
-        $this->mountConsumers();
-    }
-
-    public function openQuick(string $code, ?int $variantId = null): void
-    {
-        $this->quick = $code;
-        $this->quickVariantId = $variantId;
-        $this->consumerCommandId = null;
-        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->quickViewerSets, $this->consumerCommand);
-    }
-
-    public function closeQuick(): void
-    {
-        $this->quick = '';
-        $this->quickVariantId = null;
-        $this->consumerCommandId = null;
-        unset($this->quickMaterial, $this->quickCard, $this->quickTargets, $this->quickViewerSets, $this->consumerCommand);
-    }
-
-    /** The material behind the quick view, or null when it is closed or out of reach. */
-    #[Computed]
-    public function quickMaterial(): ?Material
-    {
-        if ($this->quick === '') {
-            return null;
-        }
-
-        $material = Material::resolveCode($this->quick);
-
-        return $material !== null && $material->isVisibleTo(auth()->user())
-            ? $material->load(['category', 'supplier', 'currentVersion'])->loadCount('variants')
-            : null;
-    }
-
-    /**
-     * @return array{variants: list<array{id: int, code: string, name: string, hex: string, image: string|null}>, active: int}
-     */
-    #[Computed]
-    public function quickCard(): array
-    {
-        $material = $this->quickMaterial;
-        $previews = app(MaterialPreviews::class);
-        $collection = $material->newCollection([$material]);
-        $chips = $previews->chipsFor($collection, 24)[$material->id] ?? collect();
-        $card = $previews->cardData($material, $chips, $previews->variantFilesFor($chips), $previews->filesFor($collection)[$material->id] ?? null);
-
-        // Open on the colourway the card was showing, when it is among the chips.
-        $chosen = array_search($this->quickVariantId, array_column($card['variants'], 'id'), true);
-
-        if ($chosen !== false) {
-            $card['active'] = $chosen;
-        }
-
-        return $card;
-    }
-
-    /**
-     * Canonical maps for the open material, for the shared inspector.
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    #[Computed]
-    public function quickViewerSets(): array
-    {
-        $material = $this->quickMaterial;
-        $variants = $material
-            ->variants()
-            ->whereIn('id', array_column($this->quickCard['variants'], 'id'))
-            ->with(['representations.target', 'representations.quality', 'representations.representationFiles.role', 'representations.representationFiles.file'])
-            ->get();
-
-        return app(MaterialPreviews::class)->viewerSets($material, $variants);
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    #[Computed]
-    public function quickTargets(): array
-    {
-        $material = $this->quickMaterial;
-
-        return app(MaterialPreviews::class)->targetsFor($material->newCollection([$material]))[$material->id] ?? [];
-    }
-
-    /**
-     * Why the quick view cannot apply right now, or null when it can.
-     */
-    public function applyBlockedReason(): ?string
-    {
-        if ($this->consumerBlockedReason() !== null) {
-            return $this->consumerBlockedReason();
-        }
-
-        return $this->quickMaterial?->current_version_id === null
-            ? __('Publish a version first to apply this material.')
-            : null;
-    }
-
-    public function applyToConsumer(int $variantId, IssueClientCommand $issue): void
-    {
-        $material = $this->quickMaterial;
-        $variant = $material?->variants()->whereKey($variantId)->first();
-        $session = $this->selectedConsumer();
-
-        if ($material === null || $variant === null || $session === null || $this->applyBlockedReason() !== null) {
-            Flux::toast(variant: 'warning', text: $this->applyBlockedReason() ?? __('That colourway is no longer available.'));
-
-            return;
-        }
-
-        $this->consumerSessionId = $session->id;
-        $this->consumerCommandId = $issue->handle($session, auth()->user(), CommandType::Apply, [
-            'variant' => $variant->code,
-            'variant_uuid' => $variant->uuid,
-            'material_version' => $material->currentVersion->number,
-            'material' => $material->code,
-        ])->id;
-
-        unset($this->consumerCommand);
     }
 
     public function updatedSearch(): void
@@ -459,7 +329,6 @@ new #[Title('Library')] class extends ConsumerComponent {
     </div>
     <div class="ui-library-progress" role="status" aria-live="polite">
         <span wire:loading.delay wire:target="search,category,supplier,status,sort,mode,setView,clearFilters,clearSimilarity">{{ __('Updating materials…') }}</span>
-        <span wire:loading.delay wire:target="openQuick">{{ __('Opening material…') }}</span>
     </div>
 
     @if ($this->similarVariant || $this->similarMaterial)
@@ -510,7 +379,7 @@ new #[Title('Library')] class extends ConsumerComponent {
                             @endphp
                             <tr wire:key="row-{{ $material->id }}" data-test="material-row">
                                 <td>
-                                    <a class="ui-table__material" href="{{ route('materials.show', $material) }}" x-data="quickLink" x-on:click="quickOpen($event, @js($material->code))" style="text-decoration: none">
+                                    <a class="ui-table__material" href="{{ route('materials.show', $material) }}" x-data="quickLink" x-on:click="quickOpen($event, @js(['code' => $material->code, 'name' => $material->name, 'category' => $material->category->name]))" style="text-decoration: none">
                                         @if ($preview)
                                             <img class="ui-table__swatch" src="{{ $preview->previewUrl(96) }}" alt="" loading="lazy" decoding="async" width="40" height="40" style="object-fit: cover" />
                                         @else
@@ -561,7 +430,7 @@ new #[Title('Library')] class extends ConsumerComponent {
                 >
                     <x-ui.swatch-preview :card="$card" :targets="$targets" :tag="$material->category->code" :variants-count="$material->variants_count" :name="$material->name" :eager="$loop->index < 4" />
                     <div class="ui-swatch-card__body">
-                        <strong><a class="ui-library-card-link" href="{{ route('materials.show', $material) }}" x-on:click="quickOpen($event, @js($material->code))">{{ $material->name }}</a></strong>
+                        <strong><a class="ui-library-card-link" href="{{ route('materials.show', $material) }}" x-on:click="quickOpen($event, @js(['code' => $material->code, 'name' => $material->name, 'category' => $material->category->name]))">{{ $material->name }}</a></strong>
                         <small>{{ $material->supplier?->name ?? __('In-house') }}@if ($material->collection) · {{ $material->collection }}@endif</small>
                         <div class="ui-swatch-card__meta">
                             <span>{{ trans_choice(':count variant|:count variants', $material->variants_count) }}</span>
@@ -581,16 +450,5 @@ new #[Title('Library')] class extends ConsumerComponent {
 
     {{ $this->materials->links('vendor.pagination.opal') }}
 
-    @if ($this->quickMaterial)
-        <x-ui.material-modal
-            :material="$this->quickMaterial"
-            :card="$this->quickCard"
-            :targets="$this->quickTargets"
-            :variants-count="$this->quickMaterial->variants_count"
-            :sessions="$this->consumerSessions"
-            :command="$this->consumerCommand"
-            :blocked="$this->applyBlockedReason()"
-            :sets="$this->quickViewerSets"
-        />
-    @endif
+    <livewire:materials.quick-view :key="'material-quick-view'" />
 </section>

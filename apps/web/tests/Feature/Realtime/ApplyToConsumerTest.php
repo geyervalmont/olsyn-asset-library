@@ -10,6 +10,7 @@ use App\Enums\ReviewState;
 use App\Enums\Role;
 use App\Events\Realtime\CommandQueued;
 use App\Library\FileStore;
+use App\Livewire\Materials\QuickView;
 use App\Models\Category;
 use App\Models\ClientCommand;
 use App\Models\ClientSession;
@@ -140,7 +141,7 @@ test('a disconnected selection is never silently redirected to another app', fun
 test('future consumers opt into apply without platform-specific website code', function () {
     Platform::firstOrCreate(['slug' => 'future-editor'], ['name' => 'Future Editor']);
     $session = ClientSession::create(['user_id' => $this->viewer->id, 'platform' => 'future-editor', 'machine' => 'DESIGN-PC', 'capabilities' => ['material.apply'], 'last_seen_at' => now()]);
-    Livewire::actingAs($this->viewer)->test('pages::materials.index')
+    Livewire::actingAs($this->viewer)->test(QuickView::class)
         ->call('openQuick', $this->material->code)->assertSee('Apply in Future Editor')
         ->call('applyToConsumer', $this->ashen->id);
     expect(ClientCommand::sole()->client_session_id)->toBe($session->id);

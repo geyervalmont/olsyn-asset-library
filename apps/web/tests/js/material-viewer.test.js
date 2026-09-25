@@ -1,5 +1,9 @@
-import { describe, expect, test, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, mock, spyOn } from 'bun:test';
 import { materialViewer } from '../../resources/js/material-viewer';
+
+let fetchPreview;
+beforeEach(() => { fetchPreview = spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ schema: 'test' }) }); });
+afterEach(() => { fetchPreview.mockRestore(); });
 
 function setup(loadStage) {
     const viewer = materialViewer({ sets: { 1: { key: 'first' }, 2: { key: 'second' } }, autoStart: false }, loadStage);
@@ -79,4 +83,21 @@ test('a MaterialX failure explicitly falls back to the texture preview', async (
     expect(viewer.status).toBe('ready');
     expect(viewer.previewMode).toBe('Texture preview');
     expect(viewer.previewWarnings[0]).toContain('graph effects may differ');
+});
+
+test('MaterialX downloads alongside the renderer and is cancelled on close', async () => {
+    const stage = stageStub();
+    let loaded;
+    const viewer = setup(() => new Promise((resolve) => { loaded = resolve; }));
+    viewer.sets[1].materialx_url = '/packages/1/materialx-preview';
+    await viewer.show(1);
+    const pending = viewer.start();
+    expect(fetchPreview).toHaveBeenCalledTimes(1);
+    const signal = fetchPreview.mock.calls[0][1].signal;
+    expect(signal.aborted).toBe(false);
+    viewer.destroy();
+    expect(signal.aborted).toBe(true);
+    loaded({ stage });
+    await pending;
+    expect(stage.show).not.toHaveBeenCalled();
 });

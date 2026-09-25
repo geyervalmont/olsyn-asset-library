@@ -71,8 +71,15 @@
 .ui-library .ui-table th { font-size: 11px; padding-block: 14px; }
 .ui-library .ui-table td { padding-block: 16px; font-size: 13px; }
 
-/* Starting a 3D renderer is an explicit choice in quick view. */
+/* Keep the existing swatch visible while the automatic 3D preview loads. */
 .ui-swatch-card__stage.is-idle { opacity: 1; pointer-events: none; background: transparent; }
+.ui-swatch-card__stage.is-idle canvas { visibility: hidden; }
+.ui-modal__content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.ui-modal__pending { padding: 0 28px 28px; }
+.ui-modal__placeholder { position: relative; min-height: 320px; border-radius: 10px; overflow: hidden; display: grid; place-items: center; }
+.ui-modal__placeholder img { position: absolute; width: 100%; height: 100%; object-fit: cover; }
+.ui-modal__placeholder p { position: relative; padding: 12px 18px; border-radius: 24px; background: #fffffff2; color: #283d4c; font-size: 13px; }
+.ui-modal__pending > button { margin-top: 16px; }
 .ui-preview-start { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 4; display: flex; align-items: center; gap: 20px; white-space: nowrap; pointer-events: auto; padding: 12px 18px; font-size: 13px !important; color: #283d4c; background: #fffffff2; border: 1px solid #fff; border-radius: 40px; box-shadow: 0 4px 18px #20344018; }
 .ui-preview-start:disabled { cursor: progress; }
 .ui-preview-start:hover { background: #fff; }

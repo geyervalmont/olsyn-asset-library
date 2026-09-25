@@ -10,6 +10,7 @@ use App\Enums\ReviewState;
 use App\Enums\Role;
 use App\Enums\Visibility;
 use App\Library\FileStore;
+use App\Livewire\Materials\QuickView;
 use App\Models\Category;
 use App\Models\ClientCommand;
 use App\Models\ClientSession;
@@ -54,7 +55,7 @@ beforeEach(function () {
 
 test('the library opens a material in a quick view and closes it again', function () {
     Livewire::actingAs($this->viewer)
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->assertDontSeeHtml('data-test="material-modal"')
         ->call('openQuick', $this->material->code)
         ->assertSet('quick', $this->material->code)
@@ -70,7 +71,7 @@ test('the library opens a material in a quick view and closes it again', functio
 test('a material code in the address opens the quick view straight away', function () {
     Livewire::actingAs($this->viewer)
         ->withQueryParams(['material' => strtolower($this->material->code)])
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->assertSeeHtml('data-test="material-modal"')
         ->assertSee('Academix');
 });
@@ -82,7 +83,7 @@ test('the quick view applies the colourway it is given and reports the command',
     ]);
 
     $page = Livewire::actingAs($this->viewer)
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->call('openQuick', $this->material->code)
         ->assertSet('consumerSessionId', $session->id)
         ->call('applyToConsumer', $this->slate->id)
@@ -101,7 +102,7 @@ test('the quick view applies the colourway it is given and reports the command',
 test('the quick view says why it cannot apply, and refuses to', function () {
     // No compatible app connected.
     Livewire::actingAs($this->viewer)
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->call('openQuick', $this->material->code)
         ->assertSee('No compatible app connected')
         ->call('applyToConsumer', $this->ashen->id);
@@ -113,7 +114,7 @@ test('the quick view says why it cannot apply, and refuses to', function () {
     $plain = app(AddVariant::class)->handle($draft, ['colourway' => ['value' => 'Plain']]);
 
     Livewire::actingAs($this->viewer)
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->call('openQuick', $draft->code)
         ->assertSee('Publish a version first')
         ->call('applyToConsumer', $plain->id);
@@ -122,7 +123,7 @@ test('the quick view says why it cannot apply, and refuses to', function () {
 
 test('the quick view opens on the colourway the card was showing', function () {
     Livewire::actingAs($this->viewer)
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->call('openQuick', $this->material->code, $this->slate->id)
         ->assertSet('quickVariantId', $this->slate->id)
         ->assertSeeHtml($this->slate->code);
@@ -130,7 +131,7 @@ test('the quick view opens on the colourway the card was showing', function () {
 
 test('the quick view carries the maps the shared inspector needs', function () {
     Livewire::actingAs($this->viewer)
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->call('openQuick', $this->material->code)
         ->assertSeeHtml('data-test="quick-stage"')
         ->assertSeeHtml('data-test="material-map-inspector"')
@@ -148,7 +149,7 @@ test('the quick view carries the maps the shared inspector needs', function () {
     app(AddVariant::class)->handle($bare, ['colourway' => ['value' => 'Plain']]);
 
     Livewire::actingAs($this->viewer)
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->call('openQuick', $bare->code)
         ->assertSeeHtml('data-test="material-modal"')
         ->assertDontSeeHtml('data-test="quick-stage"');
@@ -158,7 +159,32 @@ test('a material out of reach never opens', function () {
     $secret = Material::factory()->create(['visibility' => Visibility::Restricted]);
 
     Livewire::actingAs($this->viewer)
-        ->test('pages::materials.index')
+        ->test(QuickView::class)
         ->call('openQuick', $secret->code)
         ->assertDontSeeHtml('data-test="material-modal"');
+});
+
+test('opening and polling a preview never render the library grid', function () {
+    $this->actingAs($this->viewer)->get(route('materials.index'))
+        ->assertOk()->assertSee('data-test="quick-dialog"', false)
+        ->assertSee('data-test="swatch-grid"', false);
+
+    Livewire::actingAs($this->viewer)->test(QuickView::class)
+        ->call('openQuick', $this->material->code, $this->slate->id, 3)
+        ->assertSet('requestId', 3)
+        ->assertDontSeeHtml('data-test="swatch-grid"')
+        ->call('consumerSessionsUpdated')
+        ->assertDontSeeHtml('data-test="swatch-grid"');
+});
+
+test('quick view bounds fallback maps and excludes rejected representation history', function () {
+    $rejected = app(CreateRepresentation::class)->handle($this->ashen, 'pbr', '4k', [
+        'base_color' => app(FileStore::class)->store('rejected history', 'rejected.png'),
+    ]);
+    app(ReviewRepresentation::class)->handle($rejected, ReviewState::Rejected);
+    $page = Livewire::actingAs($this->viewer)->test(QuickView::class)
+        ->call('openQuick', $this->material->code);
+    $sets = $page->get('quickViewerSets');
+    expect($sets[$this->ashen->id]['base_color'])->toContain('/file-previews/')->toEndWith('/1024');
+    expect($sets[$this->ashen->id]['key'])->not->toStartWith($rejected->id.':');
 });

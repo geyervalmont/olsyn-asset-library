@@ -92,12 +92,15 @@ export const stage = {
         this.gl.scene.remove(this.gl.shown); this.gl.shown = this.gl.shapes[name];
         this.gl.scene.add(this.gl.shown); this.frame_();
     },
-    async show(set) {
+    async show(set, objectSizeMm, prepared = {}) {
         const request = ++this.request;
         this.abort?.abort(); this.abort = new AbortController();
-        const response = await fetch(set.materialx_url, { signal: this.abort.signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
-        if (!response.ok) throw new Error('The package MaterialX preview is unavailable.');
-        const bundle = await response.json();
+        const bundle = prepared.bundle ? await prepared.bundle : await fetch(set.materialx_url, {
+            signal: this.abort.signal, credentials: 'same-origin', headers: { Accept: 'application/json' },
+        }).then((response) => {
+            if (!response.ok) throw new Error('The package MaterialX preview is unavailable.');
+            return response.json();
+        });
         if (bundle.schema !== 'usd-toolbox.materialx-preview.v1' || !bundle.material_names?.length) throw new Error('Invalid MaterialX preview bundle.');
         if (request !== this.request) return;
         const textures = new Set();

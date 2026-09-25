@@ -13,141 +13,120 @@
     $status = match ($material->status->value) { 'active' => 'success', 'archived' => 'neutral', default => 'warning' };
 @endphp
 
-<div
-    class="ui-modal"
-    wire:key="quick-{{ $material->id }}"
-    x-data="swatchCard(@js($card))"
-    x-on:keydown.escape.window="$wire.closeQuick()"
-    data-test="material-modal"
->
-    <button type="button" class="ui-modal__scrim" wire:click="closeQuick" tabindex="-1" aria-label="{{ __('Close') }}"></button>
+<div class="ui-modal__content" x-data="swatchCard(@js($card))" data-test="material-modal">
+    <div class="ui-modal__body">
+        <x-ui.swatch-preview
+            class="ui-modal__preview"
+            :card="$card"
+            :targets="$targets"
+            :tag="$material->category->code"
+            :variants-count="$variantsCount"
+            :name="$material->name"
+            :open="true"
+        >
+            @if ($sets !== [])
+                <x-slot:stage>
+                    <div
+                        class="ui-swatch-card__stage"
+                        wire:ignore
+                        x-data="materialViewer(@js(['sets' => $sets, 'objectSizeMm' => 1000, 'framing' => 1.65, 'verticalBias' => 0.12, 'autoStart' => true]))"
+                        x-effect="show(chosen?.id)"
+                        x-bind:class="status === 'ready' ? 'is-ready' : 'is-idle'"
+                        x-ref="stage"
+                        data-test="quick-stage"
+                    >
+                        <button class="ui-preview-start" type="button" x-show="status !== 'ready'" x-on:click.prevent.stop="start()" x-bind:disabled="status === 'loading'" data-test="start-3d">
+                            <span x-text="status === 'loading' ? 'Loading 3D…' : (status === 'error' ? 'Retry 3D preview' : 'Loading 3D…')"></span>
+                            <span aria-hidden="true">↗</span>
+                        </button>
+                        <x-ui.material-preview-status />
+                        <template x-if="status === 'ready'"><x-ui.material-map-inspector compact /></template>
+                    </div>
+                </x-slot:stage>
+            @endif
+        </x-ui.swatch-preview>
 
-    <div class="ui-modal__panel" role="dialog" aria-modal="true" aria-labelledby="quick-title" tabindex="-1" x-trap.inert.noscroll="true">
-        <header class="ui-modal__head">
+        <dl class="ui-modal__facts">
             <div>
-                <x-ui.eyebrow>{{ $material->category->name }}</x-ui.eyebrow>
-                <h2 id="quick-title">{{ $material->name }}</h2>
-                <p class="ui-modal__code"><code data-test="quick-code">{{ $material->code }}</code></p>
+                <dt>{{ __('Colourway') }}</dt>
+                <dd>
+                    <span x-text="chosen?.name ?? '—'">{{ $card['variants'][$card['active']]['name'] ?? '—' }}</span>
+                    <code x-text="chosen?.code ?? ''" data-test="quick-variant-code">{{ $card['variants'][$card['active']]['code'] ?? '' }}</code>
+                </dd>
             </div>
-            <button type="button" class="ui-modal__close" wire:click="closeQuick" aria-label="{{ __('Close') }}" data-test="quick-close">
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
-            </button>
-        </header>
+            <div>
+                <dt>{{ __('Supplier') }}</dt>
+                <dd>{{ $material->supplier?->name ?? __('In-house') }}@if ($material->supplier_product_code) <code>{{ $material->supplier_product_code }}</code>@endif</dd>
+            </div>
+            @if ($material->collection)
+                <div>
+                    <dt>{{ __('Collection') }}</dt>
+                    <dd>{{ $material->collection }}</dd>
+                </div>
+            @endif
+            @if ($material->tile_width_mm)
+                <div>
+                    <dt>{{ __('Tile') }}</dt>
+                    <dd>{{ (float) $material->tile_width_mm }} × {{ (float) $material->tile_height_mm }} mm</dd>
+                </div>
+            @endif
+            <div>
+                <dt>{{ __('Variants') }}</dt>
+                <dd>{{ $variantsCount }}</dd>
+            </div>
+            <div>
+                <dt>{{ __('State') }}</dt>
+                <dd class="ui-modal__badges">
+                    <x-ui.badge :tone="$status" dot>{{ $material->status->label() }}</x-ui.badge>
+                    <x-ui.badge tone="info">{{ $material->currentVersion ? 'v'.$material->currentVersion->number : __('Unpublished') }}</x-ui.badge>
+                    @if ($material->visibility->value === 'restricted')
+                        <x-ui.badge tone="warning">{{ __('Restricted') }}</x-ui.badge>
+                    @endif
+                </dd>
+            </div>
+        </dl>
+    </div>
 
-        <div class="ui-modal__body">
-            <x-ui.swatch-preview
-                class="ui-modal__preview"
-                :card="$card"
-                :targets="$targets"
-                :tag="$material->category->code"
-                :variants-count="$variantsCount"
-                :name="$material->name"
-                :open="true"
+    <footer class="ui-modal__foot" wire:poll.15s="consumerSessionsUpdated">
+        @if ($command)
+            <p class="ui-consumer__status" data-status="{{ $command->status->value }}" data-test="quick-command">
+                <span class="ui-status-light ui-status-light--{{ $command->status->value }}" aria-hidden="true"></span>
+                <strong>{{ $command->payload['variant'] ?? '' }}</strong>
+                <span>→ {{ $command->session->label() }}</span>
+                <span>· {{ $command->status->label() }}</span>
+                @if ($command->message)<span>· {{ \Illuminate\Support\Str::limit($command->message, 120) }}</span>@endif
+            </p>
+        @endif
+
+        <div class="ui-modal__actions">
+            <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.show', $material) }}" wire:navigate data-test="quick-open-record">{{ __('Full record') }}</a>
+            @if (config('opal.embeddings.enabled'))
+                <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.index', ['similar' => $material->code, 'similarity' => 'semantic']) }}" data-test="quick-find-similar">{{ __('Same type') }}</a>
+                <a
+                    class="ui-button ui-button--quiet ui-button--md"
+                    href="{{ route('materials.index', ['similar' => $card['variants'][$card['active']]['code'] ?? '', 'similarity' => 'appearance']) }}"
+                    x-bind:href="'{{ route('materials.index', ['similarity' => 'appearance']) }}&similar=' + encodeURIComponent(chosen?.code || '')"
+                    data-test="quick-find-lookalikes"
+                >{{ __('Looks like this') }}</a>
+            @endif
+
+            <button
+                type="button"
+                class="ui-button ui-button--primary ui-button--md ui-modal__apply"
+                x-on:click="$wire.applyToConsumer(chosen.id)"
+                aria-disabled="{{ $blocked !== null ? 'true' : 'false' }}"
+                title="{{ $blocked ?? __('Apply the selected colourway in the connected application') }}"
+                data-test="quick-apply"
             >
-                @if ($sets !== [])
-                    <x-slot:stage>
-                        <div
-                            class="ui-swatch-card__stage"
-                            wire:ignore
-                            x-data="materialViewer(@js(['sets' => $sets, 'objectSizeMm' => 1000, 'framing' => 1.65, 'verticalBias' => 0.12, 'autoStart' => false]))"
-                            x-effect="show(current?.id)"
-                            x-bind:class="status === 'ready' ? 'is-ready' : 'is-idle'"
-                            x-ref="stage"
-                            data-test="quick-stage"
-                        >
-                            <button class="ui-preview-start" type="button" x-show="status !== 'ready'" x-on:click.prevent.stop="start()" x-bind:disabled="status === 'loading'" data-test="start-3d">
-                                <span x-text="status === 'loading' ? 'Loading 3D…' : (status === 'error' ? 'Retry 3D preview' : 'Explore in 3D')"></span>
-                                <span aria-hidden="true">↗</span>
-                            </button>
-                            <x-ui.material-preview-status />
-                            <template x-if="status === 'ready'"><x-ui.material-map-inspector compact /></template>
-                        </div>
-                    </x-slot:stage>
-                @endif
-            </x-ui.swatch-preview>
-
-            <dl class="ui-modal__facts">
-                <div>
-                    <dt>{{ __('Colourway') }}</dt>
-                    <dd>
-                        <span x-text="chosen?.name ?? '—'">{{ $card['variants'][$card['active']]['name'] ?? '—' }}</span>
-                        <code x-text="chosen?.code ?? ''" data-test="quick-variant-code">{{ $card['variants'][$card['active']]['code'] ?? '' }}</code>
-                    </dd>
-                </div>
-                <div>
-                    <dt>{{ __('Supplier') }}</dt>
-                    <dd>{{ $material->supplier?->name ?? __('In-house') }}@if ($material->supplier_product_code) <code>{{ $material->supplier_product_code }}</code>@endif</dd>
-                </div>
-                @if ($material->collection)
-                    <div>
-                        <dt>{{ __('Collection') }}</dt>
-                        <dd>{{ $material->collection }}</dd>
-                    </div>
-                @endif
-                @if ($material->tile_width_mm)
-                    <div>
-                        <dt>{{ __('Tile') }}</dt>
-                        <dd>{{ (float) $material->tile_width_mm }} × {{ (float) $material->tile_height_mm }} mm</dd>
-                    </div>
-                @endif
-                <div>
-                    <dt>{{ __('Variants') }}</dt>
-                    <dd>{{ $variantsCount }}</dd>
-                </div>
-                <div>
-                    <dt>{{ __('State') }}</dt>
-                    <dd class="ui-modal__badges">
-                        <x-ui.badge :tone="$status" dot>{{ $material->status->label() }}</x-ui.badge>
-                        <x-ui.badge tone="info">{{ $material->currentVersion ? 'v'.$material->currentVersion->number : __('Unpublished') }}</x-ui.badge>
-                        @if ($material->visibility->value === 'restricted')
-                            <x-ui.badge tone="warning">{{ __('Restricted') }}</x-ui.badge>
-                        @endif
-                    </dd>
-                </div>
-            </dl>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>
+                <span>{{ $this->applyLabel() }}</span>
+                <em x-text="chosen?.name ?? ''">{{ $card['variants'][$card['active']]['name'] ?? '' }}</em>
+            </button>
         </div>
 
-        <footer class="ui-modal__foot" wire:poll.15s="consumerSessionsUpdated">
-            @if ($command)
-                <p class="ui-consumer__status" data-status="{{ $command->status->value }}" data-test="quick-command">
-                    <span class="ui-status-light ui-status-light--{{ $command->status->value }}" aria-hidden="true"></span>
-                    <strong>{{ $command->payload['variant'] ?? '' }}</strong>
-                    <span>→ {{ $command->session->label() }}</span>
-                    <span>· {{ $command->status->label() }}</span>
-                    @if ($command->message)<span>· {{ \Illuminate\Support\Str::limit($command->message, 120) }}</span>@endif
-                </p>
-            @endif
-
-            <div class="ui-modal__actions">
-                <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.show', $material) }}" wire:navigate data-test="quick-open-record">{{ __('Full record') }}</a>
-                @if (config('opal.embeddings.enabled'))
-                    <a class="ui-button ui-button--quiet ui-button--md" href="{{ route('materials.index', ['similar' => $material->code, 'similarity' => 'semantic']) }}" data-test="quick-find-similar">{{ __('Same type') }}</a>
-                    <a
-                        class="ui-button ui-button--quiet ui-button--md"
-                        href="{{ route('materials.index', ['similar' => $card['variants'][$card['active']]['code'] ?? '', 'similarity' => 'appearance']) }}"
-                        x-bind:href="'{{ route('materials.index', ['similarity' => 'appearance']) }}&similar=' + encodeURIComponent(chosen?.code || '')"
-                        data-test="quick-find-lookalikes"
-                    >{{ __('Looks like this') }}</a>
-                @endif
-
-                <button
-                    type="button"
-                    class="ui-button ui-button--primary ui-button--md ui-modal__apply"
-                    x-on:click="$wire.applyToConsumer(chosen.id)"
-                    aria-disabled="{{ $blocked !== null ? 'true' : 'false' }}"
-                    title="{{ $blocked ?? __('Apply the selected colourway in the connected application') }}"
-                    data-test="quick-apply"
-                >
-                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h9M10 6l4 4-4 4" /><path d="M16 4v12" /></svg>
-                    <span>{{ $this->applyLabel() }}</span>
-                    <em x-text="chosen?.name ?? ''">{{ $card['variants'][$card['active']]['name'] ?? '' }}</em>
-                </button>
-            </div>
-
-            <x-ui.consumer-target :sessions="$sessions" :selected="$this->selectedConsumer()" />
-            @if ($blocked)
-                <p class="ui-modal__note ui-modal__note--blocked" data-test="quick-blocked">{{ $blocked }}</p>
-            @endif
-        </footer>
-    </div>
+        <x-ui.consumer-target :sessions="$sessions" :selected="$this->selectedConsumer()" />
+        @if ($blocked)
+            <p class="ui-modal__note ui-modal__note--blocked" data-test="quick-blocked">{{ $blocked }}</p>
+        @endif
+    </footer>
 </div>
