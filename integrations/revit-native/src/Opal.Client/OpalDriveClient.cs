@@ -126,7 +126,8 @@ public sealed class OpalDriveClient : IDisposable
         if (sha256.Length != 64 || sha256.Any(c => !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))))
             throw new ArgumentException("A manifest SHA-256 is required.", nameof(sha256));
         var uri = ApiUri(contentUrl);
-        if (!uri.AbsolutePath.StartsWith("/api/v1/drive/files/", StringComparison.Ordinal) && !uri.AbsolutePath.StartsWith("/api/v1/drive/packages/", StringComparison.Ordinal))
+        if (!uri.AbsolutePath.StartsWith("/api/v1/drive/files/", StringComparison.Ordinal) && !uri.AbsolutePath.StartsWith("/api/v1/drive/packages/", StringComparison.Ordinal)
+            && !System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath, @"^/api/v1/drive/intake/[a-fA-F0-9-]{36}/files/[a-fA-F0-9-]{36}/content$"))
             throw new ArgumentException("Content must be an OPAL drive file.", nameof(contentUrl));
         var length = (int)Math.Min(count, fileBytes - offset);
         var end = offset + length - 1;

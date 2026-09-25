@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Library\Drives\DriveLayout;
 use App\Models\Concerns\HasPermanentUuid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -71,7 +72,7 @@ class DriveIntakeSession extends Model
 
     public function drivePath(): string
     {
-        return $this->is_inbox ? '/upload' : '/Incoming/'.$this->uuid;
+        return $this->is_inbox ? DriveLayout::UPLOAD : '/Incoming/'.$this->uuid;
     }
 
     public function displayStatus(): string

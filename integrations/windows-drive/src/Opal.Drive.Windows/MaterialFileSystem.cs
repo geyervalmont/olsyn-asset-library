@@ -18,7 +18,7 @@ public sealed class MaterialFileSystem(DriveSession session, IntakeStaging intak
     private static FileInformation Information(DriveNode node) => new()
     {
         FileName = node.Name, Length = node.File?.Bytes ?? 0,
-        Attributes = node.IsDirectory ? FileAttributes.Directory : (node.Path.StartsWith("\\Incoming\\", StringComparison.OrdinalIgnoreCase) || node.Path.StartsWith("\\upload\\", StringComparison.OrdinalIgnoreCase)) ? FileAttributes.Archive : FileAttributes.ReadOnly | FileAttributes.Archive,
+        Attributes = node.IsDirectory ? FileAttributes.Directory : string.IsNullOrEmpty(node.File?.ContentUrl) ? FileAttributes.Archive : FileAttributes.ReadOnly | FileAttributes.Archive,
         CreationTime = PublishedTime, LastAccessTime = PublishedTime, LastWriteTime = PublishedTime,
     };
     private static NtStatus Error(Exception error) => error switch
@@ -55,12 +55,13 @@ public sealed class MaterialFileSystem(DriveSession session, IntakeStaging intak
                 if (upload is null || mode is not (FileMode.CreateNew or FileMode.OpenOrCreate or FileMode.Create)) return NtStatus.ObjectNameNotFound;
                 intake.CreateDirectory(path); return NtStatus.Success;
             }
-            if (upload is not null)
+            if (upload is not null && session.Tree.Find(path)?.File is null)
             {
                 if (node is null && Find(DrivePath.Parent(path)) is not { IsDirectory: true }) return NtStatus.ObjectPathNotFound;
                 info.Context = intake.Open(path, mode, write);
                 return node is not null && mode is FileMode.Create or FileMode.OpenOrCreate ? NtStatus.ObjectNameCollision : NtStatus.Success;
             }
+            if (write || mode != FileMode.Open) return NtStatus.AccessDenied;
             if (node?.File is null) return NtStatus.ObjectNameNotFound;
             info.Context = (access & (Access.ReadData | Access.GenericRead | Access.GenericAll)) != 0
                 ? session.OpenAsync(node.File).GetAwaiter().GetResult() : node.File;
@@ -84,7 +85,7 @@ public sealed class MaterialFileSystem(DriveSession session, IntakeStaging intak
         {
             if (info.Context is DriveSession.ReadHandle handle) bytesRead = handle.ReadAsync(buffer, offset).GetAwaiter().GetResult();
             else if (info.Context is IntakeStaging.StageHandle local) bytesRead = local.Read(buffer, offset);
-            else if (session.Tree.UploadFolder(fileName) is not null)
+            else if (session.Tree.UploadFolder(fileName) is not null && session.Tree.Find(fileName)?.File is null)
             {
                 using var stage = intake.Open(fileName, FileMode.Open, false); bytesRead = stage.Read(buffer, offset);
             }
@@ -154,7 +155,7 @@ public sealed class MaterialFileSystem(DriveSession session, IntakeStaging intak
     }
     public NtStatus GetVolumeInformation(out string volumeLabel, out FileSystemFeatures features, out string fileSystemName, out uint maximumComponentLength, IDokanFileInfo info)
     {
-        volumeLabel = "OPAL Materials"; fileSystemName = "NTFS"; maximumComponentLength = 200;
+        volumeLabel = "OPAL"; fileSystemName = "NTFS"; maximumComponentLength = 200;
         features = FileSystemFeatures.CasePreservedNames | FileSystemFeatures.UnicodeOnDisk | FileSystemFeatures.PersistentAcls;
         return NtStatus.Success;
     }

@@ -69,12 +69,12 @@ test('a shared office address can start links for more than ten Revit clients', 
     }
 });
 
-test('a drive device receives only drive abilities and stale claim instances cannot mint extra tokens', function () {
-    $started = $this->postJson('/api/v1/link', ['client' => 'prismfs', 'machine' => 'DESIGNER'])->assertCreated()->json();
+test('a drive device receives only drive abilities and stale claim instances cannot mint extra tokens', function (string $client) {
+    $started = $this->postJson('/api/v1/link', ['client' => $client, 'machine' => 'DESIGNER'])->assertCreated()->json();
     $first = DeviceLink::findByCode($started['code']);
     $stale = DeviceLink::findByCode($started['code']);
     app(ClaimDeviceLink::class)->handle($first, $this->user);
     expect(fn () => app(ClaimDeviceLink::class)->handle($stale, $this->user))->toThrow(ValidationException::class);
     expect($this->user->tokens()->sole()->abilities)->toBe(['drive:read', 'drive:write']);
     $this->getJson("/api/v1/link/{$started['code']}?secret={$started['secret']}")->assertOk()->assertHeader('Cache-Control', 'no-store, private');
-});
+})->with(['prismfs', 'nucleus-drive']);

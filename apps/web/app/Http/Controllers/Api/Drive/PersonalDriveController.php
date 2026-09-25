@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers\Api\Drive;
 
+use App\Library\Drives\DriveLayout;
 use App\Library\Drives\DriveNamespace;
 use App\Library\Drives\HttpFileResponse;
-use App\Models\DriveIntakeSession;
+use App\Library\Drives\IntakeNamespace;
 use App\Models\Material;
 use App\Models\Package;
 use App\Models\PackageDerivative;
-use App\Models\Tenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -21,7 +21,7 @@ final class PersonalDriveController
 
         return response()->json(['data' => [
             'contract' => 'opal-drive/1', 'account' => ['id' => (string) $user->id, 'name' => $user->name, 'email' => $user->email],
-            'label' => 'OPAL Materials', 'suggested_mount' => 'O:\\',
+            'label' => DriveLayout::LABEL, 'layout' => DriveLayout::describe(), 'suggested_mount' => 'O:\\',
             'manifest_url' => route('api.drive.manifest', absolute: false),
             'intake_url' => route('api.drive.intake.index', absolute: false),
             'heartbeat_url' => route('api.drive.heartbeat', absolute: false),
@@ -32,7 +32,7 @@ final class PersonalDriveController
         ]], headers: ['Cache-Control' => 'private, no-store']);
     }
 
-    public function manifest(Request $request, DriveNamespace $namespace): JsonResponse|Response
+    public function manifest(Request $request, DriveNamespace $namespace, IntakeNamespace $intake): JsonResponse|Response
     {
         $files = array_map(function (array $entry): array {
             $file = [
@@ -49,18 +49,14 @@ final class PersonalDriveController
 
             return $file;
         }, $namespace->projectionEntriesForUser($request->user()));
-        $incoming = $request->user()->can('materials.contribute') && $request->user()->tokenCan('drive:write')
-            ? DriveIntakeSession::query()->where('user_id', $request->user()->id)->visibleTo($request->user())->where('is_inbox', false)->open()->orderBy('uuid')->get()->map(fn ($session): array => [
-                'id' => $session->uuid, 'path' => '/Incoming/'.$session->uuid, 'label' => $session->name, 'writable' => true,
-                'expires_at' => $session->expires_at->toIso8601String(),
-                'session_url' => route('api.drive.intake.show', ['session' => $session->uuid], false),
-            ])->all() : [];
+        $sessions = $intake->sessions($request->user());
+        $incoming = $sessions->where('is_inbox', false)->map(fn ($session) => $intake->folder($session))->values()->all();
+        $inbox = $sessions->firstWhere('is_inbox', true);
         $uploadEnabled = $request->user()->can('materials.contribute') && $request->user()->tokenCan('drive:write');
-        $inbox = $uploadEnabled ? DriveIntakeSession::query()->where('user_id', $request->user()->id)
-            ->where('tenant_id', Tenant::current()?->id)->where('is_inbox', true)->open()->first() : null;
-        $upload = $inbox === null ? null : ['id' => $inbox->uuid, 'path' => '/upload', 'label' => $inbox->name,
-            'writable' => true, 'expires_at' => null];
-        $data = ['upload_enabled' => $uploadEnabled, 'upload' => $upload, 'contract' => 'opal-drive/1', 'files' => $files, 'incoming' => $incoming, 'library_writable' => false];
+        $data = ['upload_enabled' => $uploadEnabled, 'upload' => $inbox === null ? null : $intake->folder($inbox),
+            'contract' => 'opal-drive/1', 'layout' => DriveLayout::describe(), 'files' => $files, 'incoming' => $incoming,
+            'intake_files' => $sessions->flatMap(fn ($session) => $session->files->map(fn ($file) => $intake->file($session, $file)))->values()->all(),
+            'library_writable' => false];
         $etag = '"'.hash('sha256', $request->user()->id.json_encode($data, JSON_THROW_ON_ERROR)).'"';
         $headers = ['ETag' => $etag, 'Cache-Control' => 'private, no-store'];
         if (in_array($etag, $request->getETags(), true)) {

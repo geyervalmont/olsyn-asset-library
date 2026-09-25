@@ -56,6 +56,12 @@ using (var instance = new DokanInstanceBuilder(dokan).ConfigureOptions(o => Driv
     await staging.UploadPendingAsync();
     if (server.Uploads != 1 || staging.Counts.Uploaded != 1) throw new Exception("Upload not acknowledged");
     Console.WriteLine("PASS Explorer-style directory creation, file copy, readback and upload acknowledgement");
+    var remoteUpload = Path.Combine(letter, "upload", "other-device", "stone.mdl");
+    if (!File.ReadAllBytes(remoteUpload).SequenceEqual(server.Bytes)) throw new Exception("Cross-device upload read failed");
+    denied = false;
+    try { File.WriteAllText(remoteUpload, "overwrite"); } catch (UnauthorizedAccessException) { denied = true; } catch (IOException) { denied = true; }
+    if (!denied) throw new Exception("Confirmed cross-device upload was writable");
+    Console.WriteLine("PASS cross-device upload enumeration, authenticated read and overwrite denial");
     server.Denied = true;
     try { await session.RefreshAsync(); } catch (HttpRequestException) { }
     denied = false;
@@ -173,6 +179,8 @@ sealed class Fixture : IAsyncDisposable
             var manifest = new { contract = "opal-drive/1", library_writable = false,
                 files = new[] { "/materials/by-id/texture.bin", "/materials/by-name/Stone/Limestone/Warm grey/revit/512/base_color.bin" }
                     .Select(path => new { path, bytes = Bytes.Length, sha256 = Hash, content_url = "/api/v1/drive/files/01951234-1234-7000-8000-000000000001/1" }).ToArray(),
+                intake_files = new[] { new { path = "/upload/other-device/stone.mdl", bytes = Bytes.Length, sha256 = Hash,
+                    content_url = $"/api/v1/drive/intake/{Batch}/files/01951234-1234-7000-8000-000000000003/content" } },
                 upload_enabled = true, upload = new { id = Batch, path = "/upload", label = "Mount test", writable = true }, incoming = Array.Empty<object>() };
             await Json(r, manifest); return;
         }

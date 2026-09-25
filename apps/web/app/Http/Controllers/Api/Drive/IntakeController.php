@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api\Drive;
 
 use App\Actions\Drives\ManageIntake;
+use App\Library\Drives\HttpFileResponse;
 use App\Models\DriveIntakeFile;
 use App\Models\DriveIntakeSession;
+use App\Models\File;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -60,6 +62,24 @@ final class IntakeController
         return response()->noContent()->header('Cache-Control', 'private, no-store');
     }
 
+    public function content(Request $request, string $session, string $file, HttpFileResponse $stream): \Symfony\Component\HttpFoundation\Response
+    {
+        $owned = $this->owned($request, $session);
+        abort_unless($request->user()->tokenCan('drive:write'), 403);
+        // Mounted files disappear as soon as their batch rotates/closes. Website
+        // downloads retain the separate owner/reviewer history permission.
+        abort_unless($owned->acceptsUploads(), 404);
+        $entry = $owned->files()->where('uuid', $file)->whereNotNull('uploaded_at')->firstOrFail();
+
+        $response = $stream->send($request, new File([
+            'disk' => $entry->disk, 'object_key' => $entry->object_key, 'bytes' => $entry->bytes,
+            'sha256' => $entry->sha256, 'mime_type' => 'application/octet-stream',
+        ]));
+        $response->headers->set('Content-Disposition', 'attachment');
+
+        return $response;
+    }
+
     public function submit(Request $request, string $session, ManageIntake $intake): JsonResponse
     {
         return $this->json(['data' => $this->payload($intake->submit($this->owned($request, $session)))], 202);
@@ -92,6 +112,7 @@ final class IntakeController
     {
         return ['id' => $file->uuid, 'path' => $file->path, 'bytes' => $file->bytes, 'sha256' => $file->sha256,
             'uploaded' => $file->uploaded_at !== null,
+            'content_url' => $file->uploaded_at === null ? null : route('api.drive.intake.content', ['session' => $session->uuid, 'file' => $file->uuid], false),
             'upload_url' => route('api.drive.intake.upload', ['session' => $session->uuid, 'file' => $file->uuid], false)];
     }
 

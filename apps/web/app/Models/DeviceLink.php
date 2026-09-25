@@ -111,7 +111,7 @@ class DeviceLink extends Model
      */
     public function label(): string
     {
-        $client = $this->client === 'prismfs' ? 'OPAL Drive' : Str::of($this->client)->replace(['-', '_'], ' ')->title()->toString();
+        $client = in_array($this->client, ['prismfs', 'nucleus-drive'], true) ? ($this->client === 'nucleus-drive' ? 'OPAL Nucleus Drive' : 'OPAL Drive') : Str::of($this->client)->replace(['-', '_'], ' ')->title()->toString();
 
         return $this->machine ? $client.' on '.$this->machine : $client;
     }

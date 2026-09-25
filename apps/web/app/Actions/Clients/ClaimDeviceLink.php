@@ -25,7 +25,7 @@ class ClaimDeviceLink
                 throw ValidationException::withMessages(['code' => 'This code has expired. Start the link again in the client.']);
             }
 
-            $token = $link->client === 'prismfs'
+            $token = in_array($link->client, ['prismfs', 'nucleus-drive'], true)
                 ? $user->createToken($link->label(), ['drive:read', 'drive:write'])
                 : $user->createToken($link->label());
 

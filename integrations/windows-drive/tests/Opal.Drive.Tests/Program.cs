@@ -256,6 +256,33 @@ try
         Check(state.Tree.Find("/upload") is null && queue.Find(path) is null);
         await Throws(() => Task.FromResult(queue.Open(path, FileMode.CreateNew, true)));
     });
+    await Test("confirmed uploads from other clients are visible, range readable, immutable and revoked on rotation", async () =>
+    {
+        var remote = new Fake { UploadRoot = true, RemoteIntake = true };
+        using var client = remote.Client();
+        var state = new DriveSession(client, new ContentCache(Path.Combine(temp, "remote-intake-cache")));
+        await state.RefreshAsync();
+        var file = state.Tree.Find("/upload/nested/stone.mdl")!.File!;
+        using var handle = await state.OpenAsync(file);
+        var buffer = new byte[100];
+        Check(await handle.ReadAsync(buffer, 123) == 100 && buffer.SequenceEqual(remote.Bytes.Skip(123).Take(100)));
+        var staging = new IntakeStaging(Path.Combine(temp, "remote-intake-staging"), state);
+        await Throws(() => Task.FromResult(staging.Open(file.Path, FileMode.Create, true)));
+        remote.RemoteIntake = false; remote.Batch = Guid.NewGuid(); await state.RefreshAsync();
+        Check(state.Tree.Find(file.Path) is null);
+        await Throws(() => handle.ReadAsync(buffer, 0));
+    });
+    await Test("intake manifests cannot escape their authorized folder or substitute another batch", async () =>
+    {
+        var folder = new IncomingFolder(Guid.NewGuid(), "/upload", "Upload", null);
+        var file = new Fake().Entry with { Path = "/upload/nested/stone.mdl", ContentUrl = $"/api/v1/drive/intake/{folder.Id}/files/{Guid.NewGuid()}/content" };
+        Check(new DriveTree([], [folder], [file]).Find(file.Path)?.File is not null);
+        await Throws(() => Task.FromResult(new DriveTree([], [], [file])));
+        await Throws(() => Task.FromResult(new DriveTree([], [folder], [file with { Path = "/materials/stolen.mdl" }])));
+        await Throws(() => Task.FromResult(new DriveTree([], [folder], [file with { ContentUrl = file.ContentUrl.Replace(folder.Id.ToString(), Guid.NewGuid().ToString()) }])));
+        await Throws(() => Task.FromResult(new DriveTree([], [folder], [file, file])));
+        await Throws(() => Task.FromResult(new DriveTree([], [folder with { ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) }], [file])));
+    });
     Console.WriteLine($"{count} drive core tests passed");
 }
 finally { Directory.Delete(temp,true); }
@@ -263,7 +290,7 @@ finally { Directory.Delete(temp,true); }
 sealed class Fake : HttpMessageHandler
 {
     public byte[] Bytes = Enumerable.Range(0, 300000).Select(i=>(byte)(i%251)).ToArray();
-    public bool Denied, Offline, Corrupt, Incoming, FailUpload, SlowRead, UploadRoot, NeedsInbox;
+    public bool Denied, Offline, Corrupt, Incoming, FailUpload, SlowRead, UploadRoot, NeedsInbox, RemoteIntake;
     public TaskCompletionSource ReadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public int Reads, Heads, Uploads, InboxCalls;
     public Guid Batch = Guid.NewGuid();
@@ -275,7 +302,7 @@ sealed class Fake : HttpMessageHandler
         if(Offline) throw new HttpRequestException("Offline");
         if(Denied) return new(HttpStatusCode.Forbidden);
         if(request.RequestUri!.AbsolutePath.EndsWith("manifest"))
-            return Json(new { contract="opal-drive/1", library_writable=false, upload_enabled=UploadRoot, upload=UploadRoot && !NeedsInbox ? new { id=Batch, path="/upload", label="Drive upload", writable=true } : null, files=new[]{new{path=Entry.Path,bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=Entry.ContentUrl}},incoming=Incoming?new[]{new{id=Batch,path="/Incoming/"+Batch,label="Textures",expires_at=DateTimeOffset.UtcNow.AddHours(1)}}:[] });
+            return Json(new { contract="opal-drive/1", library_writable=false, intake_files=RemoteIntake ? new[]{new{path="/upload/nested/stone.mdl",bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=$"/api/v1/drive/intake/{Batch}/files/01951234-1234-7000-8000-000000000003/content"}} : [], upload_enabled=UploadRoot, upload=UploadRoot && !NeedsInbox ? new { id=Batch, path="/upload", label="Drive upload", writable=true } : null, files=new[]{new{path=Entry.Path,bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=Entry.ContentUrl}},incoming=Incoming?new[]{new{id=Batch,path="/Incoming/"+Batch,label="Textures",expires_at=DateTimeOffset.UtcNow.AddHours(1)}}:[] });
         if(request.RequestUri.AbsolutePath.EndsWith("intake/inbox")) { InboxCalls++; NeedsInbox=false; return Json(new { data = new { id=Batch } }); }
         if(request.Method==HttpMethod.Head)
         { Heads++;var result=new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent([])};result.Content.Headers.ContentLength=Bytes.Length;result.Headers.ETag=new EntityTagHeaderValue('"'+Entry.Sha256+'"');return result; }
