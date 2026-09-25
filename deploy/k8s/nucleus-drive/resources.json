@@ -1,0 +1,225 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "nucleus-drive-state",
+        "namespace": "olsyn-nucleus-control"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "resources": {
+          "requests": {
+            "storage": "5Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "opal-nucleus-drive",
+        "namespace": "olsyn-nucleus-control",
+        "labels": {
+          "app": "opal-nucleus-drive"
+        }
+      },
+      "spec": {
+        "replicas": 1,
+        "strategy": {
+          "type": "Recreate"
+        },
+        "selector": {
+          "matchLabels": {
+            "app": "opal-nucleus-drive"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "opal-nucleus-drive"
+            }
+          },
+          "spec": {
+            "automountServiceAccountToken": false,
+            "nodeSelector": {
+              "kubernetes.io/hostname": "olsyn-prod-2"
+            },
+            "imagePullSecrets": [
+              {
+                "name": "ghcr-secret"
+              }
+            ],
+            "containers": [
+              {
+                "name": "adapter",
+                "image": "ghcr.io/geyervalmont/olsyn-nucleus-control-worker@sha256:e84855824af9dc66ff422a1040c158434d76f99a3c2e30507537d92474f41a5c",
+                "command": [
+                  "sh",
+                  "/adapter/start.sh"
+                ],
+                "envFrom": [
+                  {
+                    "secretRef": {
+                      "name": "nucleus-olsyn-credentials"
+                    }
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "OPAL_NUCLEUS_LINKS",
+                    "value": "/links/links.json"
+                  },
+                  {
+                    "name": "OPAL_NUCLEUS_STATE",
+                    "value": "/state"
+                  }
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "adapter",
+                    "mountPath": "/adapter",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "links",
+                    "mountPath": "/links",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "state",
+                    "mountPath": "/state",
+                    "readOnly": false
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "256Mi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "1Gi",
+                    "ephemeral-storage": "4Gi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-c",
+                      "for kit_path in /work/packman/chk/kit-kernel/*; do break; done; exec \"$kit_path/python/bin/python3.12\" /adapter/probe.py"
+                    ]
+                  },
+                  "initialDelaySeconds": 20,
+                  "periodSeconds": 20,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "livenessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-c",
+                      "for kit_path in /work/packman/chk/kit-kernel/*; do break; done; exec \"$kit_path/python/bin/python3.12\" /adapter/probe.py --live"
+                    ]
+                  },
+                  "initialDelaySeconds": 90,
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                }
+              }
+            ],
+            "volumes": [
+              {
+                "name": "adapter",
+                "configMap": {
+                  "name": "opal-nucleus-drive-adapter"
+                }
+              },
+              {
+                "name": "links",
+                "secret": {
+                  "secretName": "opal-nucleus-drive-links",
+                  "defaultMode": 256
+                }
+              },
+              {
+                "name": "state",
+                "persistentVolumeClaim": {
+                  "claimName": "nucleus-drive-state"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "opal-nucleus-drive",
+        "namespace": "olsyn-nucleus-control"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app": "opal-nucleus-drive"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": []
+      }
+    },
+    {
+      "apiVersion": "monitoring.coreos.com/v1",
+      "kind": "PrometheusRule",
+      "metadata": {
+        "name": "opal-nucleus-drive",
+        "namespace": "opal",
+        "labels": {
+          "app.kubernetes.io/part-of": "opal"
+        }
+      },
+      "spec": {
+        "groups": [
+          {
+            "name": "opal-nucleus-drive",
+            "rules": [
+              {
+                "alert": "OpalNucleusDriveUnavailable",
+                "expr": "kube_deployment_status_replicas_available{namespace=\"olsyn-nucleus-control\",deployment=\"opal-nucleus-drive\"} < 1",
+                "for": "3m",
+                "labels": {
+                  "severity": "warning"
+                },
+                "annotations": {
+                  "summary": "Nucleus intake adapter is unhealthy; uploads may be delayed",
+                  "description": "Inspect adapter health.json and logs. Check link permissions, native ACLs and transfer conflicts before restarting."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
