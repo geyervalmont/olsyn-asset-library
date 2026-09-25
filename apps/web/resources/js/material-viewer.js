@@ -14,6 +14,7 @@ export function materialViewer(config, loadStage = loadMaterialStage) {
     let stageKind = null;
     let disposed = false;
     let observer = null;
+    let previewRequest = null;
     return {
         sets: config.sets ?? {},
         objectSizeMm: config.objectSizeMm ?? 1000,
@@ -111,6 +112,7 @@ export function materialViewer(config, loadStage = loadMaterialStage) {
             disposed = true;
             this.showRevision++;
             observer?.disconnect();
+            previewRequest?.abort();
             stage?.detach(this.host);
         },
 
@@ -133,6 +135,18 @@ export function materialViewer(config, loadStage = loadMaterialStage) {
             this.previewWarnings = [];
             const revision = ++this.showRevision;
             const current = () => !disposed && revision === this.showRevision && this.host.isConnected;
+            // Download the graph alongside the renderer and its lighting, not
+            // after both have finished. Closing/changing colourway cancels it.
+            previewRequest?.abort();
+            previewRequest = new AbortController();
+            const bundle = set.materialx_url ? fetch(set.materialx_url, {
+                signal: previewRequest.signal, credentials: 'same-origin', headers: { Accept: 'application/json' },
+            }).then((response) => {
+                if (!response.ok) throw new Error('The package MaterialX preview is unavailable.');
+                return response.json();
+            }) : null;
+            // Attach a handler now: a fetch may fail before the renderer imports.
+            bundle?.catch(() => {});
             const render = async (kind) => {
                 if (!attached || stageKind !== kind) {
                     const next = await loadStage(kind);
@@ -150,7 +164,9 @@ export function materialViewer(config, loadStage = loadMaterialStage) {
                     stage.setShape(this.shape);
                 }
                 if (!current()) return;
-                const result = await stage.show(set, this.objectSizeMm);
+                const result = kind === 'materialx'
+                    ? await stage.show(set, this.objectSizeMm, { bundle })
+                    : await stage.show(set, this.objectSizeMm);
                 if (!current()) return;
                 this.previewMode = result?.mode ?? 'Texture preview';
                 this.previewWarnings.push(...(result?.warnings ?? []));

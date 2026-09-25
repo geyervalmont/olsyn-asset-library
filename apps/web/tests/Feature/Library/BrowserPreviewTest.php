@@ -77,3 +77,18 @@ test('preview sizes are allowlisted and small images are never upscaled', functi
     $response = $this->get($small->previewUrl())->assertOk();
     expect(getimagesizefromstring($response->getContent())[0])->toBe(16);
 });
+
+test('large texture maps are resized with bounded image memory and keep their aspect ratio', function () {
+    $image = imagecreatetruecolor(8192, 2049);
+    ob_start();
+    imagepng($image);
+    unset($image);
+    $large = app(FileStore::class)->store((string) ob_get_clean(), 'large.png');
+    app(CreateRepresentation::class)->handle($this->material->variants()->first(), 'pbr', '8k', ['normal' => $large]);
+    Cache::store('file')->forget(app(BrowserPreview::class)->key($large, 1024));
+    $memory = Imagick::getResourceLimit(Imagick::RESOURCETYPE_MEMORY);
+    $response = $this->actingAs($this->viewer)->get($large->previewUrl(1024))->assertOk();
+    $info = getimagesizefromstring($response->getContent());
+    expect($info[0])->toBe(1024)->and($info[1])->toBe(256)->and($info[2])->toBe(IMAGETYPE_WEBP)
+        ->and(Imagick::getResourceLimit(Imagick::RESOURCETYPE_MEMORY))->toBe($memory);
+});

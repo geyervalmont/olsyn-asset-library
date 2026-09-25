@@ -1,17 +1,23 @@
 import { consumerStatus } from './consumer-status';
 import { materialViewer } from './material-viewer';
+import { materialQuickView } from './material-quick-view';
 
 /**
  * A plain click opens the material quick view; a modifier or middle click is
  * left alone so the full record still opens in a new tab.
  */
-function quickOpen(component, event, code, variantId = null) {
+function quickOpen(component, event, material, variant = null) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) {
         return;
     }
 
     event.preventDefault();
-    component.$wire?.openQuick(code, variantId);
+    component.$dispatch('material-open', {
+        ...material,
+        variantId: variant?.id ?? null,
+        image: variant?.image ?? event.currentTarget.querySelector('img')?.src ?? null,
+        hex: variant?.hex ?? null,
+    });
 }
 
 document.addEventListener('alpine:init', () => {
@@ -107,8 +113,8 @@ document.addEventListener('alpine:init', () => {
             this.hovered = null;
         },
 
-        quickOpen(event, code) {
-            quickOpen(this, event, code, this.chosen?.id);
+        quickOpen(event, material) {
+            quickOpen(this, event, material, this.chosen);
         },
     }));
 
@@ -122,6 +128,7 @@ document.addEventListener('alpine:init', () => {
 
 document.addEventListener('alpine:init', () => {
     window.Alpine.data('materialViewer', materialViewer);
+    window.Alpine.data('materialQuickView', materialQuickView);
     window.Alpine.data('consumerStatus', consumerStatus);
 });
 

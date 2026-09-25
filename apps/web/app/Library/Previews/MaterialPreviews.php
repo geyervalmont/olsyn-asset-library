@@ -209,7 +209,7 @@ class MaterialPreviews
      * @param  Collection<int, Variant>  $variants
      * @return array<int, array<string, mixed>>
      */
-    public function viewerSets(Material $material, Collection $variants): array
+    public function viewerSets(Material $material, Collection $variants, ?int $previewSize = null): array
     {
         $canonical = Target::canonical();
         $finish = self::FINISHES[$material->category->code] ?? 'default';
@@ -241,7 +241,9 @@ class MaterialPreviews
 
             foreach ($representation->representationFiles ?? [] as $representationFile) {
                 if ($representationFile->file->isImage()) {
-                    $set[$representationFile->role->slug] = $representationFile->file->url();
+                    $set[$representationFile->role->slug] = $previewSize === null
+                        ? $representationFile->file->url()
+                        : $representationFile->file->previewUrl($previewSize);
                 }
             }
 
