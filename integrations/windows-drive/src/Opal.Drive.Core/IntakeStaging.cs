@@ -180,6 +180,9 @@ public sealed class IntakeStaging
         if (!await uploadGate.WaitAsync(0, cancel).ConfigureAwait(false)) return;
         try
         {
+            // Namespace refresh owns reconnect/backoff. An offline upload tick
+            // must not raise another fault and continually postpone that retry.
+            if (!session.Online) return;
             ReconcilePaths();
             StagedFile[] pending;
             lock (gate) pending = files.Values.Where(f => f.State is "pending" or "failed").ToArray();

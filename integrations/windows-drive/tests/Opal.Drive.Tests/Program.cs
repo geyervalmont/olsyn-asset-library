@@ -226,7 +226,9 @@ try
         await state.RefreshAsync(); var queue=new IntakeStaging(Path.Combine(temp,"retry"),state); var path="\\Incoming\\"+remote.Batch+"\\sample.png";
         using(var write=queue.Open(path,FileMode.CreateNew,true)) write.Write([8,7,6],0);
         await queue.UploadPendingAsync(); Check(queue.Counts.Failed==1);
-        remote.FailUpload=false; await queue.UploadPendingAsync(); Check(queue.Counts.Uploaded==1);
+        state.Invalidate(); remote.FailUpload=false;
+        await queue.UploadPendingAsync(); Check(remote.Uploads == 0 && queue.Counts.Failed == 1);
+        await state.RefreshAsync(); await queue.UploadPendingAsync(); Check(queue.Counts.Uploaded==1);
     });
     await Test("root upload starts automatically and retains isolated payloads when batches rotate", async () =>
     {

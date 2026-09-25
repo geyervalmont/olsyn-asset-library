@@ -66,7 +66,7 @@ A GitHub Windows smoke test is not certification of every enterprise image, endp
 
 The complete server contract and scope are documented in [drive-upload-queue.md](../../docs/drive-upload-queue.md). The shared Nucleus/SMB library mount remains read-only.
 
-Drive 0.1.6 requests layout 2: `O:\ingestion\upload` receives source files and
+Drive 0.1.7 requests layout 2: `O:\ingestion\upload` receives source files and
 `O:\ingestion\workspace` is reserved for the upcoming preparation pipeline.
 The published `O:\materials` tree is unchanged. Existing staged uploads retain
 their payload keys and batch IDs when moving from `O:\upload`; older clients

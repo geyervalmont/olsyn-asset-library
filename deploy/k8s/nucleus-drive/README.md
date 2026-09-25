@@ -5,7 +5,7 @@ and intake inventory (`IntakeNamespace`). The website, Windows and this adapter
 use the same intake sessions, checksums, quotas and permission checks. No material
 parsing, publishing or AI ingestion is started automatically.
 
-- Windows: `O:\materials`, `O:\ingestion\upload` and `O:\ingestion\workspace` (Drive 0.1.6+); confirmed files from other clients
+- Windows: `O:\materials`, `O:\ingestion\upload` and `O:\ingestion\workspace` (Drive 0.1.7+); confirmed files from other clients
   appear through the authenticated drive manifest, normally within 30 seconds.
 - Nucleus: `/OPAL/materials` uses the shared read-only library. The previous
   `/Libraries/Materials` path remains available for existing scenes.
