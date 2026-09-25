@@ -3,6 +3,7 @@
 use App\Actions\Drives\ManageIntake;
 use App\Models\DriveIntakeSession;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
@@ -48,6 +49,8 @@ new #[Title('Ingestion')] class extends Component {
     #[Computed]
     public function selected(): ?DriveIntakeSession
     {
+        abort_if($this->batch !== '' && ! Str::isUuid($this->batch), 404);
+
         return $this->batch === '' ? null : $this->visible()->with('user')->withCount('files')
             ->withCount(['files as uploaded_count' => fn ($q) => $q->whereNotNull('uploaded_at')])
             ->withSum('files', 'bytes')
@@ -66,6 +69,7 @@ new #[Title('Ingestion')] class extends Component {
 
     public function selectBatch(string $uuid): void
     {
+        abort_unless(Str::isUuid($uuid), 404);
         $selected = $this->visible()->where('uuid', $uuid)->firstOrFail();
         $this->batch = $selected->uuid;
         $this->batchName = $selected->name;
@@ -85,6 +89,8 @@ new #[Title('Ingestion')] class extends Component {
 
     private function owned(): DriveIntakeSession
     {
+        abort_unless(Str::isUuid($this->batch), 404);
+
         return $this->visible()->where('user_id', auth()->id())->where('uuid', $this->batch)->firstOrFail();
     }
 

@@ -104,3 +104,7 @@ test('legacy Incoming batches remain private and a fresh inbox follows closure w
     Sanctum::actingAs($this->user, ['*']);
     $this->getJson('/api/v1/drive/manifest')->assertJsonPath('incoming.0.path', '/Incoming/'.$legacy->uuid)->assertJsonPath('upload.path', '/upload');
 });
+
+test('malformed batch links return not found instead of a database error', function () {
+    $this->actingAs($this->user)->get('/ingestion?batch=not-a-uuid')->assertNotFound();
+});
