@@ -192,6 +192,7 @@ test('stable shared and personal projections include the same canonical objects 
     $pinned = array_filter($paths, fn ($path) => str_contains($path, '/by-id/'));
     expect(array_diff($pinned, array_column($renamed, 'path')))->toBe([]);
     $this->material->update(['visibility' => Visibility::Restricted]);
+    $this->get($url)->assertOk()->assertSee('files: []', false);
     expect($namespace->projectionEntries($drive))->toBe([])->and($namespace->projectionEntriesForUser($user))->toBe([]);
     app(GrantMaterialAccess::class)->handle($this->material, $user);
     expect($namespace->projectionEntriesForUser($user))->toHaveCount(6)->and($namespace->projectionEntries($drive))->toBe([]);
