@@ -1,0 +1,197 @@
+{
+  "date": "2026-09-25",
+  "implementation_pr": "https://github.com/geyervalmont/olsyn-asset-library/pull/9",
+  "refresh_cache_pr": "https://github.com/geyervalmont/olsyn-asset-library/pull/10",
+  "mount": "omniverse://nucleus.olsyn.com/Libraries/Materials/",
+  "source_drive": "studio-share",
+  "before": {
+    "files": 12291,
+    "logical_bytes": 51532486690,
+    "canonical_usdz": 0,
+    "named_aliases": 0
+  },
+  "after": {
+    "files": 29336,
+    "by_id": 14668,
+    "by_name": 14668,
+    "usdz": 4754,
+    "yaml_bytes": 9165910,
+    "logical_bytes": 202964005188,
+    "canonical_packages": 2377,
+    "probe_seconds_two_uncached_builds": 13.74,
+    "probe_peak_mb": 219
+  },
+  "path_integrity": {
+    "old_paths_removed": 0,
+    "old_source_objects_changed": 0,
+    "case_collisions": 0
+  },
+  "canonical_storage": {
+    "checked": 2377,
+    "missing": 0,
+    "incorrect_size": 0,
+    "hash_samples": [
+      {
+        "package": 2786,
+        "bytes": 6741,
+        "sha256": "562ac930151c46b8600f7b054fb3b4723f622424a6d4d10579124c9a1cb12d8e",
+        "valid": true,
+        "path": "/materials/by-id/01a0cc9b-84d1-7609-a39b-ec95340787e8/01a0cc9b-872b-75d3-9539-1118da67d516/v1/canonical/562ac930151c46b8600f7b054fb3b4723f622424a6d4d10579124c9a1cb12d8e.usdz"
+      },
+      {
+        "package": 2857,
+        "bytes": 153139134,
+        "sha256": "f3efebda3cf55b647c3e86c32a57fdedd11dca14bbea9b0495be8530b4498a07",
+        "valid": true,
+        "path": "/materials/by-id/01a0cc9b-8500-7d95-9005-c49b70502da1/01a0cc9b-8757-7d03-843f-f40791fec878/v1/canonical/f3efebda3cf55b647c3e86c32a57fdedd11dca14bbea9b0495be8530b4498a07.usdz"
+      }
+    ]
+  },
+  "native_reads": [
+    {
+      "namespace": [
+        "by-id",
+        "by-name"
+      ]
+    },
+    {
+      "path": "by-id/01a0cc9b-84d1-7609-a39b-ec95340787e8/01a0cc9b-872b-75d3-9539-1118da67d516/v1/canonical/562ac930151c46b8600f7b054fb3b4723f622424a6d4d10579124c9a1cb12d8e.usdz",
+      "bytes": 6741,
+      "sha256": "562ac930151c46b8600f7b054fb3b4723f622424a6d4d10579124c9a1cb12d8e",
+      "verified": true
+    },
+    {
+      "path": "by-name/Paint/PowderCoat Protexture/White Flat/canonical/material.usdz",
+      "bytes": 6741,
+      "sha256": "562ac930151c46b8600f7b054fb3b4723f622424a6d4d10579124c9a1cb12d8e",
+      "verified": true
+    },
+    {
+      "path": "by-id/01a0cc9b-8500-7d95-9005-c49b70502da1/01a0cc9b-8757-7d03-843f-f40791fec878/v1/canonical/f3efebda3cf55b647c3e86c32a57fdedd11dca14bbea9b0495be8530b4498a07.usdz",
+      "bytes": 153139134,
+      "sha256": "f3efebda3cf55b647c3e86c32a57fdedd11dca14bbea9b0495be8530b4498a07",
+      "verified": true
+    },
+    {
+      "path": "by-name/Timber/H Collection/Gloucester/canonical/material.usdz",
+      "bytes": 153139134,
+      "sha256": "f3efebda3cf55b647c3e86c32a57fdedd11dca14bbea9b0495be8530b4498a07",
+      "verified": true
+    },
+    {
+      "path": "by-id/01a0cc9b-850a-7443-8e2e-b4afb63683bb/01a0cc9b-8725-739b-8051-41333d1ec4e8/v1/revit/preview/01a0cc9b-891f-7c66-baa0-04b3a4046794/base_color.jpg",
+      "bytes": 1152,
+      "sha256": "ea7fd0b31e9a3e439a329be2ca66c715af6be7f77644fa9b44386cb76e780ae1",
+      "verified": true
+    },
+    {
+      "path": "by-name/Paint/PowderCoat Duratec Eternity/TitaniumPearlKinetic Satin/revit/preview/base_color.jpg",
+      "bytes": 1152,
+      "sha256": "ea7fd0b31e9a3e439a329be2ca66c715af6be7f77644fa9b44386cb76e780ae1",
+      "verified": true
+    },
+    {
+      "path": "by-id/01a0cc9b-84bf-7966-bacf-b98dccdae451/01a0cc9b-85f3-75bc-9948-2e7f969bf397/v1/revit/4k/01a0cc9b-8827-70eb-b7be-948591e3382c/base_color.png",
+      "bytes": 85474074,
+      "sha256": "7d31a747a8d706207d598c2e17fc5ee2a5d46313f42ab8605cc631f5d6831a99",
+      "verified": true
+    },
+    {
+      "path": "by-name/Ceramic/Nobu/19127/revit/4k/base_color.png",
+      "bytes": 85474074,
+      "sha256": "7d31a747a8d706207d598c2e17fc5ee2a5d46313f42ab8605cc631f5d6831a99",
+      "verified": true
+    }
+  ],
+  "usd_validation": [
+    {
+      "path": "by-id/01a0cc9b-84d1-7609-a39b-ec95340787e8/01a0cc9b-872b-75d3-9539-1118da67d516/v1/canonical/562ac930151c46b8600f7b054fb3b4723f622424a6d4d10579124c9a1cb12d8e.usdz",
+      "bytes": 6741,
+      "sha256": "562ac930151c46b8600f7b054fb3b4723f622424a6d4d10579124c9a1cb12d8e",
+      "verified": true,
+      "usd_open": true,
+      "prims": 4,
+      "unresolved_dependencies": 0,
+      "assets": 1
+    },
+    {
+      "path": "by-id/01a0cc9b-8500-7d95-9005-c49b70502da1/01a0cc9b-8757-7d03-843f-f40791fec878/v1/canonical/f3efebda3cf55b647c3e86c32a57fdedd11dca14bbea9b0495be8530b4498a07.usdz",
+      "bytes": 153139134,
+      "sha256": "f3efebda3cf55b647c3e86c32a57fdedd11dca14bbea9b0495be8530b4498a07",
+      "verified": true,
+      "usd_open": true,
+      "prims": 10,
+      "unresolved_dependencies": 0,
+      "assets": 7
+    }
+  ],
+  "uncached_http": [
+    {
+      "status": 200,
+      "bytes": 9165910,
+      "seconds": 9.18,
+      "etag": "\"fa4345209c9865a56b2c7d5605b0e4955002385fedce03a25ff22591b67d7175\""
+    },
+    {
+      "status": 304,
+      "bytes": 0,
+      "seconds": 36.22,
+      "etag": "\"fa4345209c9865a56b2c7d5605b0e4955002385fedce03a25ff22591b67d7175\""
+    }
+  ],
+  "drive_release": {
+    "version": "0.1.4",
+    "commit": "58b09a7ebadca92d521acf0707d7938cc583c04e",
+    "workflow": "https://github.com/geyervalmont/olsyn-asset-library/actions/runs/36090249689",
+    "installer_sha256": "0d7ab26c4374095674824f4af5e7894147c3363588325d1e674e05f9aff396b0",
+    "website_catalog_verified": true,
+    "actual_windows_mount_and_installer_tests": true
+  },
+  "tests": {
+    "php": 349,
+    "php_assertions": 2250,
+    "portable_drive": 20,
+    "desktop_and_mobile_browser": true,
+    "nested_png_and_mdl_https_upload": true
+  },
+  "remaining_differences": [
+    "Nucleus and SMB expose the shared drive scope; personal Windows drives use individual grants.",
+    "Writable upload is only on signed-in Windows OPAL Drive and its HTTPS intake API; the Nucleus facade stays read-only.",
+    "Canonical inclusion is limited to unrestricted or Omniverse-target shared drives; legacy named layouts remain derivative-only.",
+    "Native Nucleus and bridge filesystem reads verified here; the other agent's macOS desktop mount was not available on this Linux machine.",
+    "One bridge replica; client caches still add delay after a manifest refresh."
+  ],
+  "nucleus_mount_reconfigured": false,
+  "deployment": {
+    "image": "ghcr.io/geyervalmont/opal:sha-d22b566",
+    "workflow": "https://github.com/geyervalmont/olsyn-asset-library/actions/runs/36090902262",
+    "status": "success",
+    "web_ready": "2/2",
+    "nucleus_bridge_ready": "1/1",
+    "smb_ready": "1/1"
+  },
+  "cached_http": [
+    {
+      "status": 200,
+      "bytes": 9165910,
+      "seconds": 4.84,
+      "etag": "\"fa4345209c9865a56b2c7d5605b0e4955002385fedce03a25ff22591b67d7175\""
+    },
+    {
+      "status": 304,
+      "bytes": 0,
+      "seconds": 0.25,
+      "etag": "\"fa4345209c9865a56b2c7d5605b0e4955002385fedce03a25ff22591b67d7175\""
+    }
+  ],
+  "monitoring": {
+    "manifest_files": 29336,
+    "native_small_and_large_hash_checks": true,
+    "authenticated_bridge_canary": "passed",
+    "bridge_restarts": 0,
+    "observed_bridge_memory_mib": 735,
+    "read_or_refresh_error_counters_observed": false
+  },
+  "canonical_source_objects_mutated": false,
+  "production_drive_token_rotated": false
+}
