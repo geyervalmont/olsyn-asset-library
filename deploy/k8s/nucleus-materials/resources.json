@@ -1,0 +1,340 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "nucleus-materials",
+        "namespace": "opal",
+        "labels": {
+          "app.kubernetes.io/name": "nucleus-materials",
+          "app.kubernetes.io/part-of": "opal"
+        }
+      },
+      "spec": {
+        "replicas": 1,
+        "strategy": {
+          "type": "Recreate"
+        },
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "nucleus-materials",
+            "app.kubernetes.io/part-of": "opal"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "nucleus-materials",
+              "app.kubernetes.io/part-of": "opal"
+            }
+          },
+          "spec": {
+            "automountServiceAccountToken": false,
+            "nodeSelector": {
+              "node-role": "opal"
+            },
+            "imagePullSecrets": [
+              {
+                "name": "ghcr-secret"
+              }
+            ],
+            "containers": [
+              {
+                "args": [
+                  "mount"
+                ],
+                "envFrom": [
+                  {
+                    "configMapRef": {
+                      "name": "prismfs-studio-share"
+                    }
+                  },
+                  {
+                    "secretRef": {
+                      "name": "prismfs-studio-share"
+                    }
+                  }
+                ],
+                "image": "ghcr.io/geyervalmont/prismfs@sha256:ffbf8ab141279b89f5458b181046825b2c77ddc401c5117ce1cc74ffd402d4f8",
+                "imagePullPolicy": "IfNotPresent",
+                "livenessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-c",
+                      "mountpoint -q /srv/prismfs"
+                    ]
+                  },
+                  "failureThreshold": 3,
+                  "initialDelaySeconds": 10,
+                  "periodSeconds": 15,
+                  "successThreshold": 1,
+                  "timeoutSeconds": 1
+                },
+                "name": "prismfs",
+                "ports": [
+                  {
+                    "containerPort": 9090,
+                    "name": "metrics",
+                    "protocol": "TCP"
+                  }
+                ],
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-c",
+                      "mountpoint -q /srv/prismfs"
+                    ]
+                  },
+                  "failureThreshold": 3,
+                  "periodSeconds": 5,
+                  "successThreshold": 1,
+                  "timeoutSeconds": 1
+                },
+                "resources": {
+                  "limits": {
+                    "memory": "1Gi"
+                  },
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "256Mi"
+                  }
+                },
+                "securityContext": {
+                  "capabilities": {
+                    "add": [
+                      "SYS_ADMIN"
+                    ]
+                  },
+                  "privileged": true,
+                  "readOnlyRootFilesystem": false
+                },
+                "terminationMessagePath": "/dev/termination-log",
+                "terminationMessagePolicy": "File",
+                "volumeMounts": [
+                  {
+                    "mountPath": "/srv/prismfs",
+                    "mountPropagation": "Bidirectional",
+                    "name": "prismfs-mount"
+                  },
+                  {
+                    "mountPath": "/dev/fuse",
+                    "name": "dev-fuse"
+                  }
+                ],
+                "startupProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-c",
+                      "mountpoint -q /srv/prismfs"
+                    ]
+                  },
+                  "periodSeconds": 5,
+                  "failureThreshold": 36
+                }
+              },
+              {
+                "name": "s3",
+                "image": "rclone/rclone@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5",
+                "args": [
+                  "serve",
+                  "s3",
+                  "/srv/prismfs",
+                  "--addr",
+                  ":8080",
+                  "--read-only",
+                  "--etag-hash",
+                  "",
+                  "--dir-cache-time",
+                  "10s",
+                  "--poll-interval",
+                  "0",
+                  "--log-level",
+                  "INFO"
+                ],
+                "env": [
+                  {
+                    "name": "RCLONE_AUTH_KEY",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "nucleus-materials-s3",
+                        "key": "auth-key"
+                      }
+                    }
+                  },
+                  {
+                    "name": "RCLONE_CONFIG_PROBE_TYPE",
+                    "value": "s3"
+                  },
+                  {
+                    "name": "RCLONE_CONFIG_PROBE_PROVIDER",
+                    "value": "Other"
+                  },
+                  {
+                    "name": "RCLONE_CONFIG_PROBE_ENDPOINT",
+                    "value": "http://127.0.0.1:8080"
+                  },
+                  {
+                    "name": "RCLONE_CONFIG_PROBE_FORCE_PATH_STYLE",
+                    "value": "true"
+                  },
+                  {
+                    "name": "RCLONE_CONFIG_PROBE_NO_CHECK_BUCKET",
+                    "value": "true"
+                  },
+                  {
+                    "name": "RCLONE_CONFIG_PROBE_REGION",
+                    "value": "ap-southeast-2"
+                  },
+                  {
+                    "name": "RCLONE_CONFIG_PROBE_ACCESS_KEY_ID",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "nucleus-materials-s3",
+                        "key": "access-key"
+                      }
+                    }
+                  },
+                  {
+                    "name": "RCLONE_CONFIG_PROBE_SECRET_ACCESS_KEY",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "nucleus-materials-s3",
+                        "key": "secret-key"
+                      }
+                    }
+                  },
+                  {
+                    "name": "PRISMFS_PROBE_PATH",
+                    "valueFrom": {
+                      "configMapKeyRef": {
+                        "name": "prismfs-studio-share",
+                        "key": "PRISMFS_PROBE_PATH"
+                      }
+                    }
+                  },
+                  {
+                    "name": "PRISMFS_PROBE_SHA256",
+                    "valueFrom": {
+                      "configMapKeyRef": {
+                        "name": "prismfs-studio-share",
+                        "key": "PRISMFS_PROBE_SHA256"
+                      }
+                    }
+                  }
+                ],
+                "ports": [
+                  {
+                    "name": "s3",
+                    "containerPort": 8080
+                  }
+                ],
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-ec",
+                      "rclone cat \"probe:$PRISMFS_PROBE_PATH\" --retries 1 --low-level-retries 1 --timeout 10s > /tmp/probe.bin; printf \"%s  /tmp/probe.bin\\n\" \"$PRISMFS_PROBE_SHA256\" | sha256sum -c - >/dev/null"
+                    ]
+                  },
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 20
+                },
+                "livenessProbe": {
+                  "tcpSocket": {
+                    "port": "s3"
+                  },
+                  "initialDelaySeconds": 10,
+                  "periodSeconds": 20
+                },
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "512Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsUser": 0,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "prismfs-mount",
+                    "mountPath": "/srv/prismfs",
+                    "mountPropagation": "HostToContainer",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "prismfs-mount",
+                "emptyDir": {}
+              },
+              {
+                "name": "dev-fuse",
+                "hostPath": {
+                  "path": "/dev/fuse",
+                  "type": "CharDevice"
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "nucleus-materials",
+        "namespace": "opal",
+        "labels": {
+          "app.kubernetes.io/name": "nucleus-materials",
+          "app.kubernetes.io/part-of": "opal"
+        }
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "nucleus-materials",
+          "app.kubernetes.io/part-of": "opal"
+        },
+        "ports": [
+          {
+            "name": "s3",
+            "port": 8080,
+            "targetPort": "s3"
+          },
+          {
+            "name": "metrics",
+            "port": 9090,
+            "targetPort": "metrics"
+          }
+        ]
+      }
+    }
+  ]
+}
