@@ -18,7 +18,7 @@ public sealed class MaterialFileSystem(DriveSession session, IntakeStaging intak
     private static FileInformation Information(DriveNode node) => new()
     {
         FileName = node.Name, Length = node.File?.Bytes ?? 0,
-        Attributes = node.IsDirectory ? FileAttributes.Directory : node.Path.StartsWith("\\Incoming\\", StringComparison.OrdinalIgnoreCase) ? FileAttributes.Archive : FileAttributes.ReadOnly | FileAttributes.Archive,
+        Attributes = node.IsDirectory ? FileAttributes.Directory : (node.Path.StartsWith("\\Incoming\\", StringComparison.OrdinalIgnoreCase) || node.Path.StartsWith("\\upload\\", StringComparison.OrdinalIgnoreCase)) ? FileAttributes.Archive : FileAttributes.ReadOnly | FileAttributes.Archive,
         CreationTime = PublishedTime, LastAccessTime = PublishedTime, LastWriteTime = PublishedTime,
     };
     private static NtStatus Error(Exception error) => error switch

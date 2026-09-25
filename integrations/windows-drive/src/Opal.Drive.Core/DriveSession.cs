@@ -33,6 +33,12 @@ public sealed class DriveSession(OpalDriveClient client, ContentCache cache)
         try
         {
             var result = await Client.ManifestAsync(etag, cancel).ConfigureAwait(false);
+            if (result.Manifest is { } initial && initial.TryGetProperty("upload_enabled", out var enabled) && enabled.GetBoolean()
+                && (!initial.TryGetProperty("upload", out var upload) || upload.ValueKind == System.Text.Json.JsonValueKind.Null))
+            {
+                await Client.EnsureUploadInboxAsync(cancel).ConfigureAwait(false);
+                result = await Client.ManifestAsync(null, cancel).ConfigureAwait(false);
+            }
             if (result.Manifest is { } json) Volatile.Write(ref tree, DriveTree.Parse(json));
             else if (etag is null) throw new InvalidDataException("Missing initial drive manifest.");
             etag = result.ETag;

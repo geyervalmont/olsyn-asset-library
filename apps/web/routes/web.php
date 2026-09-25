@@ -5,6 +5,7 @@ use App\Http\Controllers\Clients\RevitDownloadController;
 use App\Http\Controllers\Drives\DriveManifestController;
 use App\Http\Controllers\Files\FileController;
 use App\Http\Controllers\Files\PreviewController;
+use App\Http\Controllers\Ingestion\DownloadIntakeFileController;
 use App\Http\Controllers\MaterialXPreviewController;
 use App\Http\Controllers\OlsynLoginController;
 use App\Http\Controllers\Prismfs\PrismfsAccessController;
@@ -65,6 +66,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 Route::middleware(['auth', 'verified', 'tenant'])->group(function () {
     Route::livewire('team', 'pages::team')->name('workspace.team');
+    Route::livewire('ingestion', 'pages::ingestion')->name('ingestion.index');
+    Route::get('ingestion/{batch}/{file}', DownloadIntakeFileController::class)
+        ->whereUuid('batch')->whereUuid('file')->name('ingestion.download');
     Route::livewire('materials', 'pages::materials.index')->name('materials.index');
     Route::livewire('materials/create', 'pages::materials.create')->name('materials.create');
     Route::livewire('materials/studio', 'pages::materials.studio')->name('materials.studio');

@@ -89,7 +89,7 @@ test('a material travels from upload to a drive manifest through the UI', functi
         ->and($manifest)->toContain('path: "'.$directory.'/bump.png"')
         ->and($manifest)->toContain('path: "'.$directory.'/glossiness.png"')
         ->and($manifest)->toContain('bucket: "prismfs-dev"')
-        ->and(substr_count($manifest, '  - path: '))->toBe(3)
+        ->and(substr_count($manifest, '  - path: '))->toBe(8)
         ->and($material?->fresh()?->currentVersion?->packageFor($variant)?->is($package))->toBeTrue();
 
     // 5. Restricting the material hides it from the drive until the drive is granted.

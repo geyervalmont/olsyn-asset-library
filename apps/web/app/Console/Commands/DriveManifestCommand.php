@@ -29,7 +29,7 @@ class DriveManifestCommand extends Command
 
         if (is_string($out) && $out !== '') {
             file_put_contents($out, $yaml);
-            $this->components->info(sprintf('Wrote %d entries for drive [%s] to %s.', count($namespace->entries($drive)), $drive->slug, $out));
+            $this->components->info(sprintf('Wrote %d entries for drive [%s] to %s.', count($namespace->projectionEntries($drive)), $drive->slug, $out));
 
             return self::SUCCESS;
         }

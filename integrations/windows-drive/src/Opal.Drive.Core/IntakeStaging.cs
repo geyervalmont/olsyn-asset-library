@@ -4,10 +4,10 @@ using System.Text.Json;
 
 namespace Opal.Drive;
 
-public sealed record StagedFile(Guid Session, string RelativePath, string State = "pending", string? Error = null)
+public sealed record StagedFile(Guid Session, string RelativePath, string State = "pending", string? Error = null, string? UploadRoot = null)
 {
-    public string Path => "\\Incoming\\" + Session + "\\" + RelativePath.Replace('/', '\\');
-    public string Key => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Path.ToLowerInvariant())));
+    public string Path => (UploadRoot ?? "\\Incoming\\" + Session) + "\\" + RelativePath.Replace('/', '\\');
+    public string Key => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes((UploadRoot is null ? Path : Session + ":" + Path).ToLowerInvariant())));
 }
 
 /// <summary>Durable local upload queue. Explorer completion means staged locally; only server acknowledgement marks Uploaded.</summary>
@@ -19,7 +19,14 @@ public sealed class IntakeStaging
     private readonly Dictionary<string, StagedFile> files = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> writers = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim uploadGate = new(1, 1);
-    private readonly HashSet<string> directories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Guid, HashSet<string>> directories = [];
+    private HashSet<string> Directories(Guid batch)
+    {
+        if (!directories.TryGetValue(batch, out var paths)) directories[batch] = paths = new(StringComparer.OrdinalIgnoreCase);
+        return paths;
+    }
+    private bool Visible(StagedFile file) => session.Tree.UploadFolder(file.Path)?.Id == file.Session;
+    private StagedFile? Current(string path, Guid batch) => files.Values.FirstOrDefault(f => f.Session == batch && f.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
     public const long FileLimit = 256L * 1024 * 1024;
     public const long TotalLimit = 2L * 1024 * 1024 * 1024;
     public event Action? Changed;
@@ -35,8 +42,8 @@ public sealed class IntakeStaging
             if (entry is null || !System.IO.File.Exists(Data(entry))) continue;
             DrivePath.Normalize(entry.Path);
             if (entry.State == "uploading") entry = entry with { State = "pending" };
-            files.Add(entry.Path, entry);
-            AddParents(entry.Path);
+            files.Add(entry.Key, entry);
+            AddParents(entry.Path, entry.Session);
         }
     }
     public (int Pending, int Uploaded, int Failed) Counts
@@ -49,12 +56,12 @@ public sealed class IntakeStaging
         var destination = System.IO.Path.Combine(root, file.Key + ".json");
         System.IO.File.WriteAllText(destination + ".new", JsonSerializer.Serialize(file));
         System.IO.File.Move(destination + ".new", destination, true);
-        files[file.Path] = file;
+        files[file.Key] = file;
         Changed?.Invoke();
     }
-    private void AddParents(string path)
+    private void AddParents(string path, Guid batch)
     {
-        for (var parent = DrivePath.Parent(path); parent != "\\Incoming" && parent != "\\"; parent = DrivePath.Parent(parent)) directories.Add(parent);
+        for (var parent = DrivePath.Parent(path); parent != "\\Incoming" && parent != "\\"; parent = DrivePath.Parent(parent)) Directories(batch).Add(parent);
     }
     public IReadOnlyList<DriveNode> List(string path)
     {
@@ -62,42 +69,47 @@ public sealed class IntakeStaging
         session.RequireOnline();
         lock (gate)
         {
-            return directories.Where(d => DrivePath.Parent(d).Equals(path, StringComparison.OrdinalIgnoreCase)).Select(d => new DriveNode(d))
-                .Concat(files.Values.Where(f => DrivePath.Parent(f.Path).Equals(path, StringComparison.OrdinalIgnoreCase))
+            var folder = session.Tree.UploadFolder(path);
+            if (folder is null) return [];
+            return Directories(folder.Id).Where(d => DrivePath.Parent(d).Equals(path, StringComparison.OrdinalIgnoreCase)).Select(d => new DriveNode(d))
+                .Concat(files.Values.Where(f => f.Session == folder.Id && DrivePath.Parent(f.Path).Equals(path, StringComparison.OrdinalIgnoreCase))
                     .Select(f => new DriveNode(f.Path, new(f.Path, new FileInfo(Data(f)).Length, "", "")))).ToArray();
         }
     }
     public DriveNode? Find(string path)
     {
         path = DrivePath.Normalize(path);
-        if (session.Tree.UploadFolder(path) is null) return null;
+        var folder = session.Tree.UploadFolder(path);
+        if (folder is null) return null;
         lock (gate)
         {
-            if (directories.Contains(path)) return new(path);
-            return files.TryGetValue(path, out var file) ? new(path, new(path, new FileInfo(Data(file)).Length, "", "")) : null;
+            if (Directories(folder.Id).Contains(path)) return new(path);
+            var file = Current(path, folder.Id);
+            return file is not null ? new(path, new(path, new FileInfo(Data(file)).Length, "", "")) : null;
         }
     }
     public void CreateDirectory(string path)
     {
         path = DrivePath.Normalize(path);
-        if (session.Tree.UploadFolder(path) is null) throw new UnauthorizedAccessException("Prepare an Incoming folder in Connect first.");
+        var folder = session.Tree.UploadFolder(path) ?? throw new UnauthorizedAccessException("This upload folder is unavailable. Check the ingestion page.");
         lock (gate)
         {
-            if (files.ContainsKey(path)) throw new IOException("A file already exists here.");
-            directories.Add(path); AddParents(path);
+            if (Current(path, folder.Id) is not null) throw new IOException("A file already exists here.");
+            Directories(folder.Id).Add(path); AddParents(path, folder.Id);
         }
     }
     public StageHandle Open(string path, FileMode mode, bool write)
     {
         path = DrivePath.Normalize(path);
         var folder = session.Tree.UploadFolder(path) ?? throw new UnauthorizedAccessException("This upload folder is closed.");
-        var prefix = "\\Incoming\\" + folder.Id + "\\";
+        var prefix = DrivePath.Normalize(folder.Path) + "\\";
         if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) throw new IOException("Open a file inside the upload folder.");
         lock (gate)
         {
-            if (directories.Contains(path)) throw new IOException("A directory already exists here.");
-            if (writers.Contains(path)) throw new IOException("This file is already being written.");
-            var exists = files.TryGetValue(path, out var entry);
+            if (Directories(folder.Id).Contains(path)) throw new IOException("A directory already exists here.");
+            var entry = Current(path, folder.Id);
+            var exists = entry is not null;
+            if (exists && writers.Contains(entry!.Key)) throw new IOException("This file is already being written.");
             if (exists && mode == FileMode.CreateNew) throw new IOException("This upload already exists.");
             if (!exists && (mode == FileMode.Open || !write)) throw new FileNotFoundException();
             if (write && exists && entry!.State is "uploaded" or "uploading" or "failed")
@@ -105,33 +117,34 @@ public sealed class IntakeStaging
             if (!exists)
             {
                 if (files.Values.Count(f => f.Session == folder.Id) >= 500) throw new IOException("This upload batch is full.");
-                entry = new(folder.Id, path[prefix.Length..].Replace('\\', '/'));
+                entry = new(folder.Id, path[prefix.Length..].Replace('\\', '/'), UploadRoot: folder.Path == "/upload" ? "\\upload" : null);
                 if (entry.RelativePath.Length > 512) throw new IOException("The upload path is too long.");
             }
             var stream = new FileStream(Data(entry!), mode, write ? FileAccess.ReadWrite : FileAccess.Read, FileShare.Read, 1, FileOptions.RandomAccess);
-            if (write) writers.Add(path);
-            Save(entry!); AddParents(path);
+            if (write) writers.Add(entry!.Key);
+            Save(entry!); AddParents(path, folder.Id);
             return new StageHandle(this, entry!, stream, write);
         }
     }
     public void Delete(string path)
     {
         path = DrivePath.Normalize(path);
-        if (session.Tree.UploadFolder(path) is null) throw new UnauthorizedAccessException();
+        var folder = session.Tree.UploadFolder(path) ?? throw new UnauthorizedAccessException();
         lock (gate)
         {
-            if (writers.Contains(path)) throw new IOException("Close the file before deleting it.");
-            if (files.TryGetValue(path, out var file))
+            var file = Current(path, folder.Id);
+            if (file is not null && writers.Contains(file.Key)) throw new IOException("Close the file before deleting it.");
+            if (file is not null)
             {
-                if (file.State != "pending") throw new UnauthorizedAccessException("Reserved uploads cannot be deleted. Close the batch in Connect.");
+                if (file.State != "pending") throw new UnauthorizedAccessException("Reserved uploads cannot be deleted. Close the batch on the ingestion page.");
                 System.IO.File.Delete(Data(file));
                 System.IO.File.Delete(System.IO.Path.Combine(root, file.Key + ".json"));
-                files.Remove(path);
+                files.Remove(file.Key);
             }
             else
             {
-                if (files.Keys.Concat(directories).Any(p => p.StartsWith(path + "\\", StringComparison.OrdinalIgnoreCase))) throw new IOException("The folder is not empty.");
-                directories.Remove(path);
+                if (files.Values.Where(f => f.Session == folder.Id).Select(f => f.Path).Concat(Directories(folder.Id)).Any(p => p.StartsWith(path + "\\", StringComparison.OrdinalIgnoreCase))) throw new IOException("The folder is not empty.");
+                Directories(folder.Id).Remove(path);
             }
             Changed?.Invoke();
         }
@@ -146,11 +159,11 @@ public sealed class IntakeStaging
             foreach (var candidate in pending)
             {
                 cancel.ThrowIfCancellationRequested();
-                if (session.Tree.UploadFolder(candidate.Path) is null) continue;
+                if (!Visible(candidate)) continue;
                 StagedFile active;
                 lock (gate)
                 {
-                    if (writers.Contains(candidate.Path) || !files.TryGetValue(candidate.Path, out var current) || current.State is "uploaded" or "uploading") continue;
+                    if (writers.Contains(candidate.Key) || !files.TryGetValue(candidate.Key, out var current) || current.State is "uploaded" or "uploading") continue;
                     if (new FileInfo(Data(current)).Length == 0) continue;
                     active = current with { State = "uploading", Error = null };
                     Save(active);
@@ -182,7 +195,7 @@ public sealed class IntakeStaging
         private void Check()
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            if (store.session.Tree.UploadFolder(file.Path) is null) throw new UnauthorizedAccessException("The upload folder has closed.");
+            if (!store.Visible(file)) throw new UnauthorizedAccessException("The upload folder has closed.");
         }
         public int Read(byte[] buffer, long offset) { lock (store.gate) { Check(); return RandomAccess.Read(stream.SafeFileHandle, buffer, offset); } }
         public void Write(byte[] buffer, long offset)
@@ -208,7 +221,7 @@ public sealed class IntakeStaging
             {
                 if (disposed) return;
                 disposed = true; stream.Flush(true); stream.Dispose();
-                if (writable) store.writers.Remove(file.Path);
+                if (writable) store.writers.Remove(file.Key);
             }
         }
     }

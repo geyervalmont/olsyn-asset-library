@@ -10,6 +10,7 @@ use App\Models\PackageDerivative;
 use App\Models\PackageDerivativeFile;
 use App\Models\User;
 use App\Models\Variant;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Projects a drive's visible, published package derivatives into PrismFS.
@@ -69,7 +70,7 @@ class DriveNamespace
 
                     foreach ($derivative->derivativeFiles as $derivativeFile) {
                         $entries[] = [
-                            'path' => $drive->root_path.'/'.$directory.'/'.$this->fileName($variant->code, $derivativeFile),
+                            'path' => rtrim($drive->root_path, '/').'/'.$directory.'/'.$this->fileName($variant->code, $derivativeFile),
                             'object' => $this->object($derivativeFile->file),
                             'file_id' => $derivativeFile->file->getKey(),
                             'variant' => $variant->code,
@@ -97,7 +98,7 @@ class DriveNamespace
      */
     public function manifest(Drive $drive): array
     {
-        $files = array_map(fn (array $entry): array => ['path' => $entry['path'], 'object' => $entry['object']], $this->entries($drive));
+        $files = array_map(fn (array $entry): array => ['path' => $entry['path'], 'object' => $entry['object']], $this->projectionEntries($drive));
 
         return ['version' => self::MANIFEST_VERSION, 'files' => $files];
     }
@@ -145,7 +146,7 @@ class DriveNamespace
                         }
                         foreach ($derivative->derivativeFiles as $item) {
                             $file = $item->file;
-                            $path = implode('/', [$drive->root_path, 'by-id', $material->uuid, $package->variant->uuid,
+                            $path = implode('/', [rtrim($drive->root_path, '/'), 'by-id', $material->uuid, $package->variant->uuid,
                                 'v'.$version->number, $derivative->target->slug, $derivative->quality->slug,
                                 $derivative->uuid, $item->role->slug.($file->extension ? '.'.$file->extension : '')]);
                             $entries[] = [
@@ -180,22 +181,66 @@ class DriveNamespace
         return $this->stableEntries(new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user);
     }
 
-    /** Canonical packages use the exact same immutable paths as the Omniverse resolver.
+    /**
+     * Complete transport-independent tree. Keep entries()/entriesForVariant()
+     * derivative-only: the consumer resolver relies on their existing shape.
+     * Legacy named layouts keep their original paths and target scope.
+     *
      * @return list<array<string, mixed>>
      */
-    public function canonicalEntriesForUser(User $user): array
+    public function projectionEntries(Drive $drive, ?User $user = null): array
     {
+        if ($drive->path_layout !== 'stable') {
+            return $this->entries($drive);
+        }
+
+        $files = array_merge($this->stableEntries($drive, $user), $this->canonicalEntries($drive, $user));
+        $current = array_values(array_filter($files, fn (array $file): bool => $file['current']));
+        $files = array_merge($files, $this->namedEntries($drive, $current, $user));
+        usort($files, fn (array $a, array $b): int => strcmp($a['path'], $b['path']));
+
+        return $files;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function projectionEntriesForUser(User $user): array
+    {
+        return $this->projectionEntries(new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user);
+    }
+
+    /** @return Builder<Material> */
+    private function visibleMaterials(Drive $drive, ?User $user): Builder
+    {
+        return Material::query()->when($user !== null,
+            fn ($query) => $query->visibleTo($user),
+            fn ($query) => $query->visibleToDrive($drive));
+    }
+
+    /**
+     * Canonical packages contain all tiers. Only unrestricted and Omniverse
+     * drives include them; a Revit-only drive must not gain full-resolution data.
+     * Package storage is defined by packages_disk and each immutable object_key.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function canonicalEntries(Drive $drive, ?User $user = null): array
+    {
+        if ($drive->target_id !== null && $drive->target()->value('slug') !== 'omniverse') {
+            return [];
+        }
         $files = [];
-        $materials = Material::query()->visibleTo($user)->with([
+        $materials = $this->visibleMaterials($drive, $user)->with([
             'versions' => fn ($query) => $query->whereNotNull('published_at'), 'versions.packages.variant',
         ])->get();
+        $disk = config('opal.packages_disk');
+        $bucket = (string) (config("filesystems.disks.{$disk}.bucket") ?: config('opal.bucket'));
         foreach ($materials as $material) {
             foreach ($material->versions as $version) {
                 foreach ($version->packages as $package) {
                     $files[] = [
-                        'path' => '/materials/by-id/'.$material->uuid.'/'.$package->variant->uuid.'/v'.$version->number.'/canonical/'.$package->sha256.'.usdz',
-                        'bytes' => $package->bytes, 'sha256' => $package->sha256,
-                        'content_url' => route('api.drive.package', ['package' => $package->id], false),
+                        'path' => rtrim($drive->root_path, '/').'/by-id/'.$material->uuid.'/'.$package->variant->uuid.'/v'.$version->number.'/canonical/'.$package->sha256.'.usdz',
+                        'object' => ['bucket' => $bucket, 'key' => $package->object_key, 'size' => $package->bytes, 'version' => null],
+                        'package_id' => $package->id, 'sha256' => $package->sha256,
                         'material_uuid' => $material->uuid, 'variant_uuid' => $package->variant->uuid,
                         'current' => $material->current_version_id === $version->id,
                         'material_version' => $version->number, 'target' => 'omniverse', 'quality' => 'canonical', 'role' => 'package',
@@ -208,26 +253,36 @@ class DriveNamespace
     }
 
     /**
-     * A readable view of the latest published files. The caller supplies only
-     * current derivatives/packages; permanent references still use by-id.
-     *
      * @param  list<array<string, mixed>>  $currentFiles
      * @return list<array<string, mixed>>
      */
     public function namedEntriesForUser(User $user, array $currentFiles): array
     {
+        return $this->namedEntries(new Drive(['root_path' => '/materials']), $currentFiles, $user);
+    }
+
+    /**
+     * Aliases share the source object and authorization scope with immutable paths.
+     * Only current publications and the latest verified converter generation enter.
+     *
+     * @param  list<array<string, mixed>>  $currentFiles
+     * @return list<array<string, mixed>>
+     */
+    private function namedEntries(Drive $drive, array $currentFiles, ?User $user = null): array
+    {
         if ($currentFiles === []) {
             return [];
         }
-        $materials = Material::query()->visibleTo($user)
+        $materials = $this->visibleMaterials($drive, $user)
             ->whereIn('uuid', array_unique(array_column($currentFiles, 'material_uuid')))
             ->with(['category', 'variants'])->get();
         $materialLabels = $this->browseLabels($materials->pluck('name', 'uuid')->all());
+        $categoryLabels = $this->browseLabels($materials->pluck('category.name', 'category_id')->all());
         $directories = [];
         foreach ($materials as $material) {
             $variantLabels = $this->browseLabels($material->variants->pluck('name', 'uuid')->all());
             foreach ($variantLabels as $uuid => $label) {
-                $directories[$material->uuid][$uuid] = '/materials/by-name/'.$this->browseComponent($material->category->name)
+                $directories[$material->uuid][$uuid] = rtrim($drive->root_path, '/').'/by-name/'.$categoryLabels[$material->category_id]
                     .'/'.$materialLabels[$material->uuid].'/'.$label;
             }
         }
@@ -245,8 +300,8 @@ class DriveNamespace
         return $files;
     }
 
-    /** @param array<string, string> $names
-     * @return array<string, string>
+    /** @param array<array-key, string> $names
+     * @return array<array-key, string>
      */
     private function browseLabels(array $names): array
     {
@@ -294,7 +349,7 @@ class DriveNamespace
     public function toYaml(Drive $drive): string
     {
         $lines = ['version: '.self::MANIFEST_VERSION, 'files:'];
-        $entries = $this->entries($drive);
+        $entries = $this->projectionEntries($drive);
 
         if ($entries === []) {
             $lines[1] = 'files: []';

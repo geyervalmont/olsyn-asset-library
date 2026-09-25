@@ -6,6 +6,7 @@ use App\Events\Drives\IntakeSubmitted;
 use App\Library\Drives\DrivePath;
 use App\Models\DriveIntakeFile;
 use App\Models\DriveIntakeSession;
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -21,13 +22,33 @@ final class ManageIntake
             User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
             abort_if(DriveIntakeSession::query()->where('user_id', $user->id)->open()->count() >= config('opal.drive.intake_active_sessions'), 409, 'Close an existing upload session before starting another.');
 
-            return DriveIntakeSession::create(['user_id' => $user->id, 'name' => $name, 'expires_at' => now()->addDay()]);
+            return DriveIntakeSession::create(['user_id' => $user->id, 'tenant_id' => Tenant::current()?->id, 'name' => $name, 'expires_at' => now()->addDay()]);
+        });
+    }
+
+    /** Idempotent, one active root upload folder per person and workspace. */
+    public function inbox(User $user): DriveIntakeSession
+    {
+        abort_unless($user->can('materials.contribute'), 403);
+        $tenant = Tenant::current();
+        abort_unless($tenant !== null && $user->canAccessTenant($tenant), 403);
+
+        return DB::transaction(function () use ($user, $tenant): DriveIntakeSession {
+            User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
+            $existing = DriveIntakeSession::query()->where('user_id', $user->id)
+                ->where('tenant_id', $tenant->id)->where('is_inbox', true)->open()->first();
+
+            return $existing ?? DriveIntakeSession::create([
+                'user_id' => $user->id, 'tenant_id' => $tenant->id, 'is_inbox' => true,
+                'name' => 'Drive upload · '.now()->format('d M Y H:i'), 'expires_at' => null,
+            ]);
         });
     }
 
     public function reserve(DriveIntakeSession $session, string $path, int $bytes, string $sha256): DriveIntakeFile
     {
         $path = DrivePath::validate($path);
+        abort_unless($bytes >= 1 && $bytes <= config('opal.drive.intake_file_bytes') && preg_match('/^[a-f0-9]{64}$/', $sha256), 422, 'Invalid file size or checksum.');
 
         return DB::transaction(function () use ($session, $path, $bytes, $sha256): DriveIntakeFile {
             $session = DriveIntakeSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
@@ -58,6 +79,7 @@ final class ManageIntake
     /** @param resource $input */
     public function upload(DriveIntakeSession $session, DriveIntakeFile $file, $input): void
     {
+        abort_unless($file->drive_intake_session_id === $session->id, 404);
         abort_unless($session->acceptsUploads(), 409, 'This upload session is closed or expired.');
         // Bounded disk spool: hashing never loads a large texture into PHP memory.
         $spool = tmpfile();

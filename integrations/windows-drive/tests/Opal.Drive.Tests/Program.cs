@@ -228,6 +228,34 @@ try
         await queue.UploadPendingAsync(); Check(queue.Counts.Failed==1);
         remote.FailUpload=false; await queue.UploadPendingAsync(); Check(queue.Counts.Uploaded==1);
     });
+    await Test("root upload starts automatically and retains isolated payloads when batches rotate", async () =>
+    {
+        var remote = new Fake { UploadRoot = true, NeedsInbox = true };
+        using var client = remote.Client();
+        var state = new DriveSession(client, new ContentCache(Path.Combine(temp, "inbox-cache")));
+        await state.RefreshAsync();
+        Check(remote.InboxCalls == 1 && state.Tree.Find("/upload")?.IsDirectory == true);
+        await state.RefreshAsync(); Check(remote.InboxCalls == 1);
+        var root = Path.Combine(temp, "inbox");
+        var queue = new IntakeStaging(root, state);
+        const string path = @"\upload\supplier\nested\material.mdl";
+        using (var handle = queue.Open(path, FileMode.CreateNew, true)) handle.Write([1, 2, 3], 0);
+        await queue.UploadPendingAsync(); Check(remote.Uploads == 1);
+        queue = new IntakeStaging(root, state);
+        Check(queue.Find(path)?.File?.Bytes == 3);
+        using var oldHandle = queue.Open(path, FileMode.Open, false);
+        remote.Batch = Guid.NewGuid(); remote.NeedsInbox = true;
+        await state.RefreshAsync();
+        Check(remote.InboxCalls == 2 && queue.Find(path) is null && queue.List(@"\upload").Count == 0);
+        await Throws(() => Task.Run(() => oldHandle.Read(new byte[3], 0)));
+        using (var handle = queue.Open(path, FileMode.CreateNew, true)) handle.Write([4, 5], 0);
+        await queue.UploadPendingAsync(); Check(remote.Uploads == 2);
+        queue = new IntakeStaging(root, state);
+        Check(queue.Find(path)?.File?.Bytes == 2 && Directory.GetFiles(root, "*.data").Length == 2);
+        remote.UploadRoot = false; await state.RefreshAsync();
+        Check(state.Tree.Find("/upload") is null && queue.Find(path) is null);
+        await Throws(() => Task.FromResult(queue.Open(path, FileMode.CreateNew, true)));
+    });
     Console.WriteLine($"{count} drive core tests passed");
 }
 finally { Directory.Delete(temp,true); }
@@ -235,9 +263,9 @@ finally { Directory.Delete(temp,true); }
 sealed class Fake : HttpMessageHandler
 {
     public byte[] Bytes = Enumerable.Range(0, 300000).Select(i=>(byte)(i%251)).ToArray();
-    public bool Denied, Offline, Corrupt, Incoming, FailUpload, SlowRead;
+    public bool Denied, Offline, Corrupt, Incoming, FailUpload, SlowRead, UploadRoot, NeedsInbox;
     public TaskCompletionSource ReadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    public int Reads, Heads, Uploads;
+    public int Reads, Heads, Uploads, InboxCalls;
     public Guid Batch = Guid.NewGuid();
     public RemoteFile Entry => new("/materials/by-id/texture.bin", Bytes.Length, Convert.ToHexStringLower(SHA256.HashData(Bytes)), "/api/v1/drive/files/01951234-1234-7000-8000-000000000001/1");
     public OpalDriveClient Client() => new(new AppSettings { UseCustomServer=true, ServerUrl="https://opal.test", Token="test" }, this);
@@ -247,7 +275,8 @@ sealed class Fake : HttpMessageHandler
         if(Offline) throw new HttpRequestException("Offline");
         if(Denied) return new(HttpStatusCode.Forbidden);
         if(request.RequestUri!.AbsolutePath.EndsWith("manifest"))
-            return Json(new { contract="opal-drive/1", library_writable=false, files=new[]{new{path=Entry.Path,bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=Entry.ContentUrl}},incoming=Incoming?new[]{new{id=Batch,path="/Incoming/"+Batch,label="Textures",expires_at=DateTimeOffset.UtcNow.AddHours(1)}}:[] });
+            return Json(new { contract="opal-drive/1", library_writable=false, upload_enabled=UploadRoot, upload=UploadRoot && !NeedsInbox ? new { id=Batch, path="/upload", label="Drive upload", writable=true } : null, files=new[]{new{path=Entry.Path,bytes=Entry.Bytes,sha256=Entry.Sha256,content_url=Entry.ContentUrl}},incoming=Incoming?new[]{new{id=Batch,path="/Incoming/"+Batch,label="Textures",expires_at=DateTimeOffset.UtcNow.AddHours(1)}}:[] });
+        if(request.RequestUri.AbsolutePath.EndsWith("intake/inbox")) { InboxCalls++; NeedsInbox=false; return Json(new { data = new { id=Batch } }); }
         if(request.Method==HttpMethod.Head)
         { Heads++;var result=new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent([])};result.Content.Headers.ContentLength=Bytes.Length;result.Headers.ETag=new EntityTagHeaderValue('"'+Entry.Sha256+'"');return result; }
         if(request.Method==HttpMethod.Get)

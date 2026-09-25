@@ -13,7 +13,7 @@ final class IntakeController
 {
     public function index(Request $request): JsonResponse
     {
-        return $this->json(['data' => DriveIntakeSession::query()->where('user_id', $request->user()->id)
+        return $this->json(['data' => DriveIntakeSession::query()->where('user_id', $request->user()->id)->visibleTo($request->user())
             ->with('files')->latest()->limit(50)->get()->map(fn ($session) => $this->payload($session))]);
     }
 
@@ -22,6 +22,11 @@ final class IntakeController
         $data = $request->validate(['name' => ['required', 'string', 'max:120']]);
 
         return $this->json(['data' => $this->payload($intake->create($request->user(), $data['name']))], 201);
+    }
+
+    public function inbox(Request $request, ManageIntake $intake): JsonResponse
+    {
+        return $this->json(['data' => $this->payload($intake->inbox($request->user()))]);
     }
 
     public function show(Request $request, string $session): JsonResponse
@@ -69,7 +74,7 @@ final class IntakeController
 
     private function owned(Request $request, string $uuid): DriveIntakeSession
     {
-        return DriveIntakeSession::query()->where('uuid', $uuid)->where('user_id', $request->user()->id)->firstOrFail();
+        return DriveIntakeSession::query()->where('uuid', $uuid)->where('user_id', $request->user()->id)->visibleTo($request->user())->firstOrFail();
     }
 
     /** @return array<string, mixed> */
@@ -77,8 +82,8 @@ final class IntakeController
     {
         return ['id' => $session->uuid, 'name' => $session->name,
             'status' => $session->status === 'open' && ! $session->acceptsUploads() ? 'expired' : $session->status,
-            'path' => '/Incoming/'.$session->uuid, 'writable' => $session->acceptsUploads() && request()->user()->tokenCan('drive:write'),
-            'expires_at' => $session->expires_at->toIso8601String(), 'processing_enabled' => false,
+            'path' => $session->drivePath(), 'writable' => $session->acceptsUploads() && request()->user()->tokenCan('drive:write'),
+            'expires_at' => $session->expires_at?->toIso8601String(), 'processing_enabled' => false,
             'files' => $session->files->map(fn ($file) => $this->filePayload($session, $file))];
     }
 

@@ -1,8 +1,6 @@
 <?php
 
 use App\Actions\Clients\TouchClientSession;
-use App\Actions\Drives\ManageIntake;
-use App\Models\DriveIntakeSession;
 use App\Models\ClientSession;
 use App\Models\DriveConnection;
 use App\Support\ClientReleaseCatalog;
@@ -13,35 +11,6 @@ use Livewire\Component;
 
 new #[Title('Connect')] class extends Component
 {
-    public string $batchName = '';
-
-    #[Computed]
-    public function batches(): \Illuminate\Support\Collection
-    {
-        if (! Auth::user()->can('materials.contribute')) {
-            return collect();
-        }
-
-        return DriveIntakeSession::query()->where('user_id', Auth::id())->withCount('files')
-            ->withCount(['files as uploaded_count' => fn ($query) => $query->whereNotNull('uploaded_at')])->latest()->limit(10)->get();
-    }
-
-    public function createBatch(ManageIntake $intake): void
-    {
-        abort_unless(Auth::user()->can('materials.contribute'), 403);
-        $this->validate(['batchName' => ['required', 'string', 'max:120']]);
-        $intake->create(Auth::user(), $this->batchName);
-        $this->batchName = '';
-        unset($this->batches);
-    }
-
-    public function cancelBatch(string $uuid, ManageIntake $intake): void
-    {
-        abort_unless(Auth::user()->can('materials.contribute'), 403);
-        $intake->cancel(DriveIntakeSession::query()->where('user_id', Auth::id())->where('uuid', $uuid)->firstOrFail());
-        unset($this->batches);
-    }
-
     #[Computed]
     public function versions(): array
     {
@@ -52,13 +21,6 @@ new #[Title('Connect')] class extends Component
     public function driveRelease(): ?array
     {
         return collect($this->versions)->firstWhere('client', 'drive');
-    }
-
-    public function submitBatch(string $uuid, ManageIntake $intake): void
-    {
-        abort_unless(Auth::user()->can('materials.contribute'), 403);
-        $intake->submit(DriveIntakeSession::query()->where('user_id', Auth::id())->where('uuid', $uuid)->firstOrFail());
-        unset($this->batches);
     }
 
     #[Computed]
@@ -237,25 +199,11 @@ new #[Title('Connect')] class extends Component
     </div>
 
     @can('materials.contribute')
-        <details wire:ignore.self class="ui-connect__help" data-test="connect-intake">
-            <summary>{{ __('Upload batches · Preview') }}</summary>
-            <p>{{ __('Prepare a private Incoming folder, then copy textures into it through OPAL Drive. Wait until every file is confirmed below before submitting the batch. Only you can access it. Processing and publishing are not available yet.') }}</p>
-            <form wire:submit="createBatch" class="ui-connect__batch-form">
-                <div><label for="batch-name">{{ __('Batch name') }}</label><input id="batch-name" class="ui-input" wire:model="batchName" maxlength="120" required placeholder="{{ __('e.g. September timber collection') }}">@error('batchName')<p role="alert">{{ $message }}</p>@enderror</div>
-                <x-ui.button type="submit" variant="secondary" wire:loading.attr="disabled" wire:target="createBatch">{{ __('Prepare upload folder') }}</x-ui.button>
-            </form>
-            @foreach ($this->batches as $batch)
-                <article class="ui-connect__device" wire:key="batch-{{ $batch->uuid }}">
-                    <div class="ui-connect__device-copy"><strong>{{ $batch->name }}</strong>
-                        <small>{{ __(':uploaded of :total files staged', ['uploaded' => $batch->uploaded_count, 'total' => $batch->files_count]) }} · {{ $batch->status === 'submitted' ? __('Waiting for future ingestion') : ($batch->acceptsUploads() ? __('Folder expires :when', ['when' => $batch->expires_at->diffForHumans()]) : __('Folder closed')) }}</small>
-                        @if ($batch->acceptsUploads())<code>/Incoming/{{ $batch->uuid }}</code>@endif
-                    </div>
-                    <x-ui.badge>{{ $batch->status === 'open' && ! $batch->acceptsUploads() ? __('Expired') : ucfirst($batch->status) }}</x-ui.badge>
-                    @if ($batch->acceptsUploads() && $batch->files_count > 0 && $batch->uploaded_count === $batch->files_count)<x-ui.button variant="secondary" size="sm" wire:click="submitBatch('{{ $batch->uuid }}')" wire:confirm="{{ __('Submit this completed batch? No more files can be added. It will wait for the future ingestion processor.') }}">{{ __('Submit batch') }}</x-ui.button>@endif
-                    @if ($batch->acceptsUploads())<x-ui.button variant="quiet" size="sm" wire:click="cancelBatch('{{ $batch->uuid }}')" wire:confirm="{{ __('Close this upload folder? Staged files will be retained.') }}">{{ __('Close folder') }}</x-ui.button>@endif
-                </article>
-            @endforeach
-        </details>
+        <div class="ui-connect__help" data-test="connect-intake">
+            <strong>{{ __('Upload source materials') }}</strong>
+            <p>{{ __('Drop files or folders into upload on the latest OPAL Drive. Track received files and queue completed batches on the ingestion page.') }}</p>
+            <a href="{{ route('ingestion.index') }}" wire:navigate>{{ __('Open ingestion queue') }} →</a>
+        </div>
     @endcan
 
     <div class="ui-connect__support">

@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace Opal.Drive;
 
 public sealed record RemoteFile(string Path, long Bytes, string Sha256, string ContentUrl);
-public sealed record IncomingFolder(Guid Id, string Path, string Label, DateTimeOffset ExpiresAt);
+public sealed record IncomingFolder(Guid Id, string Path, string Label, DateTimeOffset? ExpiresAt);
 public sealed record DriveNode(string Path, RemoteFile? File = null)
 {
     public bool IsDirectory => File is null;
@@ -60,10 +60,11 @@ public sealed class DriveTree
             if (!entries.TryAdd(path, new(path, file with { Path = path }))) throw new InvalidDataException("Duplicate drive path.");
             FileCount++;
         }
-        Incoming = incoming.Where(i => i.ExpiresAt > DateTimeOffset.UtcNow).ToArray();
+        Incoming = incoming.Where(i => i.ExpiresAt is null || i.ExpiresAt > DateTimeOffset.UtcNow).ToArray();
+        if (Incoming.Count(i => i.Path.Equals("/upload", StringComparison.OrdinalIgnoreCase)) > 1) throw new InvalidDataException("Duplicate upload root.");
         foreach (var folder in Incoming)
         {
-            var expected = "\\Incoming\\" + folder.Id.ToString("D");
+            var expected = folder.Path.Equals("/upload", StringComparison.OrdinalIgnoreCase) ? "\\upload" : "\\Incoming\\" + folder.Id.ToString("D");
             if (!DrivePath.Normalize(folder.Path).Equals(expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Invalid upload folder.");
             Directory(expected);
         }
@@ -77,17 +78,24 @@ public sealed class DriveTree
     public IncomingFolder? UploadFolder(string path)
     {
         var normalized = DrivePath.Normalize(path);
-        return Incoming.FirstOrDefault(i => i.ExpiresAt > DateTimeOffset.UtcNow
-            && (normalized.Equals("\\Incoming\\" + i.Id, StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("\\Incoming\\" + i.Id + "\\", StringComparison.OrdinalIgnoreCase)));
+        return Incoming.FirstOrDefault(i => (i.ExpiresAt is null || i.ExpiresAt > DateTimeOffset.UtcNow)
+            && (normalized.Equals(DrivePath.Normalize(i.Path), StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith(DrivePath.Normalize(i.Path) + "\\", StringComparison.OrdinalIgnoreCase)));
     }
     public static DriveTree Parse(JsonElement json)
     {
         if (json.GetProperty("contract").GetString() != "opal-drive/1" || json.GetProperty("library_writable").GetBoolean())
             throw new InvalidDataException("Unsupported OPAL drive contract.");
+        var incoming = json.GetProperty("incoming").EnumerateArray().Select(i => new IncomingFolder(
+            i.GetProperty("id").GetGuid(), i.GetProperty("path").GetString()!, i.GetProperty("label").GetString()!, i.GetProperty("expires_at").GetDateTimeOffset())).ToList();
+        if (json.TryGetProperty("upload", out var upload) && upload.ValueKind != JsonValueKind.Null)
+        {
+            if (upload.GetProperty("path").GetString() != "/upload" || !upload.GetProperty("writable").GetBoolean())
+                throw new InvalidDataException("Invalid root upload folder.");
+            incoming.Add(new(upload.GetProperty("id").GetGuid(), "/upload", upload.GetProperty("label").GetString()!, null));
+        }
         return new(json.GetProperty("files").EnumerateArray().Select(f => new RemoteFile(
             f.GetProperty("path").GetString()!, f.GetProperty("bytes").GetInt64(), f.GetProperty("sha256").GetString()!, f.GetProperty("content_url").GetString()!)),
-            json.GetProperty("incoming").EnumerateArray().Select(i => new IncomingFolder(
-                i.GetProperty("id").GetGuid(), i.GetProperty("path").GetString()!, i.GetProperty("label").GetString()!, i.GetProperty("expires_at").GetDateTimeOffset())));
+            incoming);
     }
 }

@@ -88,6 +88,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class, Restr
         $intake = IntakeController::class;
         Route::get('intake', [$intake, 'index'])->name('api.drive.intake.index');
         Route::post('intake', [$intake, 'store'])->name('api.drive.intake.store');
+        Route::post('intake/inbox', [$intake, 'inbox'])->name('api.drive.intake.inbox');
         Route::get('intake/{session}', [$intake, 'show'])->whereUuid('session')->name('api.drive.intake.show');
         Route::post('intake/{session}/files', [$intake, 'reserve'])->whereUuid('session')->name('api.drive.intake.reserve');
         Route::put('intake/{session}/files/{file}', [$intake, 'upload'])->whereUuid('session')->whereUuid('file')->name('api.drive.intake.upload');

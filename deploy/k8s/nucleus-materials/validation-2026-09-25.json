@@ -1,0 +1,38 @@
+{
+  "date": "2026-09-25",
+  "mount": "omniverse://nucleus.olsyn.com/Libraries/Materials/",
+  "localPath": "/Users/harrison/Olsyn Nucleus/Libraries/Materials",
+  "sourceDrive": "studio-share",
+  "entryCount": 12291,
+  "logicalBytes": 51532486690,
+  "canonicalUsdzCount": 0,
+  "validation": {
+    "s3List": true,
+    "s3Head": true,
+    "s3Range": true,
+    "publicNucleusSmallSha256": "ea7fd0b31e9a3e439a329be2ca66c715af6be7f77644fa9b44386cb76e780ae1",
+    "publicNucleusLargeBytes": 85474074,
+    "publicNucleusLargeSha256": "7d31a747a8d706207d598c2e17fc5ee2a5d46313f42ab8605cc631f5d6831a99",
+    "publicNucleusRedirect": false,
+    "ordinaryUserRead": true,
+    "nativeWritesBlocked": true,
+    "localMountedRead": true,
+    "prometheusUp": 1,
+    "readinessAuthenticatedCanary": true
+  },
+  "limitations": [
+    "Shared native S3 read ACL does not inherit parent restriction",
+    "No personal OPAL identity propagation",
+    "Shared projection currently textures only, no canonical USDZ/by-name",
+    "Manifest refresh and client caches delay changes",
+    "Single bridge replica on cloud OPAL node",
+    "No dedicated Nucleus Manager dependency card"
+  ],
+  "incident": {
+    "apiExitCode": 139,
+    "at": "2026-09-25T02:20:18Z",
+    "recoveredBy": "2026-09-25T02:23:15Z",
+    "trigger": "Malformed exploratory get_acl_v2 request with string paths appears to have crashed the native API. Correct schema uses objects with path and trailing slash for directories.",
+    "recovery": "Kubernetes restarted the API; standard launcher archived, checked and repaired metadata; service recovered. Root listing and small/large reads subsequently passed."
+  }
+}
