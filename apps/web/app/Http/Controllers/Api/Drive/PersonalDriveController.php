@@ -8,6 +8,7 @@ use App\Models\DriveIntakeSession;
 use App\Models\Material;
 use App\Models\Package;
 use App\Models\PackageDerivative;
+use App\Models\Tenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,31 +34,33 @@ final class PersonalDriveController
 
     public function manifest(Request $request, DriveNamespace $namespace): JsonResponse|Response
     {
-        $entries = $namespace->entriesForUser($request->user());
-        $files = array_map(fn ($entry): array => [
-            'path' => $entry['path'], 'bytes' => $entry['object']['size'], 'sha256' => $entry['sha256'],
-            'content_url' => route('api.drive.files', ['derivative' => $entry['derivative_uuid'], 'file' => $entry['file_id']], false),
-            'material_uuid' => $entry['material_uuid'], 'variant_uuid' => $entry['variant_uuid'], 'material_version' => $entry['material_version'],
-            'derivative_uuid' => $entry['derivative_uuid'], 'target' => $entry['target'], 'quality' => $entry['quality'], 'role' => $entry['role'],
-        ], $entries);
-        $currentFiles = array_values(array_filter($files, fn ($file, $index): bool => $entries[$index]['current'], ARRAY_FILTER_USE_BOTH));
-        foreach ($namespace->canonicalEntriesForUser($request->user()) as $file) {
-            $current = $file['current'];
-            unset($file['current']);
-            $files[] = $file;
-            if ($current) {
-                $currentFiles[] = $file;
+        $files = array_map(function (array $entry): array {
+            $file = [
+                'path' => $entry['path'], 'bytes' => $entry['object']['size'], 'sha256' => $entry['sha256'],
+                'content_url' => isset($entry['package_id'])
+                    ? route('api.drive.package', ['package' => $entry['package_id']], false)
+                    : route('api.drive.files', ['derivative' => $entry['derivative_uuid'], 'file' => $entry['file_id']], false),
+                'material_uuid' => $entry['material_uuid'], 'variant_uuid' => $entry['variant_uuid'], 'material_version' => $entry['material_version'],
+                'target' => $entry['target'], 'quality' => $entry['quality'], 'role' => $entry['role'],
+            ];
+            if (isset($entry['derivative_uuid'])) {
+                $file['derivative_uuid'] = $entry['derivative_uuid'];
             }
-        }
-        $files = array_merge($files, $namespace->namedEntriesForUser($request->user(), $currentFiles));
-        usort($files, fn ($a, $b) => strcmp($a['path'], $b['path']));
+
+            return $file;
+        }, $namespace->projectionEntriesForUser($request->user()));
         $incoming = $request->user()->can('materials.contribute') && $request->user()->tokenCan('drive:write')
-            ? DriveIntakeSession::query()->where('user_id', $request->user()->id)->open()->orderBy('uuid')->get()->map(fn ($session): array => [
+            ? DriveIntakeSession::query()->where('user_id', $request->user()->id)->visibleTo($request->user())->where('is_inbox', false)->open()->orderBy('uuid')->get()->map(fn ($session): array => [
                 'id' => $session->uuid, 'path' => '/Incoming/'.$session->uuid, 'label' => $session->name, 'writable' => true,
                 'expires_at' => $session->expires_at->toIso8601String(),
                 'session_url' => route('api.drive.intake.show', ['session' => $session->uuid], false),
             ])->all() : [];
-        $data = ['contract' => 'opal-drive/1', 'files' => $files, 'incoming' => $incoming, 'library_writable' => false];
+        $uploadEnabled = $request->user()->can('materials.contribute') && $request->user()->tokenCan('drive:write');
+        $inbox = $uploadEnabled ? DriveIntakeSession::query()->where('user_id', $request->user()->id)
+            ->where('tenant_id', Tenant::current()?->id)->where('is_inbox', true)->open()->first() : null;
+        $upload = $inbox === null ? null : ['id' => $inbox->uuid, 'path' => '/upload', 'label' => $inbox->name,
+            'writable' => true, 'expires_at' => null];
+        $data = ['upload_enabled' => $uploadEnabled, 'upload' => $upload, 'contract' => 'opal-drive/1', 'files' => $files, 'incoming' => $incoming, 'library_writable' => false];
         $etag = '"'.hash('sha256', $request->user()->id.json_encode($data, JSON_THROW_ON_ERROR)).'"';
         $headers = ['ETag' => $etag, 'Cache-Control' => 'private, no-store'];
         if (in_array($etag, $request->getETags(), true)) {

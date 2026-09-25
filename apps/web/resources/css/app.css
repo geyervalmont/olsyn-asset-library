@@ -3,6 +3,7 @@
 @import './ui.css';
 @import './library.css';
 @import './navigation.css';
+@import './ingestion.css';
 
 @source '../views';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';

@@ -48,7 +48,7 @@ using (var instance = new DokanInstanceBuilder(dokan).ConfigureOptions(o => Driv
     try { File.WriteAllText(Path.Combine(letter, "forbidden.txt"), "write"); } catch (UnauthorizedAccessException) { denied = true; } catch (IOException) { denied = true; }
     if (!denied) throw new Exception("Drive root was writable");
     Console.WriteLine("PASS published files and drive root reject writes");
-    var incoming = Path.Combine(letter, "Incoming", server.Batch.ToString(), "textures");
+    var incoming = Path.Combine(letter, "upload", "textures");
     Directory.CreateDirectory(incoming);
     var source = Path.Combine(root, "source.png"); await File.WriteAllBytesAsync(source, server.Bytes[..2048]);
     File.Copy(source, Path.Combine(incoming, "albedo.png"));
@@ -173,7 +173,7 @@ sealed class Fixture : IAsyncDisposable
             var manifest = new { contract = "opal-drive/1", library_writable = false,
                 files = new[] { "/materials/by-id/texture.bin", "/materials/by-name/Stone/Limestone/Warm grey/revit/512/base_color.bin" }
                     .Select(path => new { path, bytes = Bytes.Length, sha256 = Hash, content_url = "/api/v1/drive/files/01951234-1234-7000-8000-000000000001/1" }).ToArray(),
-                incoming = new[] { new { id = Batch, path = "/Incoming/" + Batch, label = "Mount test", expires_at = DateTimeOffset.UtcNow.AddHours(1) } } };
+                upload_enabled = true, upload = new { id = Batch, path = "/upload", label = "Mount test", writable = true }, incoming = Array.Empty<object>() };
             await Json(r, manifest); return;
         }
         if (c.Request.HttpMethod == "POST") { await Json(r, new { data = new { id = "01951234-1234-7000-8000-000000000002" } }); return; }

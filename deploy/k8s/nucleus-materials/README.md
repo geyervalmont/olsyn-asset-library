@@ -5,7 +5,7 @@ This deployment exposes the existing governed OPAL studio-share PrismFS namespac
 ## Boundaries
 
 - Shared published library view, governed by the studio-share Drive. This is not a personal OPAL session and does not impersonate individual Nucleus users.
-- Existing drive currently projects published texture derivatives under immutable `by-id` paths. Canonical USDZ packages and the personal drive's `by-name` view are not present in that shared manifest.
+- Stable shared drives project published derivatives and canonical USDZ packages under immutable `by-id` paths, plus current-publication aliases under `by-name`. Both views reference the same storage objects. Existing texture paths are retained. Canonical keys come from Package metadata and the configured package storage disk.
 - Changes refresh through PrismFS every 30 seconds, then the facade directory cache (10 seconds) and client caches. This is not immediate revocation: use only shared library content.
 - Both the FUSE sidecar mount and S3 server are read-only. Publish/edit in OPAL. Project scene files remain writable under normal Nucleus project ACLs.
 - Depends on the cloud OPAL node, OPAL manifest API, object storage and Nucleus. One bridge replica; restarting it briefly interrupts library reads. Existing material SMB service is independent.
@@ -28,3 +28,17 @@ The native S3 resolver supplies its own read ACL for users, gm and omniverse. **
 validate-user.py reads password, a known canary key and its sha256 from stdin, creates a temporary ordinary user, verifies listing/read/write denial and disables that account in a finally block. It does not change folder ACLs. Disabled validation users remain for audit.
 
 Use stable by-id paths for cross-project dependencies. The local mounted path on this Mac is ~/Olsyn Nucleus/Libraries/Materials. Native clients use omniverse://nucleus.olsyn.com/Libraries/Materials/. References relative to the Nucleus root remain available to all machines mounting that same namespace. Publishing a new version creates a new immutable path; existing scene references stay pinned.
+
+## Complete namespace projection
+
+`DriveNamespace::projectionEntries()` builds the complete stable tree independently of JSON/YAML serialization. `entries()` and variant consumer resolvers keep their derivative-only contract. Personal and shared transport use the same construction with `visibleTo(user)` and `visibleToDrive(drive)` respectively. Shared projection never impersonates a publisher.
+
+Canonical immutable path: `/materials/by-id/{materialUuid}/{variantUuid}/v{version}/canonical/{sha256}.usdz`. The readable alias is `/materials/by-name/{category}/{material}/{variant}/canonical/material.usdz`. Derivative aliases end in `/{target}/{quality}/{role}.{extension}`. Aliases follow the current published version and latest verified converter generation; immutable paths retain every accessible publication/cache generation. Names use the existing Windows-safe sanitizer and collision suffixes. Roots are configurable.
+
+Target-restricted drives include canonical packages only for target `omniverse`; other target restrictions (including Revit) exclude the full-resolution canonical object. Legacy non-stable layouts retain their existing derivative-only named tree. YAML still consists only of version and path/object records; ordering is deterministic and ETag is over the exact serialized bytes.
+
+No bridge reconfiguration, remount, source upload or token rotation is needed. Allow a manifest poll, the facade directory cache, and any native client caches to refresh. `by-name` is for browsing; production scenes should pin `by-id`.
+
+The ingestion page and personal `/upload` feature do not add writes or private batches to this shared projection. See `docs/drive-upload-queue.md`.
+
+Rollback: redeploy `ghcr.io/geyervalmont/opal:sha-f5a8e68` (web, horizon, scheduler, reverb) to return to the prior derivative-only manifest. Keep the additive intake migration/data and existing bridge configuration. New canonical/by-name paths disappear on rollback; the original stable texture paths survive. Do not publish new scene references until native read validation completes.

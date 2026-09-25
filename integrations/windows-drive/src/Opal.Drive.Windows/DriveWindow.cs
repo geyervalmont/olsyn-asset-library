@@ -74,7 +74,7 @@ public sealed class DriveWindow : Form
         links.Controls.Add(open); links.Controls.Add(website); layout.Controls.Add(links);
         var diagnosticButton = new Button { Text = "Status && diagnostics", AutoSize = true };
         diagnosticButton.Click += (_, _) => ShowDiagnostics(); layout.Controls.Add(diagnosticButton);
-        layout.Controls.Add(new Label { Text = "Materials are read-only. Drop textures into a prepared Incoming folder.\nKeep OPAL Drive running while your design tools use the drive.", AutoSize = true, MaximumSize = new Size(530, 0), Margin = new Padding(0, 14, 0, 0) });
+        layout.Controls.Add(new Label { Text = "Materials are read-only. Drop files and folders into upload. Review them on the ingestion page.\nKeep OPAL Drive running while your design tools use the drive.", AutoSize = true, MaximumSize = new Size(530, 0), Margin = new Padding(0, 14, 0, 0) });
         Controls.Add(layout);
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open OPAL Drive", null, (_, _) => ShowWindow());

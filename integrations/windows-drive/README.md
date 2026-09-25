@@ -37,11 +37,11 @@ Updates currently use the installer from Connect. The fixed installer identity u
 
 Revit and Omniverse releases with drive discovery automatically find the mount when signed into the same OPAL server and account. Earlier releases can use it by entering `O:\` as the material root in their settings. Each application approves its own device connection; no bearer token is copied between apps.
 
-## Private Incoming folders
+## Upload folder and ingestion queue (0.1.4+)
 
-Contributors prepare a batch on Connect. Only that person's open batches appear in `Incoming`. Copy ordinary files and subfolders into a batch. File copying stages durable bytes locally; the tray window separately shows **pending**, **confirmed**, and **awaiting retry** counts. Wait for confirmation in both the app and Connect before relying on the upload. Interrupted uploads retry their complete bytes and checksum with the same reservation.
+Contributors automatically get `upload` at the root of the drive. Copy ordinary files or nested folders there, then use the website's **Ingestion** page to name and queue the batch for review. Original names and paths are preserved. Legacy prepared batches remain accessible under `Incoming`. The root upload folder rotates to a new private batch after the previous one is queued or closed. File copying stages durable bytes locally; the tray window separately shows **pending**, **confirmed**, and **awaiting retry** counts. Wait for confirmation in both the app and Ingestion before relying on the upload. Interrupted uploads retry their complete bytes and checksum with the same reservation.
 
-Published materials and the drive root are read-only. Incoming is an append-only staging area: rename, delete and replacement of reserved files are not supported. Use a new name or batch. Empty files are not uploaded. There is no ingestion processor or automatic material publication. The website lets you close or submit a completed batch; submission means waiting for the future processor.
+Published materials and the drive root are read-only. Upload is an append-only staging area: rename, delete and replacement of reserved files are not supported. Use a new name or batch. Empty files are not uploaded. There is no ingestion processor or automatic material publication. The website lets you close or queue a completed batch; queueing shares its files with reviewers in the same workspace and waits for the future processor. Before submission the batch stays private. No file parsing runs.
 
 Staging is limited to 256 MiB per file, 500 files per batch and 2 GiB on this computer. Staged payloads and queue records survive restarts and sign-out. They are intentionally retained, including closed batches, rather than silently deleting source files. Recover them from `%LOCALAPPDATA%\Olsyn\OPAL\Drive\accounts\<partition>\uploads` (`*.json` records identify their `*.data` payloads). Remote completed uploads are not downloaded back into Incoming on another computer.
 
@@ -56,10 +56,12 @@ Staging is limited to 256 MiB per file, 500 files per batch and 2 GiB on this co
 
 ## Build and release
 
-`dotnet run --project tests/Opal.Drive.Tests -c Release` tests the portable core. On Windows with Dokany installed, `dotnet run --project tests/Opal.Drive.MountTest -c Release` mounts a real drive against a local HTTP fixture and exercises enumeration, sequential/random/memory-mapped reads, read-only protection, Incoming copy/readback/upload, revocation and unmount.
+`dotnet run --project tests/Opal.Drive.Tests -c Release` tests the portable core. On Windows with Dokany installed, `dotnet run --project tests/Opal.Drive.MountTest -c Release` mounts a real drive against a local HTTP fixture and exercises enumeration, sequential/random/memory-mapped reads, read-only protection, root upload copy/readback/upload, revocation and unmount.
 
 The independent **Windows drive** GitHub Actions workflow installs and verifies pinned Dokany 2.3.1.1000, runs both test suites and packages a self-contained .NET 10 app with Inno Setup. Push `drive/vMAJOR.MINOR.PATCH` to publish an immutable installer, checksum manifest and `drive-latest` compatibility alias. Connect discovers tagged releases automatically. OPAL signing uses the existing signing secrets when configured; the release manifest reports whether the OPAL installer is signed. The bundled driver installer is always checksum- and signature-verified upstream software.
 
 Managed deployment: `OPAL-Drive-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`. It installs under Program Files, registers Windows sign-in launch for each user and leaves account approval to that user. Restart if the driver installer requires it. Do not run the tray app elevated for normal use. Uninstall removes the application/startup registration, retains user caches and staged files, and leaves the shared Dokany driver installed for other software.
 
 A GitHub Windows smoke test is not certification of every enterprise image, endpoint-security policy or design host. Validate the designer's actual Revit and Kit applications against the mounted paths before a wider rollout.
+
+The complete server contract and scope are documented in [drive-upload-queue.md](../../docs/drive-upload-queue.md). The shared Nucleus/SMB library mount remains read-only.

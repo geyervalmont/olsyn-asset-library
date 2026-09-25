@@ -11,7 +11,7 @@
     $navigation = array_values(array_filter([
         ['route' => 'materials.index', 'match' => 'materials.index|materials.show', 'label' => __('Materials'), 'icon' => 'materials', 'show' => $shellUser?->can('materials.view')],
         ['route' => 'materials.studio', 'match' => 'materials.studio*', 'label' => __('Material Studio'), 'icon' => 'studio', 'show' => $shellUser?->can('materials.contribute')],
-        ['route' => 'materials.create', 'match' => 'materials.create', 'label' => __('Import materials'), 'icon' => 'import', 'show' => $shellUser?->can('materials.contribute')],
+        ['route' => 'ingestion.index', 'match' => 'ingestion.*|materials.create', 'label' => __('Ingestion'), 'icon' => 'import', 'show' => $shellUser?->can('materials.contribute')],
         ['route' => 'connect', 'match' => 'connect|connect.it|link|revit.edit|sessions.edit', 'label' => __('Apps & drive'), 'icon' => 'connect', 'show' => true],
     ], fn (array $item): bool => (bool) $item['show']));
     $management = array_values(array_filter([

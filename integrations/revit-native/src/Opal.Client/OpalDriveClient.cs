@@ -84,6 +84,9 @@ public sealed class OpalDriveClient : IDisposable
     public Task<JsonElement> TelemetryAsync(Guid deviceId, JsonElement events, CancellationToken cancellationToken = default) =>
         JsonAsync(HttpMethod.Post, "/api/v1/drive/telemetry", new { device_id = deviceId, events }, cancellationToken);
 
+    public Task<JsonElement> EnsureUploadInboxAsync(CancellationToken cancellationToken = default) =>
+        JsonAsync(HttpMethod.Post, "/api/v1/drive/intake/inbox", new { }, cancellationToken);
+
     public Task<JsonElement> CreateIntakeAsync(string name, CancellationToken cancellationToken = default) =>
         JsonAsync(HttpMethod.Post, "/api/v1/drive/intake", new { name }, cancellationToken);
 
