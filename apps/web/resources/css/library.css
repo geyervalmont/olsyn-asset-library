@@ -120,3 +120,13 @@
 .ui-page--app .ui-modal__head h2 { font-family: var(--ui-font-sans); font-weight: 500; letter-spacing: -.03em; }
 .ui-page--app .ui-modal__scrim { backdrop-filter: none; background: #1d2a3b66; }
 .ui-page--app .ui-modal__preview .ui-swatch-card__colourways { flex-wrap: wrap; max-height: 84px; overflow-y: auto; }
+
+.ui-material-preview-status {
+    position: absolute; top: 12px; left: 12px; right: 12px; z-index: 5;
+    width: fit-content; max-width: calc(100% - 24px); padding: 6px 10px;
+    border: 1px solid rgba(70, 82, 68, .12); border-radius: 8px;
+    background: rgba(250, 249, 246, .92); color: var(--ui-muted); font-size: 11px;
+}
+.ui-material-preview-status details { margin-top: 4px; color: #71501d; }
+.ui-material-preview-status summary { cursor: pointer; }
+.ui-material-preview-status p { max-width: 48ch; margin: 6px 0; }

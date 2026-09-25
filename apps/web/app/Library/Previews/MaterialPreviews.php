@@ -5,6 +5,7 @@ namespace App\Library\Previews;
 use App\Enums\ReviewState;
 use App\Models\File;
 use App\Models\Material;
+use App\Models\Package;
 use App\Models\Representation;
 use App\Models\Target;
 use App\Models\Variant;
@@ -213,6 +214,9 @@ class MaterialPreviews
         $canonical = Target::canonical();
         $finish = self::FINISHES[$material->category->code] ?? 'default';
         $sets = [];
+        $packages = Package::query()->whereIn('variant_id', $variants->pluck('id'))
+            ->when($material->current_version_id, fn ($query) => $query->whereHas('versions', fn ($versions) => $versions->whereKey($material->current_version_id)))
+            ->orderByDesc('revision')->get(['id', 'variant_id', 'revision'])->unique('variant_id')->keyBy('variant_id');
 
         foreach ($variants as $variant) {
             $representation = $variant->representations
@@ -222,18 +226,20 @@ class MaterialPreviews
                 ->sortBy([['review_state', 'asc'], ['quality.pixels', 'desc']])
                 ->first();
 
-            if ($representation === null) {
+            $package = $packages->get($variant->id);
+            if ($representation === null && $package === null) {
                 continue;
             }
 
             $set = [
-                'key' => (string) $representation->getKey(),
+                'key' => ($representation?->getKey() ?? 'material').':package:'.($package?->getKey() ?? 'none'),
+                'materialx_url' => $package ? route('packages.materialx-preview', $package) : null,
                 'tile_mm' => (float) ($variant->effectiveTileWidthMm() ?? 1000),
                 'hex' => $variant->dominant_hex,
                 'finish' => $finish,
             ];
 
-            foreach ($representation->representationFiles as $representationFile) {
+            foreach ($representation->representationFiles ?? [] as $representationFile) {
                 if ($representationFile->file->isImage()) {
                     $set[$representationFile->role->slug] = $representationFile->file->url();
                 }

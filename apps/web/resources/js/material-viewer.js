@@ -1,13 +1,17 @@
 const preferredShapes = new Map();
-let stageModule;
-const loadMaterialStage = () => stageModule ??= import('./material-stage').catch((error) => {
-    stageModule = null;
-    throw error;
-});
+const stageModules = new Map();
+const loadMaterialStage = (kind = 'maps') => {
+    if (!stageModules.has(kind)) {
+        const loading = kind === 'materialx' ? import('./materialx-stage') : import('./material-stage');
+        stageModules.set(kind, loading.catch((error) => { stageModules.delete(kind); throw error; }));
+    }
+    return stageModules.get(kind);
+};
 
 export function materialViewer(config, loadStage = loadMaterialStage) {
     let stage = null;
     let attached = false;
+    let stageKind = null;
     let disposed = false;
     let observer = null;
     return {
@@ -21,6 +25,8 @@ export function materialViewer(config, loadStage = loadMaterialStage) {
         autoRotate: config.autoRotate !== false,
         showRevision: 0,
         status: 'idle',
+        previewMode: 'Texture preview',
+        previewWarnings: [],
         started: false,
         host: null,
         variantId: null,
@@ -98,24 +104,7 @@ export function materialViewer(config, loadStage = loadMaterialStage) {
             if (disposed || this.started) return;
             this.started = true;
             this.status = 'loading';
-            try {
-                ({ stage } = await loadStage());
-                if (disposed || ! this.host.isConnected) return;
-                await stage.attach(this.host, {
-                    zoom: this.zoom, framing: this.framing, verticalBias: this.verticalBias,
-                    autoRotate: this.autoRotate, isCurrent: () => ! disposed,
-                });
-                if (disposed || ! this.host.isConnected) return;
-                attached = true;
-                stage.setShape(this.shape);
-                await this.show(this.variantId);
-            } catch (error) {
-                if (! disposed) {
-                    this.status = 'error';
-                    this.started = false;
-                }
-                console.warn('Material preview could not start', error);
-            }
+            await this.show(this.variantId);
         },
 
         destroy() {
@@ -134,23 +123,53 @@ export function materialViewer(config, loadStage = loadMaterialStage) {
             }
 
             this.variantId = variantId;
-            if (! attached || disposed) return;
+            if (!this.started || disposed) return;
 
             if ((this.view === 'map' || this.view === 'tile') && ! this.activeMap) {
                 this.inspectSurface();
             }
 
             this.status = 'loading';
+            this.previewWarnings = [];
             const revision = ++this.showRevision;
+            const current = () => !disposed && revision === this.showRevision && this.host.isConnected;
+            const render = async (kind) => {
+                if (!attached || stageKind !== kind) {
+                    const next = await loadStage(kind);
+                    if (!current()) return;
+                    if (stage !== next.stage) stage?.detach(this.host);
+                    stage = next.stage;
+                    stageKind = kind;
+                    attached = false;
+                    await stage.attach(this.host, {
+                        zoom: this.zoom, framing: this.framing, verticalBias: this.verticalBias,
+                        autoRotate: this.autoRotate, isCurrent: current,
+                    });
+                    if (!current()) return;
+                    attached = true;
+                    stage.setShape(this.shape);
+                }
+                if (!current()) return;
+                const result = await stage.show(set, this.objectSizeMm);
+                if (!current()) return;
+                this.previewMode = result?.mode ?? 'Texture preview';
+                this.previewWarnings.push(...(result?.warnings ?? []));
+                this.status = 'ready';
+            };
             try {
-                await stage.show(set, this.objectSizeMm);
-                if (! disposed && revision === this.showRevision) this.status = 'ready';
+                await render(set.materialx_url ? 'materialx' : 'maps');
             } catch (error) {
-                if (! disposed && revision === this.showRevision) {
+                if (!current()) return;
+                console.warn('Material preview could not load', error);
+                if (set.materialx_url && this.maps.length) {
+                    this.previewWarnings = ['MaterialX preview unavailable. Showing the texture preview; graph effects may differ.'];
+                    try { await render('maps'); return; } catch (fallbackError) { console.warn('Texture preview failed', fallbackError); }
+                }
+                if (current()) {
                     this.status = 'error';
+                    this.previewWarnings = ['This material could not be previewed. Its graph or images may use unsupported features.'];
                     this.started = false;
                 }
-                console.warn('Material maps could not load', error);
             }
         },
 

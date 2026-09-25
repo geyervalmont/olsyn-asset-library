@@ -509,7 +509,7 @@ new class extends ConsumerComponent
         <div class="ui-viewer__bar">
             <p>
                 {{ __('Inspector') }} ·
-                <span x-text="view === 'surface' ? '{{ __('canonical maps under studio light') }}' : `${activeMap?.label ?? ''} · {{ __('raw map') }}`">{{ __('canonical maps under studio light') }}</span>
+                <span x-text="view === 'surface' ? previewMode : `${activeMap?.label ?? ''} · {{ __('raw map') }}`">{{ __('canonical maps under studio light') }}</span>
                 · <span x-text="view === 'surface' ? status : '{{ __('ready') }}'"></span>
             </p>
             <div class="ui-segment" role="group" aria-label="{{ __('Shape') }}" x-show="view === 'surface'">
@@ -523,6 +523,7 @@ new class extends ConsumerComponent
         @else
             <div class="ui-viewer__stage" x-ref="stage" wire:ignore>
                 <x-ui.material-map-inspector />
+                <x-ui.material-preview-status />
             </div>
         @endif
     </div>

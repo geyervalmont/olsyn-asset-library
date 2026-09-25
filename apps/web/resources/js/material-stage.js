@@ -225,7 +225,7 @@ export const stage = {
             renderer.toneMappingExposure = 0.95;
             renderer.outputColorSpace = THREE.SRGBColorSpace;
             renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.shadowMap.type = THREE.PCFShadowMap;
 
             const scene = new THREE.Scene();
             const environment = await loadEnvironment(renderer);

@@ -52,3 +52,31 @@ describe('on-demand material preview', () => {
         expect(stage.show).not.toHaveBeenCalled();
     });
 });
+
+test('packaged materials choose the MaterialX stage and report its limitations', async () => {
+    const stage = stageStub();
+    stage.show = mock(async () => ({ mode: 'MaterialX', warnings: ['Displacement is not supported in this preview.'] }));
+    const load = mock(async () => ({ stage }));
+    const viewer = setup(load);
+    viewer.sets[1].materialx_url = '/packages/1/materialx-preview';
+    await viewer.show(1);
+    await viewer.start();
+    expect(load).toHaveBeenCalledWith('materialx');
+    expect(viewer.previewMode).toBe('MaterialX');
+    expect(viewer.previewWarnings).toHaveLength(1);
+});
+
+test('a MaterialX failure explicitly falls back to the texture preview', async () => {
+    const native = stageStub();
+    native.show = mock(async () => { throw new Error('unsupported node'); });
+    const maps = stageStub();
+    const viewer = setup(async (kind) => ({ stage: kind === 'materialx' ? native : maps }));
+    viewer.sets[1] = { key: 'first', materialx_url: '/package', base_color: '/image' };
+    await viewer.show(1);
+    await viewer.start();
+    expect(native.detach).toHaveBeenCalled();
+    expect(maps.show).toHaveBeenCalled();
+    expect(viewer.status).toBe('ready');
+    expect(viewer.previewMode).toBe('Texture preview');
+    expect(viewer.previewWarnings[0]).toContain('graph effects may differ');
+});

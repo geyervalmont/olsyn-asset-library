@@ -59,6 +59,7 @@
                                 <span x-text="status === 'loading' ? 'Loading 3D…' : (status === 'error' ? 'Retry 3D preview' : 'Explore in 3D')"></span>
                                 <span aria-hidden="true">↗</span>
                             </button>
+                            <x-ui.material-preview-status />
                             <template x-if="status === 'ready'"><x-ui.material-map-inspector compact /></template>
                         </div>
                     </x-slot:stage>
