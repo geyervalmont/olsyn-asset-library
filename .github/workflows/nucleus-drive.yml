@@ -1,0 +1,41 @@
+name: Nucleus drive
+on:
+  push:
+    branches: [main]
+    paths: ['integrations/nucleus-drive/**', 'deploy/k8s/nucleus-drive/**', '.github/workflows/nucleus-drive.yml']
+  pull_request:
+    paths: ['integrations/nucleus-drive/**', 'deploy/k8s/nucleus-drive/**', '.github/workflows/nucleus-drive.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nucleus-drive-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: PYTHONPATH=integrations/nucleus-drive python -m unittest discover -s integrations/nucleus-drive/tests -v
+      - run: python -m json.tool deploy/k8s/nucleus-drive/resources.json >/dev/null
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.31.0'
+      - name: Configure cluster access
+        env:
+          CLUSTER_CONFIG: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          printf '%s' "$CLUSTER_CONFIG" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+      - run: bash deploy/k8s/nucleus-drive/apply.sh

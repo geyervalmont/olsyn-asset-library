@@ -36,7 +36,7 @@ public sealed class DriveTree
     public int FileCount { get; }
     public static DriveTree Empty { get; } = new([], []);
 
-    public DriveTree(IEnumerable<RemoteFile> files, IEnumerable<IncomingFolder> incoming)
+    public DriveTree(IEnumerable<RemoteFile> files, IEnumerable<IncomingFolder> incoming, IEnumerable<RemoteFile>? intakeFiles = null)
     {
         var entries = new Dictionary<string, DriveNode>(StringComparer.OrdinalIgnoreCase) { ["\\"] = new("\\") };
         void Directory(string path)
@@ -49,6 +49,7 @@ public sealed class DriveTree
             Directory(DrivePath.Parent(path));
             entries.Add(path, new(path));
         }
+        Directory("\\materials");
         foreach (var file in files)
         {
             var path = DrivePath.Normalize(file.Path);
@@ -67,6 +68,17 @@ public sealed class DriveTree
             var expected = folder.Path.Equals("/upload", StringComparison.OrdinalIgnoreCase) ? "\\upload" : "\\Incoming\\" + folder.Id.ToString("D");
             if (!DrivePath.Normalize(folder.Path).Equals(expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Invalid upload folder.");
             Directory(expected);
+        }
+        foreach (var file in intakeFiles ?? [])
+        {
+            var path = DrivePath.Normalize(file.Path);
+            var folder = Incoming.SingleOrDefault(i => path.StartsWith(DrivePath.Normalize(i.Path) + "\\", StringComparison.OrdinalIgnoreCase));
+            if (folder is null || file.Bytes < 1 || !Regex.IsMatch(file.Sha256, "^[a-f0-9]{64}$")
+                || !Regex.IsMatch(file.ContentUrl, "^/api/v1/drive/intake/" + folder.Id.ToString("D") + @"/files/[a-fA-F0-9-]{36}/content$"))
+                throw new InvalidDataException("The drive manifest contains an unauthorized intake file.");
+            Directory(DrivePath.Parent(path));
+            if (!entries.TryAdd(path, new(path, file with { Path = path }))) throw new InvalidDataException("Duplicate drive path.");
+            FileCount++;
         }
         nodes = entries.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
         children = entries.Values.Where(n => n.Path != "\\").GroupBy(n => DrivePath.Parent(n.Path), StringComparer.OrdinalIgnoreCase)
@@ -96,6 +108,7 @@ public sealed class DriveTree
         }
         return new(json.GetProperty("files").EnumerateArray().Select(f => new RemoteFile(
             f.GetProperty("path").GetString()!, f.GetProperty("bytes").GetInt64(), f.GetProperty("sha256").GetString()!, f.GetProperty("content_url").GetString()!)),
-            incoming);
+            incoming, json.TryGetProperty("intake_files", out var intakeFiles) ? intakeFiles.EnumerateArray().Select(f => new RemoteFile(
+                f.GetProperty("path").GetString()!, f.GetProperty("bytes").GetInt64(), f.GetProperty("sha256").GetString()!, f.GetProperty("content_url").GetString()!)) : []);
     }
 }

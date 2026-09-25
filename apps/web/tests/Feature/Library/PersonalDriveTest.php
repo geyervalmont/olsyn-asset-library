@@ -254,3 +254,44 @@ test('by-name handles reserved Windows names, punctuation, case collisions and l
     expect($paths[0])->toContain('['.$one->uuid.']')->toContain('['.$a->uuid.']');
     expect($paths[2])->toContain(str_repeat('木', 20));
 });
+
+test('confirmed intake files propagate to every personal drive and revoke with their batch', function () {
+    $batch = $this->postJson('/api/v1/drive/intake/inbox')->assertOk()->json('data.id');
+    $root = '/api/v1/drive/intake/'.$batch;
+    $entry = $this->postJson($root.'/files', ['path' => 'nested/stone.mdl', 'bytes' => 10, 'sha256' => hash('sha256', '0123456789')])->assertCreated()->json('data');
+    $pending = $this->getJson('/api/v1/drive/manifest')->assertOk()->assertJsonCount(0, 'intake_files');
+    $this->get($root.'/files/'.$entry['id'].'/content')->assertNotFound();
+    $this->call('PUT', $entry['upload_url'], server: ['CONTENT_TYPE' => 'application/octet-stream'], content: '0123456789')->assertNoContent();
+    $confirmed = $this->withHeader('If-None-Match', $pending->headers->get('ETag'))->getJson('/api/v1/drive/manifest')
+        ->assertOk()->assertJsonCount(1, 'intake_files')->assertJsonCount(0, 'files')
+        ->assertJsonPath('layout.label', 'OPAL')->assertJsonPath('layout.materials', '/materials')->assertJsonPath('layout.upload', '/upload')
+        ->assertJsonPath('intake_files.0.path', '/upload/nested/stone.mdl')->assertJsonPath('intake_files.0.session_id', $batch);
+    $this->flushHeaders();
+    $url = $confirmed->json('intake_files.0.content_url');
+    expect($confirmed->json('intake_files.0'))->not->toHaveKeys(['disk', 'object_key', 'bucket']);
+    $this->head($url)->assertOk()->assertHeader('Content-Length', '10');
+    $this->get($url, ['Range' => 'bytes=2-5'])->assertStatus(206)->assertStreamedContent('2345');
+    $this->get($url)->assertOk()->assertHeader('Content-Disposition', 'attachment')->assertStreamedContent('0123456789');
+    $etag = '"'.hash('sha256', '0123456789').'"';
+    $this->get($url, ['If-None-Match' => $etag])->assertStatus(304);
+    Sanctum::actingAs($this->other, ['*']);
+    $this->getJson('/api/v1/drive/manifest')->assertJsonCount(0, 'intake_files');
+    $this->get($url, ['If-None-Match' => $etag])->assertNotFound();
+    Sanctum::actingAs($this->user, ['*']);
+    $this->postJson($root.'/submit')->assertAccepted();
+    $this->get($url, ['If-None-Match' => $etag])->assertNotFound();
+    $this->withHeader('If-None-Match', $confirmed->headers->get('ETag'))->getJson('/api/v1/drive/manifest')->assertOk()->assertJsonCount(0, 'intake_files');
+});
+
+test('a read-only drive token cannot enumerate or retrieve private uploaded files', function () {
+    $session = app(ManageIntake::class)->inbox($this->user);
+    $file = app(ManageIntake::class)->reserve($session, 'private.png', 4, hash('sha256', 'data'));
+    $input = fopen('php://temp', 'w+');
+    fwrite($input, 'data');
+    rewind($input);
+    app(ManageIntake::class)->upload($session, $file, $input);
+    fclose($input);
+    Sanctum::actingAs($this->user, ['drive:read']);
+    $this->getJson('/api/v1/drive/manifest')->assertJsonCount(0, 'intake_files')->assertJsonPath('upload_enabled', false);
+    $this->get('/api/v1/drive/intake/'.$session->uuid.'/files/'.$file->uuid.'/content')->assertForbidden();
+});

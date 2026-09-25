@@ -178,7 +178,7 @@ class DriveNamespace
      */
     public function entriesForUser(User $user): array
     {
-        return $this->stableEntries(new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user);
+        return $this->stableEntries(new Drive(['root_path' => DriveLayout::MATERIALS, 'path_layout' => 'stable']), $user);
     }
 
     /**
@@ -205,7 +205,7 @@ class DriveNamespace
     /** @return list<array<string, mixed>> */
     public function projectionEntriesForUser(User $user): array
     {
-        return $this->projectionEntries(new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user);
+        return $this->projectionEntries(new Drive(['root_path' => DriveLayout::MATERIALS, 'path_layout' => 'stable']), $user);
     }
 
     /** @return Builder<Material> */
@@ -258,7 +258,7 @@ class DriveNamespace
      */
     public function namedEntriesForUser(User $user, array $currentFiles): array
     {
-        return $this->namedEntries(new Drive(['root_path' => '/materials']), $currentFiles, $user);
+        return $this->namedEntries(new Drive(['root_path' => DriveLayout::MATERIALS]), $currentFiles, $user);
     }
 
     /**
@@ -342,7 +342,7 @@ class DriveNamespace
         }
 
         return array_values(array_filter($this->stableEntries(
-            new Drive(['root_path' => '/materials', 'path_layout' => 'stable']), $user, $variant, $version,
+            new Drive(['root_path' => DriveLayout::MATERIALS, 'path_layout' => 'stable']), $user, $variant, $version,
         ), fn (array $entry): bool => ($entry['variant_uuid'] ?? null) === $variant->uuid && ($entry['latest_cache'] ?? false)));
     }
 

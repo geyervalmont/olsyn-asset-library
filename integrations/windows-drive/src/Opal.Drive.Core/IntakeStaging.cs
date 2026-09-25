@@ -102,6 +102,7 @@ public sealed class IntakeStaging
     {
         path = DrivePath.Normalize(path);
         var folder = session.Tree.UploadFolder(path) ?? throw new UnauthorizedAccessException("This upload folder is closed.");
+        if (session.Tree.Find(path)?.File is not null) throw new UnauthorizedAccessException("Confirmed uploads cannot be replaced. Use a new file name or batch.");
         var prefix = DrivePath.Normalize(folder.Path) + "\\";
         if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) throw new IOException("Open a file inside the upload folder.");
         lock (gate)

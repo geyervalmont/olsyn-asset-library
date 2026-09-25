@@ -92,6 +92,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', EnsureOlsynAccess::class, Restr
         Route::get('intake/{session}', [$intake, 'show'])->whereUuid('session')->name('api.drive.intake.show');
         Route::post('intake/{session}/files', [$intake, 'reserve'])->whereUuid('session')->name('api.drive.intake.reserve');
         Route::put('intake/{session}/files/{file}', [$intake, 'upload'])->whereUuid('session')->whereUuid('file')->name('api.drive.intake.upload');
+        Route::get('intake/{session}/files/{file}/content', [$intake, 'content'])->whereUuid('session')->whereUuid('file')->name('api.drive.intake.content');
         Route::post('intake/{session}/submit', [$intake, 'submit'])->whereUuid('session')->name('api.drive.intake.submit');
         Route::delete('intake/{session}', [$intake, 'destroy'])->whereUuid('session')->name('api.drive.intake.destroy');
     });
