@@ -7,6 +7,7 @@ use App\Models\Drive;
 use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\LibrarySeeder;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -67,4 +68,20 @@ test('admins issue and rotate tokens from the drives page and see them once', fu
     $token = $page->get('issuedToken');
 
     expect($drive->fresh()?->tokenMatches($token))->toBeTrue();
+});
+
+test('unchanged manifests skip reconstruction and raw database changes invalidate the cache', function () {
+    $drive = Drive::factory()->create(['path_layout' => 'stable']);
+    $token = $drive->issueToken();
+    $url = route('prismfs.drives.manifest', $drive);
+    $namespace = $this->mock(DriveNamespace::class);
+    $namespace->shouldReceive('toYaml')->once()->andReturn("version: 1\nfiles: []\n");
+    $first = $this->withToken($token)->get($url)->assertOk();
+    $this->withHeader('If-None-Match', $first->headers->get('ETag'))->get($url)->assertStatus(304);
+    $this->flushHeaders();
+    // Database triggers cover bulk imports and pivot writes, not just Eloquent events.
+    DB::table('categories')->where('code', 'CPT')->update(['name' => 'Renamed carpet']);
+    $namespace->shouldReceive('toYaml')->once()->andReturn("version: 1\nfiles: []\n# new namespace\n");
+    $this->withToken($token)->withHeader('If-None-Match', $first->headers->get('ETag'))->get($url)->assertOk();
+    $this->withToken('wrong-token')->get($url)->assertUnauthorized();
 });

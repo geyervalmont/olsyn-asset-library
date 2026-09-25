@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Prismfs;
 
-use App\Library\Drives\DriveNamespace;
+use App\Library\Drives\SharedDriveManifest;
 use App\Models\Drive;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -13,14 +13,15 @@ use Illuminate\Http\Response;
  */
 class PrismfsManifestController
 {
-    public function __invoke(Request $request, Drive $drive, DriveNamespace $namespace): Response
+    public function __invoke(Request $request, Drive $drive, SharedDriveManifest $manifests): Response
     {
         if (! $drive->is_active || ! $drive->tokenMatches($request->bearerToken())) {
             return response('Unauthorized', 401, ['WWW-Authenticate' => 'Bearer realm="opal-drive"']);
         }
 
-        $yaml = $namespace->toYaml($drive);
-        $etag = '"'.hash('sha256', $yaml).'"';
+        $manifest = $manifests->get($drive);
+        $yaml = $manifest['body'];
+        $etag = $manifest['etag'];
 
         if (in_array($etag, array_map('trim', explode(',', (string) $request->header('If-None-Match'))), true)) {
             return response('', 304, ['ETag' => $etag, 'Cache-Control' => 'no-cache']);

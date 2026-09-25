@@ -42,3 +42,9 @@ No bridge reconfiguration, remount, source upload or token rotation is needed. A
 The ingestion page and personal `/upload` feature do not add writes or private batches to this shared projection. See `docs/drive-upload-queue.md`.
 
 Rollback: redeploy `ghcr.io/geyervalmont/opal:sha-f5a8e68` (web, horizon, scheduler, reverb) to return to the prior derivative-only manifest. Keep the additive intake migration/data and existing bridge configuration. New canonical/by-name paths disappear on rollback; the original stable texture paths survive. Do not publish new scene references until native read validation completes.
+
+## Refresh cost and cache invalidation
+
+The shared manifest is cached after bearer-token authorization. PostgreSQL statement triggers advance a transactional namespace revision for material/version/package/derivative/file/grant/drive and naming metadata, including raw imports and pivot writes. The cache also fingerprints the drive configuration and storage bucket mapping. Renames, publication and revocation therefore invalidate cached YAML without waiting for its 30-minute retention TTL. Each drive retains one cached document; synchronized SMB/Nucleus refreshes share a build lock. A generation that overlaps a metadata change is not cached. Non-PostgreSQL environments use uncached generation.
+
+The revision row briefly serializes library metadata writes at commit; keep bulk ingestion's database transactions short and avoid running converters or remote transfers after their first catalog mutation. Raw intake upload rows do not affect the published namespace or its revision. Shared drive tokens are checked live, including on conditional requests. This cache does not cache personal authorization or extend client manifest freshness. Increment `SharedDriveManifest::CACHE_VERSION` when changing projection semantics without changing stored metadata.
